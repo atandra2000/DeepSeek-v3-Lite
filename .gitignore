@@ -1,0 +1,43 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Training outputs
+checkpoints/
+results/__pycache__/
+
+# Data (generated)
+data/pretrain_*.bin
+data/pretrain_*/
+data/datasets/
+data/sft_data.json
+data/distill_data.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# WandB
+wandb/
+
+# HuggingFace cache
+.huggingface/
+~/.cache/huggingface/
+
+# Temp
+*.tmp
+*.temp

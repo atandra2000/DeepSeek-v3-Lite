@@ -1,0 +1,41 @@
+# configs/post-train_config.yaml
+# SFT / GRPO / distillation settings for the 757M Chinchilla model.
+
+model:
+  checkpoint_path: "./checkpoints/pretrain/step_9000"
+  dtype: "bf16"
+
+sft:
+  data_path: "./data/sft"
+  epochs: 3
+  lr: 2e-5
+  min_lr: 2e-6
+  batch_size: 8
+  max_seq_len: 2048
+  packing: false
+  mask_strategy: "sample_isolation"
+
+rl:
+  method: "GRPO"
+  data_path: "./data/rl"
+  group_size: 4
+  kl_penalty: 0.04
+  epsilon: 0.2
+
+distillation:
+  enabled: true
+  teacher_path: "./checkpoints/pretrain"
+  loss_weight: 0.5
+  temperature: 2.0
+  lr: 1e-5
+  batch_size: 8
+  max_seq_len: 2048
+
+generation:
+  max_new_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  speculative:
+    enabled: true
+    draft_steps: 1
+    acceptance_threshold: 0.8

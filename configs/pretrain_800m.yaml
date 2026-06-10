@@ -1,0 +1,57 @@
+# configs/pretrain_800m.yaml
+# DeepSeek-V3-Lite ~757M parameter model, Chinchilla-20 on single A100 80GB.
+model:
+  vocab_size:          14336
+  dim:                 1024
+  n_layers:            24
+  n_heads:             16
+  n_dense_layers:      2
+  n_routed_experts:    16
+  n_shared_experts:    1
+  n_activated_experts: 2
+  inter_dim:           2048
+  moe_inter_dim:       512
+  kv_lora_rank:        256
+  q_lora_rank:         0
+  qk_nope_head_dim:    96
+  qk_rope_head_dim:    32
+  v_head_dim:          96
+  max_seq_len:         1024
+  rope_theta:          10000
+  rope_factor:         1.0
+  mscale:              1.0
+  mtp_depth:           1
+  mtp_loss_weight:     0.3
+  dtype:               bf16
+  attn_impl:           "sdpa"
+  use_grouped:         "stacked"
+
+training:
+  micro_batch_size:              4
+  gradient_accumulation_steps:   8
+  total_steps:                   463000
+  warmup_steps:                  2000
+  lr:                            2.2e-4
+  min_lr_ratio:                  0.1
+  weight_decay:                  0.1
+  beta1:                         0.9
+  beta2:                         0.95
+  grad_clip:                     1.0
+  grad_checkpoint:               true
+  compile:                       true
+  save_interval:                 5000
+  log_interval:                  100
+  mup_lr:                        true
+  mup_lr_reference:              6.0e-4
+  mup_lr_reference_params:       757226496
+  nan_guard:                     true
+  nan_guard_max_consecutive:     5
+  log_per_component_params:      true
+  balance_loss_alpha:            0.0
+  bias_update_speed:             0.001
+  bias_update_every:             10
+  save_dir:                      "checkpoints/pretrain"
+
+data:
+  train_data_path:      "data/pretrain_data.bin"
+  tokenizer_path:       "deepseek-ai/deepseek-coder-v2-lite"
