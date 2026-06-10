@@ -1,31 +1,19 @@
 # utils/memory.py
 """
-VRAM budgeting utilities for the A100 80GB SXM target.
+VRAM budgeting utilities.
 
 `estimate_model_memory_gb` returns a rough worst-case footprint for a
 forward + backward pass at the given micro-batch. The estimate accounts
 for parameters, optimiser state, KV cache, peak activations, and a
-constant CUDA / cuBLAS / caching-allocator overhead.
+GPU-dependent CUDA / cuBLAS / caching-allocator overhead.
 
-`assert_fits_in_a100_80gb` is called from `Pretrainer.__init__` and aborts
-with a clear message if the estimate exceeds 78 GB (2 GB safety margin).
+`assert_fits_in_available_gpu` is called from `Pretrainer.__init__` and aborts
+if the estimate exceeds available GPU memory minus safety margin.
 """
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
-
-
-_A100_80GB_BYTES: int = 80 * 1024**3
-_SAFETY_MARGIN_BYTES: int = 2 * 1024**3
-
-# Empirically measured constant overhead on a single A100 80GB SXM running
-# this codebase: CUDA context (~0.5 GB) + cuBLAS workspaces (~0.5-1 GB,
-# scales with batch) + PyTorch caching allocator (~0.5 GB) + MoE dispatch
-# temporaries (~0.5 GB) + MTP forward (~0.5 GB) + miscellaneous (~0.3 GB).
-# Calibrated against the 800M Chinchilla config: formula-only gives ~0.4 GB,
-# README claims ~14 GB peak → ~13.7 GB of overhead.
-_OVERHEAD_GB: float = 13.7
 
 
 def _parameter_bytes(model: nn.Module) -> int:
@@ -100,12 +88,24 @@ def _infer_dim_n_layers(model: nn.Module) -> tuple[int, int]:
     return hidden_dim, n_layers
 
 
+def _detect_overhead_gb() -> float:
+    """
+    Return a GPU-appropriate overhead estimate based on available VRAM.
+    Calibrated for A100 80GB (~13.7 GB overhead), scales down for consumer GPUs.
+    """
+    if not torch.cuda.is_available():
+        return 2.0
+    total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+    # Overhead scales with GPU memory: workspaces, allocator, MoE buffers, etc.
+    return min(13.7, max(2.0, total_gb * 0.15))
+
+
 def estimate_model_memory_gb(
     model: nn.Module,
     seq_len: int,
     batch_size: int,
     grad_checkpoint: bool = True,
-    overhead_gb: float = _OVERHEAD_GB,
+    overhead_gb: float | None = None,
 ) -> float:
     """Return a rough peak-VRAM estimate in gigabytes.
 
@@ -126,29 +126,30 @@ def estimate_model_memory_gb(
         n_layers=n_layers,
         grad_checkpoint=grad_checkpoint,
     )
+    if overhead_gb is None:
+        overhead_gb = _detect_overhead_gb()
     total = params_b + optim_b + kv_b + activations_b
     return total / 1024**3 + overhead_gb
 
 
-def assert_fits_in_a100_80gb(estimate_gb: float) -> None:
-    """Abort with a clear error if the estimate doesn't fit on the target GPU."""
+def assert_fits_in_available_gpu(estimate_gb: float, safety_margin_gb: float = 2.0) -> None:
+    """Abort with a clear error if the estimate doesn't fit on the available GPU."""
     if not torch.cuda.is_available():
         return
     try:
         available = torch.cuda.get_device_properties(0).total_memory / 1024**3
     except Exception:
         return
-    if available < 70.0:
-        # Not the target hardware — emit a warning but do not abort.
-        print(
-            f"[memory] Detected {available:.1f} GB GPU; "
-            f"estimate is {estimate_gb:.1f} GB."
-        )
-        return
-    cap = (_A100_80GB_BYTES - _SAFETY_MARGIN_BYTES) / 1024**3
-    if estimate_gb > cap:
+    if estimate_gb > available - safety_margin_gb:
         raise RuntimeError(
-            f"Estimated peak VRAM ({estimate_gb:.1f} GB) exceeds A100 80GB "
-            f"capacity ({cap:.1f} GB after safety margin).\n"
+            f"Estimated peak VRAM ({estimate_gb:.1f} GB) exceeds available "
+            f"GPU memory ({available:.1f} GB, {safety_margin_gb:.1f} GB margin).\n"
             f"Reduce micro_batch_size or seq_len, or enable grad_checkpoint."
         )
+    print(
+        f"[memory] Estimated peak VRAM: {estimate_gb:.1f} GB / "
+        f"{available:.1f} GB available — OK."
+    )
+
+
+

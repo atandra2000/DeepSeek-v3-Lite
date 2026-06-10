@@ -1,11 +1,11 @@
-# scripts/step_time_800m.py
+# scripts/step_time_82m.py
 """
-Step-time microbench — measure ms/step on a single A100.
+Step-time microbench — measure ms/step on a single GPU.
 
-Validates architecture delivers expected ~40% MFU.
+Validates architecture delivers expected ~20-30% MFU on consumer GPUs.
 
 Usage:
-    python scripts/step_time_800m.py [--steps 20] [--warmup 5]
+    python scripts/step_time_82m.py [--steps 20] [--warmup 5]
 """
 import argparse
 import sys
@@ -20,7 +20,11 @@ import yaml
 from models.transformer import Transformer
 
 
-A100_BF16_PEAK_TFLOPS = 312.0
+# RTX 4090 BF16 peak. Adjust for your GPU:
+#   RTX 3090:  142
+#   RTX 4070:  118
+#   A100 SXM:  312
+GPU_BF16_PEAK_TFLOPS = 165.0
 
 
 def main() -> None:
@@ -29,20 +33,23 @@ def main() -> None:
     p.add_argument("--warmup", type=int, default=5,  help="Number of warmup steps (not timed)")
     p.add_argument("--no-compile", action="store_true",
                    help="Disable torch.compile for the benchmark")
+    p.add_argument("--peak-tflops", type=float, default=GPU_BF16_PEAK_TFLOPS,
+                   help="GPU BF16 peak TFLOPS for MFU calculation")
     args = p.parse_args()
 
-    cfg_path = Path(__file__).resolve().parent.parent / "configs" / "pretrain_800m.yaml"
+    cfg_path = Path(__file__).resolve().parent.parent / "configs" / "pretrain_82m.yaml"
     cfg = yaml.safe_load(open(cfg_path))
     bs = cfg["training"]["micro_batch_size"]
     seq = cfg["model"]["max_seq_len"]
-    print(f"Building 757M model: bs={bs}, seq={seq}")
+    print(f"Building 82M model: bs={bs}, seq={seq}")
 
     m = Transformer(cfg, use_checkpoint=True).cuda()
     n_p = sum(p.numel() for p in m.parameters())
-    n_nonembed = n_p - 2 * cfg["model"]["vocab_size"] * cfg["model"]["dim"]
-    print(f"  non-embed params  = {n_nonembed/1e6:.1f} M")
+    n_nonembed = n_p - (1 if cfg["model"].get("weight_tying", False) else 2) * cfg["model"]["vocab_size"] * cfg["model"]["dim"]
+    print(f"  total params     = {n_p/1e6:.1f} M")
+    print(f"  non-embed params = {n_nonembed/1e6:.1f} M")
 
-    opt = torch.optim.AdamW(m.parameters(), lr=8.4e-5, betas=(0.9, 0.95), fused=True)
+    opt = torch.optim.AdamW(m.parameters(), lr=2e-3, betas=(0.9, 0.95), fused=True)
 
     if not args.no_compile:
         try:
@@ -76,24 +83,24 @@ def main() -> None:
     # FLOP accounting: 6 * P_nonembed * seq * bs per step (forward + backward)
     flops = 6 * n_nonembed * seq * bs
     tflops_per_s = flops / dt / 1e12
-    mfu = tflops_per_s / A100_BF16_PEAK_TFLOPS * 100
+    mfu = tflops_per_s / args.peak_tflops * 100
 
     tok_per_s = bs * seq / dt
     print()
     print(f"Step time:        {ms:.1f} ms")
     print(f"Throughput:       {tok_per_s:,.0f} tok/s")
     print(f"Achieved TFLOPS:  {tflops_per_s:.1f}")
-    print(f"MFU (A100 peak):  {mfu:.1f}%")
+    print(f"MFU (GPU peak):   {mfu:.1f}%")
     print()
-    if mfu < 25:
-        print("*** MFU < 25% — investigate. Common causes:")
+    if mfu < 15:
+        print("*** MFU < 15% — investigate. Common causes:")
         print("  - MoE Python loop overhead (set use_grouped: 'stacked' in YAML)")
-        print("  - SDPA path materialising K (set attn_impl: 'absorption' once Phase B2 lands)")
-        print("  - cuBLAS workspace contention (check CUDA_VISIBLE_DEVICES)")
-    elif mfu < 35:
-        print("MFU in the 25-35% range — workable. Look for any non-fused ops.")
+        print("  - torch.compile not enabled or failed")
+        print("  - cuBLAS workspace contention")
+    elif mfu < 25:
+        print("MFU in the 15-25% range — workable for consumer GPUs.")
     else:
-        print("✓ MFU in the expected 35-45% range for MoE-on-A100 BF16.")
+        print("✓ MFU in the expected 20-30% range for MoE-on-GPU BF16.")
 
 
 if __name__ == "__main__":

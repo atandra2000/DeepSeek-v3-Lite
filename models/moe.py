@@ -152,11 +152,7 @@ class DeepSeekMoE(nn.Module):
         self.moe_inter_dim    = config["moe_inter_dim"]
         # use_grouped accepts: "stacked" (bmm per SwiGLU, fastest),
         # True (per-expert loop), or False (per-token loop, debug only).
-        ug = config.get("use_grouped", "stacked")
-        if isinstance(ug, str):
-            self.use_grouped_mode = ug
-        else:
-            self.use_grouped_mode = "grouped" if ug else "loop"
+        self.use_grouped_mode = config.get("use_grouped", "stacked")
 
         self.gate = AuxLossFreeGate(config)
 
@@ -186,41 +182,7 @@ class DeepSeekMoE(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.use_grouped_mode == "stacked":
             return self._forward_stacked(x)
-        if self.use_grouped_mode == "grouped":
-            return self._forward_grouped(x)
-        return self._forward_loop(x)
-
-    def _forward_loop(self, x: torch.Tensor) -> torch.Tensor:
-        """Per-expert Python loop (debug only)."""
-        shape = x.shape
-        flat  = x.view(-1, self.dim)
-
-        weights, indices = self.gate(flat)
-        self._last_weights = weights.detach()
-        self._last_indices = indices.detach()
-
-        y_routed = torch.zeros_like(flat)
-        for local_idx, expert in enumerate(self.experts):
-            token_mask = (indices == local_idx).any(dim=1)
-            token_ids  = token_mask.nonzero(as_tuple=True)[0]
-            if token_ids.numel() == 0:
-                continue
-            topk_match  = (indices[token_ids] == local_idx)
-            pos_in_topk = topk_match.long().argmax(dim=-1)
-            expert_out  = expert(flat[token_ids])
-            scale       = weights[token_ids, pos_in_topk].unsqueeze(-1)
-            # Functional index_add (not in-place) to keep the autograd graph
-            # stable across multiple forwards in a single training step.
-            y_routed = y_routed.index_add(0, token_ids, expert_out * scale)
-
-        if self.shared_experts:
-            shared_out = torch.stack(
-                [e(flat) for e in self.shared_experts], dim=0).sum(dim=0)
-            y = y_routed + shared_out
-        else:
-            y = y_routed
-
-        return y.view(shape)
+        return self._forward_grouped(x)
 
     def _forward_grouped(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -306,9 +268,6 @@ class DeepSeekMoE(nn.Module):
         Stacked-expert forward: gather (token, expert) pairs, then one
         bmm per SwiGLU projection against stacked ``(E, inter, dim)``
         weights. Eliminates the per-expert Python loop.
-
-        Mathematically equivalent to ``_forward_grouped``. Memory cost
-        at 800M config (E=16, inter=512, dim=1024): ~48 MB.
 
         Per-token gathered input is ``expert_in_for_chunk[k, dim]``,
         weight is ``W[sorted_expert_id[k], :, :]``. Computed via bmm

@@ -1,6 +1,5 @@
 # training/pretrain.py
 import argparse
-import contextlib
 import math
 import os
 import sys
@@ -22,7 +21,7 @@ from models.transformer import Transformer, count_parameters
 from utils.checkpoint import CheckpointManager
 from utils.distributed import device
 from utils.logging import init_logging, get_logger
-from utils.memory import assert_fits_in_a100_80gb, estimate_model_memory_gb
+from utils.memory import assert_fits_in_available_gpu, estimate_model_memory_gb
 
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
@@ -32,14 +31,7 @@ def make_warmup_cosine_lambda(
     total_steps: int,
     min_lr_ratio: float = 0.1,
 ) -> callable:
-    """
-    Build a single-lambda function for `LambdaLR` matching the
-    warmup → cosine decay → flat minimum LR schedule.
-
-    [0, warmup_steps):           LR scales linearly from 0 to base_lr.
-    [warmup_steps, total_steps): LR follows a cosine curve from base_lr down to base_lr * min_lr_ratio.
-    [total_steps, ∞):            LR is fixed at base_lr * min_lr_ratio.
-    """
+    """Build LambdaLR schedule: linear warmup → cosine decay → flat min."""
     def lr_lambda(step: int) -> float:
         if step < warmup_steps:
             return step / max(1, warmup_steps)
@@ -48,7 +40,6 @@ def make_warmup_cosine_lambda(
         progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
         cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
         return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
-
     return lr_lambda
 
 
@@ -56,7 +47,7 @@ def make_warmup_cosine_lambda(
 
 @dataclass
 class TrainingConfig:
-    """All training hyperparameters in one place. `model_config` holds the full parsed YAML dict"""
+    """All training hyperparameters. `model_config` holds the full parsed YAML dict."""
 
     model_config: dict = field(default_factory=dict)
 
@@ -95,12 +86,12 @@ class TrainingConfig:
     save_every: int = 1_000
     log_every:  int = 100
 
-    nan_guard: bool = False         # restore from latest checkpoint on NaN/Inf
+    nan_guard: bool = False
     nan_guard_max_consecutive: int = 5
-    mup_lr: bool = False            # if True, replace self.lr with µP-scaled value
+    mup_lr: bool = False
     mup_lr_reference: float = 6.0e-4
     mup_lr_reference_params: int = 757_226_496
-    log_per_component_params: bool = True  # print breakdown at startup
+    log_per_component_params: bool = True
 
 
 # ── Dataset ────────────────────────────────────────────────────────────────────
@@ -115,7 +106,7 @@ class PretrainDataset(Dataset):
         ``.bin`` produced by ``data/prepare_data.py`` with the default
         settings. The whole tensor is loaded into RAM once at construction.
 
-      Sharded (800M run): a ``data_path`` that is a directory
+      Sharded: a ``data_path`` that is a directory
         containing ``shard_NNNNN.bin`` files. The dataset builds an
         in-memory ``ShardIndex`` (offsets only) and lazily memory-maps
         the requested shard on each ``__getitem__`` call. RAM usage is
@@ -272,17 +263,15 @@ class PretrainDataset(Dataset):
 # ── Trainer ────────────────────────────────────────────────────────────────────
 
 class Pretrainer:
-    """
-    Pre-training loop for single A100 80GB, BF16.
-    """
+    """BF16 pre-training loop for single GPU."""
 
     def __init__(self, config: TrainingConfig):
         self.config = config
         self.device = device()
 
         if not torch.cuda.is_available():
-            print("[warn] CUDA not available — running on CPU. This is for "
-                  "smoke-testing only; production training requires a single A100 80GB.")
+            print("[warn] CUDA not available — running on CPU "
+                  "(smoke-testing only; training requires a CUDA GPU).")
 
         init_logging(config.log_every, seq_len=config.max_seq_len)
         self.logger = get_logger()
@@ -320,8 +309,17 @@ class Pretrainer:
         self.raw_model: Transformer = raw_model
 
         # ── Optimiser ──────────────────────────────────────────────────────
-        decay_params    = [p for p in self.raw_model.parameters() if p.dim() >= 2]
-        no_decay_params = [p for p in self.raw_model.parameters() if p.dim() < 2]
+        # Deduplicate parameters by tensor id (needed for weight tying where
+        # head.weight shares storage with embed.weight).
+        seen = set()
+        all_params = []
+        for p in self.raw_model.parameters():
+            pid = id(p)
+            if pid not in seen:
+                seen.add(pid)
+                all_params.append(p)
+        decay_params    = [p for p in all_params if p.dim() >= 2]
+        no_decay_params = [p for p in all_params if p.dim() < 2]
         self.optimizer = AdamW(
             [
                 {"params": decay_params,    "weight_decay": config.weight_decay},
@@ -353,7 +351,8 @@ class Pretrainer:
     # Helpers
     # ──────────────────────────────────────────────────────────────────────
 
-    def _log(self, msg: str) -> None:
+    @staticmethod
+    def _log(msg: str) -> None:
         print(msg)
 
     def _amp_context(self):
@@ -532,13 +531,13 @@ class Pretrainer:
             drop_last=True,
         )
 
-        # Estimate VRAM and abort if it doesn't fit on A100 80GB
+        # Estimate VRAM and abort if it doesn't fit on the available GPU
         estimate = estimate_model_memory_gb(
             self.raw_model,
             seq_len=self.config.max_seq_len,
             batch_size=self.config.batch_size,
         )
-        assert_fits_in_a100_80gb(estimate)
+        assert_fits_in_available_gpu(estimate)
         self._log(f"Estimated peak VRAM: {estimate:.1f} GB")
 
         # Resume from latest checkpoint if available
@@ -614,8 +613,8 @@ class Pretrainer:
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="DeepSeek-V3 pre-training on a single A100 80GB")
-    parser.add_argument("--config",         type=str, default="configs/pretrain_800m.yaml")
+    parser = argparse.ArgumentParser(description="DeepSeek-V3-Lite pre-training (single GPU)")
+    parser.add_argument("--config",         type=str, default="configs/pretrain_82m.yaml")
     parser.add_argument("--data-path",      type=str, default=None)
     parser.add_argument("--checkpoint-dir", type=str, default=None)
     parser.add_argument("--resume",         type=str, default=None,
@@ -637,6 +636,10 @@ def main() -> None:
 
         data_path=args.data_path or d.get("train_data_path", "data/pretrain_data.bin"),
         checkpoint_dir=args.checkpoint_dir or t.get("save_dir", "checkpoints/pretrain"),
+
+        # Read architecture params from model config (not training defaults).
+        max_seq_len=yaml_cfg.get("model", yaml_cfg).get("max_seq_len", 4096),
+        vocab_size=yaml_cfg.get("model", yaml_cfg).get("vocab_size", 102400),
 
         batch_size=t.get("micro_batch_size", 8),
         gradient_accumulation_steps=t.get("gradient_accumulation_steps", 4),

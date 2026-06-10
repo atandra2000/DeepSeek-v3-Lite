@@ -54,6 +54,13 @@ DATA_MIXES = {
         ("math",     0.1),
         ("openmath", 0.1),
     ],
+    # Code-dominant mix for the 82M model.
+    # Heavy code weight for code generation domain.
+    "code-82m": [
+        ("code",     1.5),
+        ("fineweb",  1.0),
+        ("math",     0.2),
+    ],
     # Useful for quick smoke tests.
     "smoke": [
         ("fineweb",  1.0),
@@ -265,79 +272,16 @@ def _tokenize_and_pack_sharded(
     return output_dir
 
 
-# ── Seed datasets for SFT / distillation ───────────────────────────────────────
-
-def prepare_sft_data(output_path: str = "data/sft_data.json") -> str:
-    """Seed SFT dataset with a handful of instruction/response examples."""
-    examples = [
-        {
-            "messages": [
-                {"role": "user", "content": "Hello!"},
-                {"role": "assistant", "content": "Hello! How can I help you today?"},
-            ]
-        },
-        {
-            "messages": [
-                {"role": "user", "content": "What is 2 + 2?"},
-                {"role": "assistant", "content": "2 + 2 = 4."},
-            ]
-        },
-        {
-            "messages": [
-                {"role": "user", "content": "Write a Python function to check if a number is prime."},
-                {
-                    "role": "assistant",
-                    "content": (
-                        "```python\n"
-                        "def is_prime(n: int) -> bool:\n"
-                        "    if n < 2:\n"
-                        "        return False\n"
-                        "    for i in range(2, int(n**0.5) + 1):\n"
-                        "        if n % i == 0:\n"
-                        "            return False\n"
-                        "    return True\n"
-                        "```"
-                    ),
-                },
-            ]
-        },
-    ]
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(examples, f, indent=2)
-    print(f"Prepared {len(examples)} SFT examples → {output_path}")
-    return output_path
-
-
-def prepare_distillation_data(output_path: str = "data/distill_data.json") -> str:
-    """Seed distillation dataset with a single reasoning example."""
-    examples = [
-        {
-            "prompt": "A train travels 300 miles in 5 hours. What is its speed?",
-            "teacher_response": (
-                "Step 1: Identify knowns — distance = 300 mi, time = 5 h\n"
-                "Step 2: Speed = distance / time = 300 / 5 = 60 mph\n"
-                "Step 3: Verify: 60 × 5 = 300 ✓\n\nAnswer: \\boxed{60} mph"
-            ),
-        }
-    ]
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(examples, f, indent=2)
-    print(f"Prepared {len(examples)} distillation examples → {output_path}")
-    return output_path
-
-
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Prepare pre-training and SFT data")
+    parser = argparse.ArgumentParser(description="Prepare pre-training data")
     parser.add_argument("--output-dir", type=str, default="data")
     parser.add_argument(
         "--stage",
         type=str,
-        choices=["pretrain", "sft", "distill", "all"],
-        default="all",
+        choices=["pretrain"],
+        default="pretrain",
     )
     parser.add_argument("--tokenizer", type=str, default=None,
                         help="HuggingFace tokenizer name (required for pretrain)")
@@ -345,14 +289,12 @@ def main():
     parser.add_argument("--max-rows", type=int, default=None,
                         help="Cap each dataset to this many rows (default: full split)")
     parser.add_argument("--shard-size-tokens", type=int, default=0,
-                        help="If >0, write per-shard .bin files of this size "
-                             "(used for 800M-run; default 0 = single .bin file)")
+                        help="If >0, write per-shard .bin files of this size")
     parser.add_argument("--data-mix", type=str, default="deepseek-v3",
                         choices=list(DATA_MIXES.keys()),
-                        help="Which mix of sources to use (Phase C1).")
+                        help="Which mix of sources to use.")
     parser.add_argument("--include-extra", action="store_true",
-                        help="Download the auxiliary datasets (smollm, cosmo, "
-                             "openmath) required by richer mixes.")
+                        help="Download auxiliary datasets required by richer mixes.")
     args = parser.parse_args()
 
     tokenizer = None
@@ -361,16 +303,15 @@ def main():
         print(f"Loading tokenizer: {args.tokenizer}")
         tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
 
-    if args.stage in ("pretrain", "all"):
-        ds_dir = download_and_prepare_dataset(
-            os.path.join(args.output_dir, "datasets"),
-            max_rows=args.max_rows,
-            include_extra=args.include_extra,
-        )
+    ds_dir = download_and_prepare_dataset(
+        os.path.join(args.output_dir, "datasets"),
+        max_rows=args.max_rows,
+        include_extra=args.include_extra,
+    )
 
     # For sharded output (--shard-size-tokens > 0) the data path is a directory.
     if args.shard_size_tokens > 0:
-        out_path = os.path.join(args.output_dir, "pretrain_800m")
+        out_path = os.path.join(args.output_dir, f"pretrain_{args.data_mix}")
     else:
         out_path = os.path.join(args.output_dir, "pretrain_data.bin")
 
@@ -386,12 +327,6 @@ def main():
     if args.shard_size_tokens > 0:
         with open(os.path.join(out_path, "mix.json"), "w") as f:
             json.dump({"mix": args.data_mix, "components": DATA_MIXES[args.data_mix]}, f, indent=2)
-
-    if args.stage in ("sft", "all"):
-        prepare_sft_data(os.path.join(args.output_dir, "sft_data.json"))
-
-    if args.stage in ("distill", "all"):
-        prepare_distillation_data(os.path.join(args.output_dir, "distill_data.json"))
 
     print("Data preparation complete.")
 

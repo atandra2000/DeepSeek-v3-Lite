@@ -372,7 +372,7 @@ class MultiHeadLatentAttention(nn.Module):
         q_nope_proj = q_nope_proj_h.reshape(h, bsz, seqlen_q, self.kv_lora_rank).permute(1, 2, 0, 3).contiguous()
 
         if self.attn_impl == "sdpa":
-            # ── SDPA path (default, fastest on A100) ────────────────────
+            # ── SDPA path (default, fastest on CUDA GPUs) ────────────────────
             # Materialise K_nope and V once via wkv_b, then run a single
             # scaled_dot_product_attention call. K_rope is concatenated to
             # K_nope so a single attention call handles both the content
