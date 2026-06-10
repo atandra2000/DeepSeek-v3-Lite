@@ -1,21 +1,23 @@
-# configs/pretrain_800m.yaml
-# DeepSeek-V3-Lite ~757M parameter model, Chinchilla-20 on single A100 80GB.
+# configs/pretrain_82m.yaml
+# DeepSeek-V3-Lite ~82M param model for RTX 4090 24GB.
+# Code-focused, trainable in ~7 hours.
+
 model:
   vocab_size:          14336
-  dim:                 1024
-  n_layers:            24
-  n_heads:             16
+  dim:                 640
+  n_layers:            12
+  n_heads:             10
   n_dense_layers:      2
-  n_routed_experts:    16
+  n_routed_experts:    8
   n_shared_experts:    1
   n_activated_experts: 2
-  inter_dim:           2048
-  moe_inter_dim:       512
-  kv_lora_rank:        256
+  inter_dim:           1280
+  moe_inter_dim:       320
+  kv_lora_rank:        128
   q_lora_rank:         0
-  qk_nope_head_dim:    96
-  qk_rope_head_dim:    32
-  v_head_dim:          96
+  qk_nope_head_dim:    48
+  qk_rope_head_dim:    16
+  v_head_dim:          64
   max_seq_len:         1024
   rope_theta:          10000
   rope_factor:         1.0
@@ -25,22 +27,23 @@ model:
   dtype:               bf16
   attn_impl:           "sdpa"
   use_grouped:         "stacked"
+  weight_tying:        true
 
 training:
-  micro_batch_size:              4
-  gradient_accumulation_steps:   8
-  total_steps:                   463000
-  warmup_steps:                  2000
-  lr:                            2.2e-4
-  min_lr_ratio:                  0.1
+  micro_batch_size:              8
+  gradient_accumulation_steps:   4
+  total_steps:                   36000
+  warmup_steps:                  600
+  lr:                            8.0e-4
+  min_lr_ratio:                  0.05
   weight_decay:                  0.1
   beta1:                         0.9
   beta2:                         0.95
   grad_clip:                     1.0
   grad_checkpoint:               true
   compile:                       true
-  save_interval:                 5000
-  log_interval:                  100
+  save_interval:                 3000
+  log_interval:                  50
   mup_lr:                        true
   mup_lr_reference:              6.0e-4
   mup_lr_reference_params:       757226496
@@ -50,8 +53,8 @@ training:
   balance_loss_alpha:            0.0
   bias_update_speed:             0.001
   bias_update_every:             10
-  save_dir:                      "checkpoints/pretrain"
+  save_dir:                      "checkpoints/pretrain_82m"
 
 data:
-  train_data_path:      "data/pretrain_data.bin"
+  train_data_path:      "data/pretrain_code-82m"
   tokenizer_path:       "deepseek-ai/deepseek-coder-v2-lite"

@@ -136,7 +136,12 @@ class Transformer(nn.Module):
         self.norm = nn.RMSNorm(model_cfg["dim"], eps=1e-6)
 
         # Output head: full-vocab, non-sharded.
+        # Weight tying: head.weight shares the same storage as embed.weight,
+        # saving vocab_size * dim parameters (~9M for 14K vocab × 640 dim).
+        self.weight_tying = model_cfg.get("weight_tying", False)
         self.head = nn.Linear(model_cfg["dim"], model_cfg["vocab_size"], bias=False)
+        if self.weight_tying:
+            self.head.weight = self.embed.weight  # share parameter storage
 
         # Causal mask cache: avoids re-allocating (S, S) on every forward call.
         self._mask_cache: Optional[torch.Tensor] = None

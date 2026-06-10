@@ -1,11 +1,11 @@
-# scripts/microbench_800m.py
+# scripts/microbench_82m.py
 """
-Microbench — measure peak VRAM of the 757M model.
+Microbench — measure peak VRAM of the 82M model.
 
-Run on a single A100 80GB SXM. Run BEFORE the 1k-step dry-run.
+Run on a single RTX 4090 24GB (or any CUDA GPU).
 
 Usage:
-    python scripts/microbench_800m.py
+    python scripts/microbench_82m.py
 """
 import sys
 from pathlib import Path
@@ -16,15 +16,15 @@ import torch
 import yaml
 
 from models.transformer import Transformer
-from utils.memory import estimate_model_memory_gb, assert_fits_in_a100_80gb
+from utils.memory import estimate_model_memory_gb, assert_fits_in_available_gpu
 
 
 def main() -> None:
-    cfg_path = Path(__file__).resolve().parent.parent / "configs" / "pretrain_800m.yaml"
+    cfg_path = Path(__file__).resolve().parent.parent / "configs" / "pretrain_82m.yaml"
     cfg = yaml.safe_load(open(cfg_path))
     bs = cfg["training"]["micro_batch_size"]
     seq = cfg["model"]["max_seq_len"]
-    print(f"Building 757M model from {cfg_path} ...")
+    print(f"Building 82M model from {cfg_path} ...")
     print(f"  micro_batch_size = {bs}")
     print(f"  max_seq_len      = {seq}")
 
@@ -35,7 +35,7 @@ def main() -> None:
     # Estimated peak
     est = estimate_model_memory_gb(m, seq_len=seq, batch_size=bs, grad_checkpoint=True)
     print(f"  estimated peak   = {est:.2f} GB")
-    assert_fits_in_a100_80gb(est)
+    assert_fits_in_available_gpu(est, safety_margin_gb=2.0)
 
     # Measured peak
     print("Running forward + backward ...")
@@ -49,15 +49,18 @@ def main() -> None:
     delta = abs(measured - est) / est * 100
     print(f"  delta vs estimate = {delta:.1f}%")
 
-    if measured > 70.0:
-        print("\n*** WARNING: peak > 70 GB — only 8 GB headroom. Consider:")
-        print("  - halve micro_batch_size (4 -> 2)")
+    total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+    pct = measured / total_gb * 100
+    print(f"  measured / total = {pct:.1f}% of {total_gb:.0f} GB")
+
+    if measured > total_gb - 4.0:
+        print("\n*** WARNING: peak within 4 GB of capacity. Consider:")
+        print("  - halve micro_batch_size (8 -> 4)")
         print("  - reduce seq_len (1024 -> 768)")
-        print("  - reduce dim (1024 -> 896, ~600M params)")
-    elif measured > 60.0:
-        print("\n*** NOTICE: peak > 60 GB. Comfortable but tight.")
+    elif measured > total_gb * 0.75:
+        print("\n*** NOTICE: peak > 75% of VRAM. Comfortable but tight.")
     else:
-        print("\n✓ Peak comfortably under the 80 GB cap.")
+        print("\n✓ Peak comfortably under GPU capacity.")
 
 
 if __name__ == "__main__":
