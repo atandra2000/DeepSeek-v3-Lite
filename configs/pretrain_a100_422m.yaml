@@ -1,24 +1,35 @@
-# configs/pretrain_82m.yaml
-# DeepSeek-V3-Lite ~82M param model for RTX 4090 24GB.
-# Code-focused, trainable in ~7 hours.
+# configs/pretrain_a100_422m.yaml
+# DeepSeek-V3-Lite ~422M param Chinchilla-optimal pre-training.
+# Designed for 1x A100 80GB SXM. Target: ~13-15 h at 35-40% MFU.
+#
+# Architecture: dim=768, 18 layers (2 dense + 16 MoE × 20 experts),
+#               4 activated experts, 8.4B Chinchilla-optimal tokens.
+#
+# Stability features:
+#   - µp-LR scaling (auto-adjusted from reference model)
+#   - gradient accumulation for smooth gradients
+#   - 2000-step linear warmup + cosine decay to 5%
+#   - gradient clipping at 1.0
+#   - aux-loss-free MoE bias updates every step
+#   - NaN guard with checkpoint rollback
 
 model:
-  vocab_size:          14336
-  dim:                 640
-  n_layers:            12
-  n_heads:             10
+  vocab_size:          100018
+  dim:                 768
+  n_layers:            18
+  n_heads:             12
   n_dense_layers:      2
-  n_routed_experts:    8
+  n_routed_experts:    20
   n_shared_experts:    1
-  n_activated_experts: 2
-  inter_dim:           1280
-  moe_inter_dim:       320
-  kv_lora_rank:        128
+  n_activated_experts: 4
+  inter_dim:           1536
+  moe_inter_dim:       384
+  kv_lora_rank:        192
   q_lora_rank:         0
   qk_nope_head_dim:    48
-  qk_rope_head_dim:    16
+  qk_rope_head_dim:    24
   v_head_dim:          64
-  max_seq_len:         1024
+  max_seq_len:         2048
   rope_theta:          10000
   rope_factor:         1.0
   mscale:              1.0
@@ -32,8 +43,8 @@ model:
 training:
   micro_batch_size:              8
   gradient_accumulation_steps:   4
-  total_steps:                   36000
-  warmup_steps:                  600
+  total_steps:                   512000
+  warmup_steps:                  2000
   lr:                            8.0e-4
   min_lr_ratio:                  0.05
   weight_decay:                  0.1
@@ -42,7 +53,7 @@ training:
   grad_clip:                     1.0
   grad_checkpoint:               true
   compile:                       true
-  save_interval:                 3000
+  save_interval:                 4000
   log_interval:                  50
   mup_lr:                        true
   mup_lr_reference:              6.0e-4
@@ -52,9 +63,9 @@ training:
   log_per_component_params:      true
   balance_loss_alpha:            0.0
   bias_update_speed:             0.001
-  bias_update_every:             10
-  save_dir:                      "checkpoints/pretrain_82m"
+  bias_update_every:             1
+  save_dir:                      "checkpoints/pretrain_a100"
 
 data:
-  train_data_path:      "data/pretrain_code-82m"
+  train_data_path:      "data/pretrain_chinchilla"
   tokenizer_path:       "deepseek-ai/deepseek-coder-v2-lite"

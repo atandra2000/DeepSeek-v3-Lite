@@ -41,3 +41,6 @@ wandb/
 # Temp
 *.tmp
 *.temp
+
+# Graphify auto-generated output
+graphify-out/
