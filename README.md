@@ -1,6 +1,8 @@
 # DeepSeek-V3-Lite
 
-A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, scaled for Chinchilla-optimal training on a single **A100 80GB SXM** in **~13-15 hours**.
+> **Status:** Architecture, training pipeline, and inference paths are implemented and smoke-tested; the Chinchilla-optimal 8.4B-token pretraining run has not yet started.
+
+A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, designed for Chinchilla-optimal training on a single **A100 80GB SXM** (projected **~13-15 hours** wall time).
 
 | Config | Parameters | Tokens | GPU | Wall time | Peak VRAM | Status |
 |---|---|---|---|---|---|---|
