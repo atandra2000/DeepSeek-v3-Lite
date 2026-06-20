@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+      - name: Import checks
+        run: |
+          python -c "import models.transformer; import models.mla; import models.moe; import models.mtp"
+      - name: Model forward smoke test
+        run: |
+          python -c "
+import torch
+from configs.pretrain_a100_422m import get_config
+from models.transformer import Transformer
+cfg = get_config()
+cfg['max_seq_len'] = 16
+model = Transformer(cfg)
+x = torch.randint(0, cfg['vocab_size'], (2, 16))
+logits = model(x)
+assert logits.shape == (2, 16, cfg['vocab_size'])
+print('OK')
+"
