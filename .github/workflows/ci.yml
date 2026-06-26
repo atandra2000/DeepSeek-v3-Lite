@@ -22,17 +22,22 @@ jobs:
       - name: Import checks
         run: |
           python -c "import models.transformer; import models.mla; import models.moe; import models.mtp"
+      - name: Run test suite
+        run: |
+          python -m pytest tests/ -q --tb=short
       - name: Model forward smoke test
         run: |
           python -c "
-import torch
-from configs.pretrain_a100_422m import get_config
+import torch, yaml
+from pathlib import Path
 from models.transformer import Transformer
-cfg = get_config()
+cfg_path = Path('configs/pretrain_a100_422m.yaml')
+with open(cfg_path) as f:
+    cfg = yaml.safe_load(f)['model']
 cfg['max_seq_len'] = 16
 model = Transformer(cfg)
 x = torch.randint(0, cfg['vocab_size'], (2, 16))
 logits = model(x)
-assert logits.shape == (2, 16, cfg['vocab_size'])
+assert logits.shape == (2, 16, cfg['vocab_size']), f'unexpected shape {logits.shape}'
 print('OK')
 "
