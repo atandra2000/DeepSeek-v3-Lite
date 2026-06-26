@@ -19,7 +19,116 @@ TF32 forward, `F.scaled_dot_product_attention` (Flash-Attn-2), `torch.compile(mo
 
 ## Architecture
 
-The model follows the DeepSeek-V3 technical report exactly — every component implemented end-to-end, no stubs.
+The model follows the DeepSeek-V3 technical report exactly &mdash; every component implemented end-to-end, no stubs.
+
+### End-to-End Forward Pass
+
+```mermaid
+flowchart TB
+    IN["Input tokens<br/>vocab = 100,018"]:::in
+    EMB["Embedding<br/>768-dim<br/>(tied with LM head)"]:::embed
+    subgraph DENSE["Layers 0 – 1 · Dense Blocks (2)"]
+        D1["MLA<br/>kv_lora_rank=192"]:::mla --> D2["SwiGLU FFN"]:::ffn
+    end
+    subgraph MOE["Layers 2 – 17 · MoE Blocks (16)"]
+        M1["MLA<br/>kv_lora_rank=192"]:::mla --> M2["DeepSeekMoE<br/>20 routed (top-4) + 2 shared<br/>aux-loss-free bias updates"]:::moe
+    end
+    N["Final RMSNorm"]:::norm --> HEAD["Linear LM Head<br/>100,018 logits"]:::head
+    MTP["MTP Module (depth = 1)<br/>shared head · predicts t+2<br/>speculative-decoding draft"]:::mtp
+    IN --> EMB --> DENSE --> MOE --> N --> HEAD
+    HEAD --> MTP
+
+    classDef in fill:#e0e7ff,stroke:#3730a3,color:#000
+    classDef embed fill:#fef3c7,stroke:#92400e,color:#000
+    classDef mla fill:#dbeafe,stroke:#1d4ed8,color:#000
+    classDef ffn fill:#fce7f3,stroke:#9d174d,color:#000
+    classDef moe fill:#fce7f3,stroke:#9d174d,color:#000
+    classDef norm fill:#f3f4f6,stroke:#374151,color:#000
+    classDef head fill:#bbf7d0,stroke:#15803d,color:#000
+    classDef mtp fill:#fed7aa,stroke:#9a3412,color:#000
+```
+
+### MLA &mdash; the absorption trick
+
+```mermaid
+flowchart LR
+    X["x (token hidden state)"]:::in --> WDKV["W_DKV<br/>d → kv_lora_rank=96"]:::proj
+    WDKV --> CK["c_KV<br/>(B,T,96) · what we cache"]:::cache
+    CK --> WUK["W_UK<br/>96 → H×D_head"]:::proj2
+    CK --> WUV["W_UV<br/>96 → H×D_head"]:::proj2
+    WUK --> K["K (B,T,H,D)"]
+    WUV --> V["V (B,T,H,D)"]
+    X --> WQ["W_Q"]:::proj
+    WQ --> Q["Q (B,T,H,D)"]
+    Q -->|"Q · Kᵀ" | ATTN["Scaled dot-product<br/>attention"]:::attn
+    K --> ATTN
+    V --> ATTN
+    ATTN --> WO["W_O"]:::proj --> Y["y"]
+
+    WQ -. "W_Q ← W_Q @ W_UKᵀ<br/>absorption: K never materialized" .-> WUK
+
+    classDef in fill:#e0e7ff,stroke:#3730a3,color:#000
+    classDef proj fill:#fde68a,stroke:#b45309,color:#000
+    classDef proj2 fill:#fde68a,stroke:#b45309,color:#000
+    classDef cache fill:#bbf7d0,stroke:#15803d,color:#000
+    classDef attn fill:#dbeafe,stroke:#1d4ed8,color:#000
+```
+
+> Cached K is the **96-dim latent**, not H&times;D. ~5&times; KV-cache reduction vs MHA at inference.
+
+### DeepSeekMoE &mdash; aux-loss-free routing
+
+```mermaid
+flowchart TB
+    H["hidden state h"]:::in --> GATE["Gate Logit = h · W_gate"]:::gate
+    GATE --> BIAS["+ Bias_b (per-expert)<br/>updated by observed token counts"]:::bias
+    BIAS --> SIG["sigmoid()"]:::act
+    SIG --> TOPK["top-4 selection"]:::topk
+    TOPK --> R1["routed expert 1"]:::exp
+    TOPK --> R2["routed expert 2"]:::exp
+    TOPK --> R3["routed expert 3"]:::exp
+    TOPK --> R4["routed expert 4"]:::exp
+    S1["shared expert 1 (always)"]:::sh
+    S2["shared expert 2 (always)"]:::sh
+    H --> S1
+    H --> S2
+    R1 --> SUM["weighted sum"]:::sum
+    R2 --> SUM
+    R3 --> SUM
+    R4 --> SUM
+    S1 --> SUM
+    S2 --> SUM
+    SUM --> OUT["MoE output"]:::out
+
+    classDef in fill:#e0e7ff,stroke:#3730a3,color:#000
+    classDef gate fill:#fde68a,stroke:#b45309,color:#000
+    classDef bias fill:#fed7aa,stroke:#9a3412,color:#000
+    classDef act fill:#f3f4f6,stroke:#374151,color:#000
+    classDef topk fill:#dbeafe,stroke:#1d4ed8,color:#000
+    classDef exp fill:#fce7f3,stroke:#9d174d,color:#000
+    classDef sh fill:#fbcfe8,stroke:#831843,color:#000
+    classDef sum fill:#bbf7d0,stroke:#15803d,color:#000
+    classDef out fill:#bbf7d0,stroke:#15803d,color:#000
+```
+
+> No auxiliary loss contaminates the task gradient. The bias is updated out-of-band from the observed token count deviation.
+
+### MTP &amp; Speculative Decoding
+
+```mermaid
+sequenceDiagram
+    participant D as Draft (MTP)
+    participant T as Target (main head)
+    participant A as Accept/Reject
+    Note over D: predicts token t+2
+    D->>A: draft token t+2
+    A->>T: verify in parallel with main head
+    T-->>A: target distribution for t+2
+    A-->>D: accept (rate ≈ 0.8) or resample
+    Note over D,T: ≈ 2× throughput vs naive decoding
+```
+
+### Text Alternative (ASCII)
 
 ```
 Input tokens (vocab = 100,018)
