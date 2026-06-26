@@ -1,7 +1,7 @@
 import argparse, math, os, sys
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch, torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
