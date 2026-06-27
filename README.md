@@ -21,32 +21,9 @@ TF32 forward, `F.scaled_dot_product_attention` (Flash-Attn-2), `torch.compile(mo
 
 The model follows the DeepSeek-V3 technical report exactly &mdash; every component implemented end-to-end, no stubs.
 
-### End-to-End Forward Pass
+### Forward Pass
 
-```mermaid
-flowchart TB
-    IN["Input tokens<br/>vocab = 100,018"]:::in
-    EMB["Embedding<br/>768-dim<br/>(tied with LM head)"]:::embed
-    subgraph DENSE["Layers 0 – 1 · Dense Blocks (2)"]
-        D1["MLA<br/>kv_lora_rank=192"]:::mla --> D2["SwiGLU FFN"]:::ffn
-    end
-    subgraph MOE["Layers 2 – 17 · MoE Blocks (16)"]
-        M1["MLA<br/>kv_lora_rank=192"]:::mla --> M2["DeepSeekMoE<br/>20 routed (top-4) + 2 shared<br/>aux-loss-free bias updates"]:::moe
-    end
-    N["Final RMSNorm"]:::norm --> HEAD["Linear LM Head<br/>100,018 logits"]:::head
-    MTP["MTP Module (depth = 1)<br/>shared head · predicts t+2<br/>speculative-decoding draft"]:::mtp
-    IN --> EMB --> DENSE --> MOE --> N --> HEAD
-    HEAD --> MTP
-
-    classDef in fill:#e0e7ff,stroke:#3730a3,color:#000
-    classDef embed fill:#fef3c7,stroke:#92400e,color:#000
-    classDef mla fill:#dbeafe,stroke:#1d4ed8,color:#000
-    classDef ffn fill:#fce7f3,stroke:#9d174d,color:#000
-    classDef moe fill:#fce7f3,stroke:#9d174d,color:#000
-    classDef norm fill:#f3f4f6,stroke:#374151,color:#000
-    classDef head fill:#bbf7d0,stroke:#15803d,color:#000
-    classDef mtp fill:#fed7aa,stroke:#9a3412,color:#000
-```
+See the ASCII overview at the end of the Architecture section.
 
 ### MLA &mdash; the absorption trick
 
@@ -78,40 +55,39 @@ flowchart LR
 
 ### DeepSeekMoE &mdash; aux-loss-free routing
 
-```mermaid
-flowchart TB
-    H["hidden state h"]:::in --> GATE["Gate Logit = h · W_gate"]:::gate
-    GATE --> BIAS["+ Bias_b (per-expert)<br/>updated by observed token counts"]:::bias
-    BIAS --> SIG["sigmoid()"]:::act
-    SIG --> TOPK["top-4 selection"]:::topk
-    TOPK --> R1["routed expert 1"]:::exp
-    TOPK --> R2["routed expert 2"]:::exp
-    TOPK --> R3["routed expert 3"]:::exp
-    TOPK --> R4["routed expert 4"]:::exp
-    S1["shared expert 1 (always)"]:::sh
-    S2["shared expert 2 (always)"]:::sh
-    H --> S1
-    H --> S2
-    R1 --> SUM["weighted sum"]:::sum
-    R2 --> SUM
-    R3 --> SUM
-    R4 --> SUM
-    S1 --> SUM
-    S2 --> SUM
-    SUM --> OUT["MoE output"]:::out
-
-    classDef in fill:#e0e7ff,stroke:#3730a3,color:#000
-    classDef gate fill:#fde68a,stroke:#b45309,color:#000
-    classDef bias fill:#fed7aa,stroke:#9a3412,color:#000
-    classDef act fill:#f3f4f6,stroke:#374151,color:#000
-    classDef topk fill:#dbeafe,stroke:#1d4ed8,color:#000
-    classDef exp fill:#fce7f3,stroke:#9d174d,color:#000
-    classDef sh fill:#fbcfe8,stroke:#831843,color:#000
-    classDef sum fill:#bbf7d0,stroke:#15803d,color:#000
-    classDef out fill:#bbf7d0,stroke:#15803d,color:#000
+```
+```
+   hidden state h
+        │
+        ▼
+   gate_logit = h · W_gate          (h ∈ ℝ^d, W_gate ∈ ℝ^(d × N_experts))
+        │
+        ▼
+   gate_logit + Bias_b              ← updated from observed token counts
+        │                              (aux-loss-free; no gradient on bias)
+        ▼
+   sigmoid(.)                       scores ∈ (0,1)^N
+        │
+        ▼
+   top-k selection (k=4)            picks 4 routed experts per token
+        │
+        ├──► routed_expert_1 (SwiGLU)
+        ├──► routed_expert_2 (SwiGLU)
+        ├──► routed_expert_3 (SwiGLU)
+        ├──► routed_expert_4 (SwiGLU)
+        ├──► shared_expert_1  (always active, no routing)
+        └──► shared_expert_2  (always active, no routing)
+                                        │
+                                        ▼
+                                weighted sum
+                                        │
+                                        ▼
+                                MoE output
 ```
 
-> No auxiliary loss contaminates the task gradient. The bias is updated out-of-band from the observed token count deviation.
+> No auxiliary loss contaminates the task gradient. The bias is updated
+> out-of-band from the observed token count deviation.
+```
 
 ### MTP &amp; Speculative Decoding
 
