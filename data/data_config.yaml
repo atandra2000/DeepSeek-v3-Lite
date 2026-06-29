@@ -1,0 +1,36 @@
+pipeline:
+  tokenizer:
+    name: deepseek-coder-v2-lite
+    path: null
+    vocab_size: 100018
+    eos_token_id: 100017
+    pad_token_id: 100016
+    add_eos: true
+  sharding:
+    shard_size_tokens: 50000000
+    dtype: uint32
+    target_total_tokens: 8000000000
+  dedup:
+    enabled: true
+    method: sha256
+    n_hash_buckets: 256
+    bloom_capacity_per_bucket: 200000
+    bloom_error_rate: 0.001
+  quality:
+    drop_empty: true
+    min_unique_chars_ratio: 0.05
+    max_digit_ratio: 0.5
+    max_punct_ratio: 0.5
+    max_whitespace_ratio: 0.5
+  tokenize:
+    batch_size: 1024
+    add_special_tokens: false
+    show_progress_every_docs: 50000
+  pack:
+    docs_per_shard_target: 50000000
+    cross_document_boundary_ok: false
+  seed: 42
+  streaming_download: true
+  verify_after_pack: true
+_generator: DeepSeek-v3-Lite/data/prepare_data.py
+_tokenizer_family: deepseek-coder-v2

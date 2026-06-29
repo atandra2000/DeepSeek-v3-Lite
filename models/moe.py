@@ -5,8 +5,7 @@ from typing import Tuple, Optional, Dict
 
 
 class AuxLossFreeGate(nn.Module):
-    """Auxiliary-Loss-Free Load Balancing Gate (DeepSeek-V3 §2.3.3).
-    Routing via sigmoid + bias; bias updated separately (not a Parameter)."""
+    """Auxiliary-Loss-Free Load Balancing Gate (DeepSeek-V3 §2.3.3)."""
     def __init__(self, config: dict):
         super().__init__()
         self.dim = config["dim"]

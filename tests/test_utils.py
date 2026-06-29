@@ -1,9 +1,4 @@
-"""
-Tests for utility modules: CheckpointManager, memory estimation.
-
-All tests run on CPU.  Memory estimation tests only verify the formula
-computation (no CUDA required).
-"""
+"""Tests for utility modules: CheckpointManager, memory estimation."""
 import json
 import os
 import tempfile
@@ -26,10 +21,7 @@ from utils.memory import (
 from models.transformer import Transformer
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # CheckpointManager
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestCheckpointManagerSaveLoad:
     def test_save_and_load(self, small_cfg, tmp_ckpt_dir):
         """Save and load preserves model weights."""
@@ -169,10 +161,7 @@ class TestCheckpointManagerSaveLoad:
         assert len(tmp_files) == 0, f"Leftover tmp files: {tmp_files}"
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # CheckpointManager with MTP (integration with Pretrainer)
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestCheckpointManagerMTP:
     def test_mtp_weights_in_safetensors(self, small_cfg, tmp_ckpt_dir):
         """MTP-prefixed keys appear in the safetensors file."""
@@ -243,10 +232,7 @@ class TestCheckpointManagerMTP:
                     f"MTP weight mismatch: {original_key}"
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Memory estimation (CPU-only)
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestMemoryEstimation:
     def test_parameter_bytes(self, small_cfg):
         """_parameter_bytes returns sum of all param element sizes."""

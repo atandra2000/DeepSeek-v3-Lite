@@ -1,9 +1,4 @@
-"""
-Tests for all model components: Transformer, MLA, MoE, MTP, generation.
-
-All tests run on CPU (MacBook Air compatible). Config dimensions are
-kept small so each test completes in < 1 s.
-"""
+"""Tests for all model components: Transformer, MLA, MoE, MTP, generation."""
 import pytest
 import torch
 from torch import nn
@@ -14,10 +9,7 @@ from models.moe import DeepSeekMoE, AuxLossFreeGate, Expert
 from models.mtp import MTPBlock, MTPModule, MultiTokenPrediction
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Helpers
-# ═══════════════════════════════════════════════════════════════════════
-
 def _make_tokens(cfg, bsz=2, seq_len=None, device="cpu"):
     """Random token IDs within vocab range."""
     seq = seq_len or cfg["max_seq_len"]
@@ -30,10 +22,7 @@ def _make_hidden(cfg, bsz=2, seq_len=None, device="cpu"):
     return torch.randn(bsz, seq, cfg["dim"], device=device)
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # ParallelEmbedding
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestParallelEmbedding:
     def test_forward_shape(self, small_cfg, device):
         emb = ParallelEmbedding(small_cfg["vocab_size"], small_cfg["dim"])
@@ -57,10 +46,7 @@ class TestParallelEmbedding:
             "without weight_tying, pointers should differ"
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Transformer construction & forward
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestTransformer:
     def test_construction(self, small_cfg):
         """Verify a Transformer can be built with the minimal config."""
@@ -174,10 +160,7 @@ class TestTransformer:
             "forward() and forward_with_hidden() logits should match"
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # MultiHeadLatentAttention
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestMLA:
     def test_construction(self, small_cfg):
         mla = MultiHeadLatentAttention(small_cfg)
@@ -278,10 +261,7 @@ class TestMLA:
             mla.prefill_cache(kv, pe, start_pos=0)
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # SwiGLUFFN
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestSwiGLUFFN:
     def test_forward_shape(self, small_cfg, device):
         dim, inter_dim = small_cfg["dim"], small_cfg["inter_dim"]
@@ -299,10 +279,7 @@ class TestSwiGLUFFN:
         assert not torch.allclose(out, x, atol=1e-2), "FFN should transform its input"
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Expert (single SwiGLU expert)
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestExpert:
     def test_forward_shape(self, small_cfg, device):
         dim, inter_dim = small_cfg["dim"], small_cfg["moe_inter_dim"]
@@ -312,10 +289,7 @@ class TestExpert:
         assert out.shape == x.shape
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # DeepSeekMoE
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestDeepSeekMoE:
     def test_construction(self, small_cfg):
         moe = DeepSeekMoE(small_cfg)
@@ -424,10 +398,7 @@ class TestDeepSeekMoE:
         assert stats["counts"].shape == (small_cfg["n_routed_experts"],)
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # AuxLossFreeGate (standalone)
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestAuxLossFreeGate:
     def test_construction(self, small_cfg):
         gate = AuxLossFreeGate(small_cfg)
@@ -456,10 +427,7 @@ class TestAuxLossFreeGate:
         assert "bias" in sd
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # TransformerBlock
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestTransformerBlock:
     def test_forward_shape(self, small_cfg, device):
         from models.transformer import TransformerBlock
@@ -479,10 +447,7 @@ class TestTransformerBlock:
         assert out.shape == x.shape
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # MTP components
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestMTPBlock:
     def test_forward_shape(self, small_cfg, device):
         block = MTPBlock(small_cfg).to(device)
@@ -646,10 +611,7 @@ class TestMultiTokenPrediction:
         assert len(mtp_pairs) == 0  # no pairs for seq=1
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Generation
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestGeneration:
     def test_generate_basic(self, small_cfg, device):
         """Basic generation produces output longer than input."""
@@ -736,10 +698,7 @@ class TestGeneration:
         assert out2.size(1) == 12  # 8 prompt + 4 generated
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Parameter counting
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestCountParameters:
     def test_count_parameters(self, small_cfg):
         m = Transformer(small_cfg, use_checkpoint=False)

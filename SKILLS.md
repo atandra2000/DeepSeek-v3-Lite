@@ -79,12 +79,17 @@ Expected: μP scale ≈ 0.745, μP LR ≈ 4.5e-4. (The 8.07e-4 in
 
 ## Skill 6: Add a new data source to the mixture
 
-Edit `data/prepare_data.py`. Re-run the pipeline:
+Edit the **universal** mixture at `data/shared_data/config/mixture.yaml`
+(this is the single source of truth shared by all 5 LLM projects).
+Re-run the pipeline:
 ```bash
-python data/prepare_data.py --sources fineweb,smollm,code,cosmo,math,openmath
+python3 data/prepare_data.py --stage pretrain
+# Or restrict to the new source for a dry-run:
+python3 data/prepare_data.py --stage pretrain --source <new-source-id>
 ```
 
-The mixture weights must sum to 1.0.
+The mixture weights must sum to 1.0. To override per-project, pass
+`--mixture <path-to-yaml>` to the shim.
 
 ## Pitfalls (cross-cutting)
 - **NaN guard** is `nan_guard_max_consecutive=5` — after 5 consecutive NaN

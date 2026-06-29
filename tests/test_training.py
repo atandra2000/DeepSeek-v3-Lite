@@ -1,11 +1,4 @@
-"""
-Tests for training components: PretrainDataset, TrainingConfig, scheduler,
-Pretrainer (construction, train_step, checkpoint roundtrip, MTP integration).
-
-All tests run on CPU (MacBook Air compatible).  CUDA-only features
-(e.g. fused optimiser, AMP) are either patched or tested via direct
-component calls rather than through the full Pretrainer loop.
-"""
+"""Tests for training components: PretrainDataset, TrainingConfig, scheduler, Pretrainer."""
 import copy
 import json
 import os
@@ -30,10 +23,7 @@ from models.mtp import MultiTokenPrediction
 from utils.checkpoint import CheckpointManager
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Helpers
-# ═══════════════════════════════════════════════════════════════════════
-
 def _build_training_config(small_cfg, tmp_ckpt_dir: str, mtp_weight: float = 0.0) -> TrainingConfig:
     """Build a TrainingConfig suitable for CPU testing."""
     return TrainingConfig(
@@ -57,10 +47,7 @@ def _build_training_config(small_cfg, tmp_ckpt_dir: str, mtp_weight: float = 0.0
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # TrainingConfig
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestTrainingConfig:
     def test_defaults(self):
         """TrainingConfig has sensible defaults."""
@@ -107,10 +94,7 @@ class TestTrainingConfig:
         assert "mtp_weight" in d
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # LR Scheduler
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestWarmupCosineScheduler:
     def test_values_at_key_points(self):
         """Scheduler produces expected LR multipliers."""
@@ -151,10 +135,7 @@ class TestWarmupCosineScheduler:
         assert abs(lr_lambda(0) - 1.0) < 1e-6
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # PretrainDataset
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestPretrainDataset:
     def test_single_file(self, tmp_data_file):
         """Single-file dataset loads and returns correct shapes."""
@@ -223,10 +204,7 @@ class TestPretrainDataset:
             ds._locate(-1)
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Pretrainer construction
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestPretrainerConstruction:
     def test_construction_cpu(self, small_cfg, tmp_ckpt_dir):
         """Pretrainer can be constructed on CPU."""
@@ -303,10 +281,7 @@ class TestPretrainerConstruction:
             f"Expected LR {expected_lr:.6e}, got {trainer.config.lr:.6e}"
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Checkpoint roundtrip
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestCheckpointRoundtrip:
     def test_save_load(self, small_cfg, tmp_ckpt_dir):
         """Checkpoint save and load preserves model weights."""
@@ -395,17 +370,10 @@ class TestCheckpointRoundtrip:
         assert len(mtp_keys) > 0, "Should have MTP-prefixed keys in checkpoint"
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Train step (direct component test — bypasses AMP)
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestTrainStep:
     def test_standard_forward_backward(self, small_cfg, device):
-        """
-        Emulate what train_step does for the standard (non-MTP) path.
-        This test verifies the core tensor operations without requiring
-        the full Pretrainer infrastructure or AMP.
-        """
+        """Emulate train_step's standard (non-MTP) path: core tensor ops without AMP."""
         model = Transformer(small_cfg, use_checkpoint=False).to(device)
         model.train()
         opt = torch.optim.AdamW(
@@ -513,10 +481,7 @@ class TestTrainStep:
             f"Only {params_with_grad}/{total_params} params have gradients"
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # MoE balance loss / metric
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestMoEBalanceMetric:
     def test_balance_metric_returns_float(self, small_cfg, device):
         """The collection of balance losses returns a valid float."""
@@ -536,10 +501,7 @@ class TestMoEBalanceMetric:
             assert total > 0, "Balance loss should be positive"
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Config parsing from YAML
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestConfigFromYAML:
     def test_main_function_parses_yaml(self, small_cfg, tmp_ckpt_dir):
         """Verify the config parsing logic in main() works correctly."""

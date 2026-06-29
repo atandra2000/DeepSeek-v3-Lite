@@ -43,10 +43,11 @@ print(f'CUDA: {torch.version.cuda}')
 "
 
 # Check data is present
-DATA_DIR="$REPO_ROOT/data/pretrain_chinchilla"
+DATA_DIR="$REPO_ROOT/data/shards"
 if [[ ! -d "$DATA_DIR" ]] || [[ -z "$(ls -A "$DATA_DIR"/shard_*.bin 2>/dev/null)" ]]; then
     echo "ERROR: no shard_*.bin files in $DATA_DIR"
-    echo "Run first:  python data/prepare_data.py --stage pretrain --tokenizer deepseek-ai/deepseek-coder-v2-lite --shard-size-tokens 50000000 --max-tokens 8400000000 --data-mix deepseek-v3 --include-extra --output-dir data/pretrain_chinchilla"
+    echo "Run first:  python3 data/prepare_data.py --stage pretrain"
+    echo "See data/DATA_PIPELINE.md for the full pipeline guide."
     exit 1
 fi
 echo "Data: $(ls "$DATA_DIR"/shard_*.bin 2>/dev/null | wc -l) shards"

@@ -1,0 +1,63 @@
+# shared_data/config/data_config.yaml
+# UNIVERSAL pipeline-level knobs for the shared data pipeline.
+#
+# These are the "how" of the pipeline (dedup on/off, shard size, vocab).
+# The mixture.yaml is the "what" (which datasets, how much of each).
+#
+# The pipeline is **vocab-agnostic** at the data-prep layer: the
+# tokenizer block here is a *default* (LLaMA-3 BPE) used by GPT-OSS-Lite
+# and LLaMA-3-Lite. Other projects override via flags to the per-project
+# ``data/prepare_data.py`` shim (see each project's data/ folder).
+
+pipeline:
+  # ─────── Tokenizer (default = LLaMA-3 BPE) ───────
+  tokenizer:
+    name: llama3
+    path: null                   # optional path to a local tokenizer dir
+    vocab_size: 128000
+    eos_token_id: 128009         #  in LLaMA-3
+    pad_token_id: 128002
+    add_eos: true                # append EOS after every document
+
+  # ─────── Sharding ───────
+  sharding:
+    shard_size_tokens: 50000000  # 50 M tokens per shard (~190 MB uint32)
+    dtype: uint32                # uint16 fits vocab≤65535; uint32 is safe
+                                 # to 4.29 B tokens (covers the 8B corpus).
+    target_total_tokens: 8000000000  # must match mixture.total_tokens
+
+  # ─────── Dedup ───────
+  dedup:
+    enabled: true
+    method: sha256               # "sha256" (minhash reserved for future)
+    n_hash_buckets: 256
+    bloom_capacity_per_bucket: 200000
+    bloom_error_rate: 0.001
+
+  # ─────── Quality filtering ───────
+  quality:
+    drop_empty: true
+    min_unique_chars_ratio: 0.05
+    max_digit_ratio: 0.50
+    max_punct_ratio: 0.50
+    max_whitespace_ratio: 0.50
+
+  # ─────── Tokenisation ───────
+  tokenize:
+    batch_size: 1024
+    add_special_tokens: false    # we add EOS manually (controlled)
+    show_progress_every_docs: 50000
+
+  # ─────── Packing ───────
+  pack:
+    docs_per_shard_target: 50000000
+    cross_document_boundary_ok: false  # CRITICAL: never split a doc across
+                                       # shards (forces downstream Dataset
+                                       # to align windows on EOS).
+
+  # ─────── Reproducibility ───────
+  seed: 42
+
+  # ─────── Misc ───────
+  streaming_download: true
+  verify_after_pack: true
