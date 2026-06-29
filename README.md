@@ -7,6 +7,8 @@
 
 > **Status:** Architecture, training pipeline, and inference paths are implemented and smoke-tested; the Chinchilla-optimal 8.4B-token pretraining run has not yet started.
 
+> Conceptual notes extracted from the source tree live in [`documentation/`](documentation/README.md); the authoritative MLA deep-dive is [`MLA.md`](MLA.md).
+
 A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, designed for Chinchilla-optimal training on a single **A100 80GB SXM** (projected **~13-15 hours** wall time).
 
 | Config | Parameters | Tokens | GPU | Wall time | Peak VRAM | Status |
@@ -55,7 +57,6 @@ flowchart LR
 
 ### DeepSeekMoE &mdash; aux-loss-free routing
 
-```
 ```
    hidden state h
         │
@@ -191,12 +192,10 @@ pip install -r requirements.txt
 ### Launch Sequence (A100 80GB)
 
 ```bash
-# 1. Data — download and tokenise 8.4B tokens
-python data/prepare_data.py --stage pretrain \
-    --tokenizer deepseek-ai/deepseek-coder-v2-lite \
-    --shard-size-tokens 50000000 --max-tokens 8400000000 \
-    --data-mix deepseek-v3 --include-extra \
-    --output-dir data/pretrain_chinchilla
+# 1. Data — universal 8.0B-token pipeline (shim over LLM/shared_data)
+python3 data/prepare_data.py --stage pretrain
+# Optional: --skip-download (re-use an existing corpus)
+# See data/DATA_PIPELINE.md for the full per-project pipeline guide.
 
 # 2. Microbench — measure peak VRAM
 python scripts/microbench_a100.py
@@ -231,7 +230,9 @@ bash scripts/launch_a100.sh
 │   ├── logging.py                  # WandB-capable training logger
 │   └── memory.py                   # VRAM estimator + GPU guard
 ├── data/
-│   └── prepare_data.py             # Download, tokenise, pack datasets
+│   ├── prepare_data.py             # Shim over data/shared_data/ universal pipeline
+│   ├── shared_data/                # Vendored universal 8.0B-token pipeline
+│   └── DATA_PIPELINE.md            # Per-project pipeline guide
 └── scripts/
     ├── microbench_a100.py          # Peak VRAM measurement
     ├── step_time_a100.py           # MFU benchmark (target 30-45%)

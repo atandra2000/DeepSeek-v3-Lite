@@ -1,9 +1,4 @@
-"""
-Shared fixtures for DeepSeek-V3-Lite test suite.
-
-All tests run on CPU (MacBook Air compatible, no GPU required).
-Config dimensions are kept small to keep tests fast.
-"""
+"""Shared fixtures for DeepSeek-V3-Lite test suite (CPU-only, small configs)."""
 import os
 import tempfile
 from pathlib import Path
@@ -13,21 +8,13 @@ import pytest
 import torch
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# Small config — matches the 82M architecture but truncated for speed
-# ═══════════════════════════════════════════════════════════════════════
-
 @pytest.fixture(scope="session")
 def cfg() -> Dict:
-    """
-    Minimal model config matching the 82M architecture.
-    Dimensions are the real values from configs/pretrain_82m.yaml;
-    tests that need faster execution can override via `small_cfg`.
-    """
+    """Minimal model config matching the 82M architecture (truncated for test speed)."""
     return {
         "vocab_size":          100018,
         "dim":                 640,
-        "n_layers":            2,      # reduced from 12 for test speed
+        "n_layers":            2,
         "n_heads":             10,
         "n_dense_layers":      1,
         "n_routed_experts":    8,
@@ -92,13 +79,9 @@ def device() -> torch.device:
 
 @pytest.fixture(scope="session")
 def nested_cfg(cfg) -> Dict:
-    """Config nested under ``model`` key — the format used in YAML files."""
+    """Config nested under the 'model' key (YAML format)."""
     return {"model": cfg}
 
-
-# ═══════════════════════════════════════════════════════════════════════
-# Training config
-# ═══════════════════════════════════════════════════════════════════════
 
 @pytest.fixture(scope="session")
 def training_cfg(cfg) -> Dict:
@@ -131,10 +114,7 @@ def training_cfg(cfg) -> Dict:
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Token fixtures
-# ═══════════════════════════════════════════════════════════════════════
-
 @pytest.fixture(scope="session")
 def tokens(small_cfg, device) -> torch.Tensor:
     """Random token IDs in the valid vocab range."""
@@ -148,10 +128,7 @@ def targets(small_cfg, tokens) -> torch.Tensor:
     return tokens.clone()
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Temporary directory for checkpoint tests
-# ═══════════════════════════════════════════════════════════════════════
-
 @pytest.fixture()
 def tmp_ckpt_dir():
     """Yield a temporary directory and clean up after the test."""
@@ -161,10 +138,7 @@ def tmp_ckpt_dir():
     shutil.rmtree(tmp, ignore_errors=True)
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Training data helpers
-# ═══════════════════════════════════════════════════════════════════════
-
 @pytest.fixture()
 def tmp_data_file():
     """Write a small packed-token .bin file and yield its path."""

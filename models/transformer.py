@@ -49,9 +49,7 @@ class ParallelEmbedding(nn.Module):
 
 
 class Transformer(nn.Module):
-    """DeepSeek-V3-style Transformer: MLA attention, MoE FFN, optional MTP.
-    Takes config dict (flat or nested {"model":{...}}). Caches causal mask by seqlen+device.
-    Call reset_cache() between independent generation requests."""
+    """DeepSeek-V3-style Transformer: MLA attention, MoE FFN, optional MTP."""
     def __init__(self, config: dict, use_checkpoint: bool = False):
         super().__init__()
         model_cfg = config.get("model", config)
@@ -116,8 +114,7 @@ class Transformer(nn.Module):
     @torch.inference_mode()
     def generate(self, input_ids: torch.Tensor, max_new_tokens: int = 512, temperature: float = 1.0,
                  top_p: float = 0.9, top_k: int = 0, eos_token_id: Optional[int] = None) -> torch.Tensor:
-        """Autoregressive generation with KV-cache, top-p and top-k sampling.
-        Prefill (full prompt) then decode one token at a time."""
+        """Autoregressive generation with KV-cache, top-p and top-k sampling."""
         if temperature < 0.0:
             raise ValueError(f"temperature must be >= 0, got {temperature}")
         was_training = self.training

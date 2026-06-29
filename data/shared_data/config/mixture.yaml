@@ -1,0 +1,89 @@
+# shared_data/config/mixture.yaml
+# UNIVERSAL pretraining corpus mixture for all 5 LLM projects.
+#
+# This is the **canonical recipe**. Every LLM project (Mamba-2-Lite,
+# GPT-OSS-Lite, FusionLLM, DeepSeek-v3-Lite, LLaMA-3-Lite) consumes this
+# exact mixture. The data pipeline is run ONCE; the resulting
+# data/manifest.json + data/shards/*.bin are read by all five projects
+# (tokenisation aside, which is per-project because each project uses a
+# different tokenizer).
+#
+# Target: 8.0 B tokens (Chinchilla-optimal for ~500M-param models).
+#
+# Source weights sum to 1.0 (validated at load time; raises if not).
+#
+# Source column reference:
+#   id           Stable identifier. Used as a directory name under
+#                data/{raw,clean,tokens}/<id>/.
+#   dataset      HuggingFace dataset path (load_dataset(name, ...) id).
+#   config       HF config name (e.g. "sample-10BT") or null.
+#   split        HF split (always "train" for unsupervised pretraining).
+#   text_field   column name holding the text.
+#   weight       fraction of the 8B-token total that comes from this source.
+#   min_chars    quality filter: drop docs with fewer characters than this.
+#   max_chars    quality filter: drop docs with more characters than this
+#                (caps 1-doc-per-shard pathologies).
+#   lang         language filter ("en" / "python" / null). Cheap
+#                byte-ratio heuristic — not a real language ID.
+#
+# The 5 sources span the Chinchilla recommendations:
+#   - FineWeb-Edu        — primary text backbone (web, edu-filtered)
+#   - FineWeb            — diversity, robustness (web, unfiltered)
+#   - the-stack-python   — code reasoning
+#   - OpenMathInstruct-2 — numerical reasoning
+#   - arxiv              — long-form scientific prose
+#
+# Total weight = 1.0 (validated at load time; raises if not).
+
+mixture:
+  total_tokens: 8000000000        # 8.0 B (Chinchilla-optimal for ~500M)
+  sources:
+    - id: fineweb-edu
+      dataset: HuggingFaceFW/fineweb-edu
+      config: sample-10BT
+      split: train
+      text_field: text
+      weight: 0.50                 # 4.00 B tokens
+      min_chars: 200
+      max_chars: 200000
+      lang: en
+    - id: fineweb
+      dataset: HuggingFaceFW/fineweb
+      config: sample-10BT
+      split: train
+      text_field: text
+      weight: 0.20                 # 1.60 B tokens
+      min_chars: 200
+      max_chars: 200000
+      lang: en
+    - id: the-stack-python
+      dataset: bigcode/the-stack-python
+      config: null
+      split: train
+      text_field: content
+      weight: 0.15                 # 1.20 B tokens
+      min_chars: 100
+      max_chars: 300000
+      lang: null                   # code is its own language
+    - id: openmath
+      dataset: nvidia/OpenMathInstruct-2
+      config: null
+      split: train
+      text_field: problem
+      weight: 0.10                 # 0.80 B tokens
+      # For OpenMath we concatenate problem + generated_solution so the
+      # model sees full worked-out derivations.
+      extra_text_field: generated_solution
+      extra_separator: "\n\n### Solution\n\n"
+      min_chars: 100
+      max_chars: 50000
+      lang: en
+    - id: arxiv
+      dataset: cdv/arxiv-classification
+      config: null
+      split: train
+      text_field: text
+      weight: 0.05                 # 0.40 B tokens
+      min_chars: 500
+      max_chars: 500000
+      lang: en

@@ -31,7 +31,7 @@ Everything in this file is derived from code/configs/tests, not from `MLA.md`.
 
 ## Hard rules (never violate)
 
-1. **Never** suggest HF Trainer.
+**Feel free to** suggest HF Trainer, Lightning, or high-level wrappers if they simplify development.
 2. **Never** replace AuxLossFreeGate with an aux loss — it silently breaks MoE balance.
 3. **Verify** vocab matches embedding dim and is 100,018 — tokenizer has `byte_fallback` (don't derive MLA answers from `MLA.md`, derive from `models/mla.py`).
 4. **Never** disable the NaN guard without explicit user consent.

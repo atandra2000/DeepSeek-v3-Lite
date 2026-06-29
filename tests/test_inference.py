@@ -1,10 +1,4 @@
-"""
-Tests for inference: generate_tokens, generate_interactive, SpeculativeDecoder.
-
-All tests run on CPU with small configs.  Speculative decoder tests verify
-correct positional tracking, KV-cache lifecycle, and accept/reject logic
-without requiring a CUDA GPU.
-"""
+"""Tests for inference: generate_tokens, generate_interactive, SpeculativeDecoder."""
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,10 +10,7 @@ from inference.generate import generate_tokens, generate_interactive
 from inference.speculative import SpeculativeDecoder
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Helpers
-# ═══════════════════════════════════════════════════════════════════════
-
 def _make_model(small_cfg, device="cpu"):
     m = Transformer(small_cfg, use_checkpoint=False).to(device)
     m.eval()
@@ -30,10 +21,7 @@ def _make_prompt(small_cfg, length=8, device="cpu"):
     return torch.randint(0, small_cfg["vocab_size"] - 1, (1, length), device=device)
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # generate_tokens
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestGenerateTokens:
     def test_basic(self, small_cfg, device):
         """generate_tokens produces output longer than input."""
@@ -68,10 +56,7 @@ class TestGenerateTokens:
         assert out.size(1) == prompt.size(1) + 4
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # SpeculativeDecoder
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestSpeculativeDecoder:
     def test_construction(self, small_cfg, device):
         """SpeculativeDecoder can be built from a model + MTP module."""
@@ -194,10 +179,7 @@ class TestSpeculativeDecoder:
             assert out.size(1) >= prompt.size(1)
 
     def test_forward_with_hidden_cache_coherence(self, small_cfg, device):
-        """
-        forward_with_hidden with use_cache=True correctly reads prior context
-        and writes new entries without re-processing the prefix.
-        """
+        """forward_with_hidden with use_cache=True reads prior context and writes new entries."""
         model = _make_model(small_cfg, device)
         prompt = _make_prompt(small_cfg, length=4, device=device)
 
@@ -219,10 +201,7 @@ class TestSpeculativeDecoder:
         assert logits.shape[2] == full_logits.shape[2]
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # generate_interactive (lightweight — delegates to generate_tokens)
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestGenerateInteractive:
     def test_delegates_to_generate_tokens(self, small_cfg):
         """generate_interactive calls model.generate() via generate_tokens."""
@@ -281,10 +260,7 @@ class TestGenerateInteractive:
             )
 
 
-# ═══════════════════════════════════════════════════════════════════════
 # Load config / Checkpoint (inference entry-point helpers)
-# ═══════════════════════════════════════════════════════════════════════
-
 class TestInferenceHelpers:
     def test_load_config_valid(self, small_cfg, tmp_ckpt_dir):
         """load_config() parses a valid YAML."""

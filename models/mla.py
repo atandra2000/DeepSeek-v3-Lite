@@ -6,8 +6,7 @@ from typing import Optional
 
 
 class MultiHeadLatentAttention(nn.Module):
-    """Multi-Head Latent Attention (MLA) from DeepSeek-V3.
-    Low-rank KV compression, decoupled RoPE, absorption trick."""
+    """Multi-Head Latent Attention (MLA) from DeepSeek-V3."""
     def __init__(self, config: dict, layer_idx: int = 0):
         super().__init__()
         self.layer_idx = layer_idx

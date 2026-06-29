@@ -9,7 +9,7 @@ def _parameter_bytes(model: nn.Module) -> int:
 
 
 def _optimiser_bytes(model: nn.Module) -> int:
-    return sum(p.numel() for p in model.parameters()) * 12  # FP32 m,v,master
+    return sum(p.numel() for p in model.parameters()) * 12
 
 
 def _kv_cache_bytes(model: nn.Module, seq_len: int, batch_size: int, dtype_bytes: int = 2) -> int:

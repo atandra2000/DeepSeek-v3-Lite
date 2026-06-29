@@ -1,5 +1,8 @@
 # AGENTS.md — DeepSeek-v3-Lite
 
+> **CRITICAL RULE:** You must also read, understand, and strictly obey all workspace-level rules defined in the top-level `CoreProjects/AGENTS.md` and `CoreProjects/.agents/AGENTS.md` files. Those higher-level instructions apply globally to all projects.
+
+
 > **Project:** `LLM/DeepSeek-v3-Lite/` · **Type:** faithful V3 reproduction
 > **Scale:** ~422M params · 8.4B tokens (planned) · 13–15h on A100 80GB
 > **Stack:** PyTorch 2.x, TF32, `torch.compile(max-autotune)`, FA2, dataclasses
@@ -44,14 +47,17 @@ DeepSeek-V2/V3 papers cold and the codebase even better.
 - `inference/speculative.py` — MTP-based speculative decoder (~0.8
   acceptance, up to 2× throughput).
 
-**Data:** `fineweb 1.0 / smollm 0.6 / code 0.3 / cosmo 0.2 / math 0.1 /
-openmath 0.1`. Tokenized with `deepseek-coder-v2-lite` tokenizer
-(vocab 100,018).
+**Data:** Universal 8.0B-token pipeline (vendored at `data/shared_data/`)
+shared by all 5 LLM projects. Mixture: FineWeb-Edu 0.5 / FineWeb 0.2 /
+the-stack-python 0.15 / OpenMathInstruct-2 0.10 / arxiv 0.05.
+Tokenized with `deepseek-coder-v2-lite` tokenizer (vocab 100,018).
+See `data/DATA_PIPELINE.md`.
 
 **Configs:** `configs/pretrain_a100_422m.yaml` (canonical 422M A100 recipe).
 
 **Hard rules:**
-1. **Never** suggest HF Trainer.
+1. **Raw PyTorch Only:** Never suggest HuggingFace Trainer, PyTorch Lightning, or similar wrappers. The user builds from scratch to understand every detail.
+2. **Hardware Optimization:** Prioritize hardware-optimized training and maximizing hardware utilization.
 2. **Always** preserve the AuxLossFreeGate bias-update mechanism — replacing
    it with a standard auxiliary loss breaks MoE load balance silently.
 3. **Always** read `MLA.md` before answering MLA questions — it is the
