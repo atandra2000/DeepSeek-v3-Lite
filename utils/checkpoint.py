@@ -57,20 +57,8 @@ class CheckpointManager:
         steps = self._list_steps()
         return next((s for s in sorted(steps, reverse=True) if self._checkpoint_complete(s)), None)
 
-    def list_checkpoints(self) -> list:
-        return sorted(s for s in self._list_steps() if self._checkpoint_complete(s))
-
-    def delete_checkpoint(self, step: int) -> None:
-        for pattern in [f"model_step_{step}.safetensors", f"optim_step_{step}.pt", f"meta_step_{step}.json"]:
-            p = self.save_dir / pattern
-            if p.exists():
-                p.unlink()
-        logger.info("[checkpoint] deleted step %d", step)
-
-    def keep_last_n(self, n: int) -> None:
-        complete = self.list_checkpoints()
-        for step in complete[:-n]:
-            self.delete_checkpoint(step)
+    # ponytail: list_checkpoints/delete_checkpoint/keep_last_n retention API removed —
+    # only callers were tests; training loop uses save + latest_step. Add back when retention is wired in.
 
     def _atomic_save_safetensors(self, state: dict, path: Path) -> None:
         seen_ptrs: set = set()
@@ -112,7 +100,7 @@ class CheckpointManager:
         os.close(fd)
         try:
             with open(tmp, "w") as f:
-                json.dump(obj, f, indent=2, default=_json_default)
+                json.dump(obj, f, indent=2, default=str)
             os.replace(tmp, path)
         except Exception:
             try:
@@ -134,10 +122,5 @@ class CheckpointManager:
         return all((self.save_dir / n).exists() for n in [
             f"model_step_{step}.safetensors", f"optim_step_{step}.pt", f"meta_step_{step}.json"])
 
-
-def _json_default(obj):
-    if isinstance(obj, torch.Tensor):
-        return obj.tolist()
-    if hasattr(obj, "__dict__"):
-        return obj.__dict__
-    raise TypeError(f"Object of type {type(obj)} is not JSON serialisable")
+# ponytail: local _json_default removed — duplicate of shared_data.common._json_default.
+# Only caller writes plain types (scheduler state_dict, asdict(config)); default=str is the safety net.

@@ -1,4 +1,3 @@
-from torch.nn.modules.module import Module
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -91,7 +90,7 @@ class MultiTokenPrediction(nn.Module):
         seq_len = tokens.size(1)
         main_logits, prev_h = self.main_model.forward_with_hidden(tokens)
         mtp_pairs: List[Tuple[torch.Tensor, torch.Tensor]] = []
-        for d, mtp in enumerate[Module](self.mtp_modules):
+        for d, mtp in enumerate(self.mtp_modules):  # ponytail: dropped [Module] subscript — was a typo that only worked because the now-deleted import kept `Module` in scope.
             usable = seq_len - d - 2
             if usable <= 0:
                 break

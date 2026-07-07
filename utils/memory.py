@@ -30,8 +30,8 @@ def _activation_bytes(seq_len: int, batch_size: int, hidden_dim: int, n_layers: 
 
 def _infer_dim_n_layers(model: nn.Module) -> tuple[int, int]:
     hd = getattr(model, "dim", 0)
-    if hasattr(model, "embed") and hasattr(model.embed, "dim"):
-        hd = model.embed.dim
+    if hasattr(model, "embed") and hasattr(model.embed, "embedding_dim"):
+        hd = model.embed.embedding_dim  # ponytail: nn.Embedding exposes embedding_dim (was ParallelEmbedding.dim)
     nl = len(model.layers) if hasattr(model, "layers") and isinstance(model.layers, nn.ModuleList) else 0
     return hd, nl
 

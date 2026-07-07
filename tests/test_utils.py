@@ -87,44 +87,6 @@ class TestCheckpointManagerSaveLoad:
 
         assert ckpt.latest_step() is None, "Incomplete step should be skipped"
 
-    def test_list_checkpoints(self, small_cfg, tmp_ckpt_dir):
-        """list_checkpoints() returns sorted complete steps."""
-        ckpt = CheckpointManager(str(tmp_ckpt_dir))
-        model = Transformer(small_cfg, use_checkpoint=False)
-        opt = torch.optim.AdamW(model.parameters(), lr=1e-4, fused=False)
-
-        ckpt.save(model, opt, step=1)
-        ckpt.save(model, opt, step=5)
-        ckpt.save(model, opt, step=3)
-
-        steps = ckpt.list_checkpoints()
-        assert steps == [1, 3, 5]
-
-    def test_keep_last_n(self, small_cfg, tmp_ckpt_dir):
-        """keep_last_n removes older checkpoints."""
-        ckpt = CheckpointManager(str(tmp_ckpt_dir))
-        model = Transformer(small_cfg, use_checkpoint=False)
-        opt = torch.optim.AdamW(model.parameters(), lr=1e-4, fused=False)
-
-        for step in [1, 2, 3, 4, 5]:
-            ckpt.save(model, opt, step=step)
-
-        ckpt.keep_last_n(2)
-        remaining = ckpt.list_checkpoints()
-        assert remaining == [4, 5], f"Expected [4, 5], got {remaining}"
-
-    def test_delete_checkpoint(self, small_cfg, tmp_ckpt_dir):
-        """delete_checkpoint removes all files for a step."""
-        ckpt = CheckpointManager(str(tmp_ckpt_dir))
-        model = Transformer(small_cfg, use_checkpoint=False)
-        opt = torch.optim.AdamW(model.parameters(), lr=1e-4, fused=False)
-
-        ckpt.save(model, opt, step=7)
-        assert ckpt.latest_step() == 7
-
-        ckpt.delete_checkpoint(7)
-        assert ckpt.latest_step() is None
-
     def test_load_missing_checkpoint_raises(self, small_cfg, tmp_ckpt_dir):
         """Loading a non-existent step raises FileNotFoundError."""
         ckpt = CheckpointManager(str(tmp_ckpt_dir))

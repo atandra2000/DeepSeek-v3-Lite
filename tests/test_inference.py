@@ -1,4 +1,4 @@
-"""Tests for inference: generate_tokens, generate_interactive, SpeculativeDecoder."""
+"""Tests for inference: model.generate, generate_interactive, SpeculativeDecoder."""
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -6,7 +6,7 @@ import torch
 
 from models.transformer import Transformer
 from models.mtp import MTPModule, MultiTokenPrediction
-from inference.generate import generate_tokens, generate_interactive
+from inference.generate import generate_interactive
 from inference.speculative import SpeculativeDecoder
 
 
@@ -21,29 +21,29 @@ def _make_prompt(small_cfg, length=8, device="cpu"):
     return torch.randint(0, small_cfg["vocab_size"] - 1, (1, length), device=device)
 
 
-# generate_tokens
+# model.generate (exercises the inference path previously wrapped by generate_tokens)
 class TestGenerateTokens:
     def test_basic(self, small_cfg, device):
-        """generate_tokens produces output longer than input."""
+        """model.generate produces output longer than input."""
         model = _make_model(small_cfg, device)
         prompt = _make_prompt(small_cfg, device=device)
-        out = generate_tokens(model, prompt, max_new_tokens=8, temperature=1.0, top_p=0.9)
+        out = model.generate(prompt, max_new_tokens=8, temperature=1.0, top_p=0.9)
         assert out.shape == (1, prompt.size(1) + 8)
 
     def test_greedy(self, small_cfg, device):
         """Greedy generation (temperature=0) is deterministic."""
         model = _make_model(small_cfg, device)
         prompt = _make_prompt(small_cfg, device=device)
-        out1 = generate_tokens(model, prompt, max_new_tokens=4, temperature=0.0)
-        out2 = generate_tokens(model, prompt, max_new_tokens=4, temperature=0.0)
+        out1 = model.generate(prompt, max_new_tokens=4, temperature=0.0)
+        out2 = model.generate(prompt, max_new_tokens=4, temperature=0.0)
         assert torch.equal(out1, out2)
 
     def test_eos_parameter_passed(self, small_cfg, device):
-        """EOS token ID is passed through to model.generate()."""
+        """EOS token ID is accepted by model.generate()."""
         model = _make_model(small_cfg, device)
         prompt = _make_prompt(small_cfg, device=device)
         # Should not crash with eos_token_id
-        out = generate_tokens(model, prompt, max_new_tokens=4,
+        out = model.generate(prompt, max_new_tokens=4,
                               temperature=0.0, eos_token_id=0)
         assert out.size(1) >= prompt.size(1)
 
@@ -51,7 +51,7 @@ class TestGenerateTokens:
         """Non-default top_p works."""
         model = _make_model(small_cfg, device)
         prompt = _make_prompt(small_cfg, device=device)
-        out = generate_tokens(model, prompt, max_new_tokens=4,
+        out = model.generate(prompt, max_new_tokens=4,
                               temperature=0.8, top_p=0.5)
         assert out.size(1) == prompt.size(1) + 4
 
@@ -161,7 +161,7 @@ class TestSpeculativeDecoder:
         prompt = _make_prompt(small_cfg, length=4, device=device)
 
         out_spec = decoder.generate(prompt, max_new_tokens=4)
-        out_std = generate_tokens(model, prompt, max_new_tokens=4, temperature=0.0)
+        out_std = model.generate(prompt, max_new_tokens=4, temperature=0.0)
 
         # Both should produce output within the same length range
         assert out_spec.size(1) >= prompt.size(1)

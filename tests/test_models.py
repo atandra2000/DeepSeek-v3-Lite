@@ -3,7 +3,7 @@ import pytest
 import torch
 from torch import nn
 
-from models.transformer import Transformer, SwiGLUFFN, ParallelEmbedding, count_parameters
+from models.transformer import Transformer, SwiGLUFFN, count_parameters
 from models.mla import MultiHeadLatentAttention
 from models.moe import DeepSeekMoE, AuxLossFreeGate, Expert
 from models.mtp import MTPBlock, MTPModule, MultiTokenPrediction
@@ -22,14 +22,8 @@ def _make_hidden(cfg, bsz=2, seq_len=None, device="cpu"):
     return torch.randn(bsz, seq, cfg["dim"], device=device)
 
 
-# ParallelEmbedding
-class TestParallelEmbedding:
-    def test_forward_shape(self, small_cfg, device):
-        emb = ParallelEmbedding(small_cfg["vocab_size"], small_cfg["dim"])
-        x = torch.randint(0, small_cfg["vocab_size"] - 1, (2, 8), device=device)
-        out = emb(x)
-        assert out.shape == (2, 8, small_cfg["dim"])
-
+# Embedding / weight tying — ParallelEmbedding wrapper removed; nn.Embedding is stdlib.
+class TestEmbedding:
     def test_weight_tying_shared(self, small_cfg):
         """Verify weight tying shares the same storage."""
         from models.transformer import Transformer

@@ -36,18 +36,7 @@ class TransformerBlock(nn.Module):
         return x
 
 
-class ParallelEmbedding(nn.Module):
-    """Vocabulary embedding for single-GPU."""
-    def __init__(self, vocab_size: int, dim: int):
-        super().__init__()
-        self.vocab_size = vocab_size
-        self.dim = dim
-        self.weight = nn.Parameter(torch.empty(vocab_size, dim))
-        nn.init.normal_(self.weight, std=0.006)
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.embedding(x, self.weight)
-
-
+# ponytail: ParallelEmbedding wrapper removed — nn.Embedding + normal init is the same thing.
 class Transformer(nn.Module):
     """DeepSeek-V3-style Transformer: MLA attention, MoE FFN, optional MTP."""
     def __init__(self, config: dict, use_checkpoint: bool = False):
@@ -56,7 +45,8 @@ class Transformer(nn.Module):
         self.use_checkpoint = use_checkpoint
         self.max_seq_len = model_cfg["max_seq_len"]
         self.config = model_cfg
-        self.embed = ParallelEmbedding(model_cfg["vocab_size"], model_cfg["dim"])
+        self.embed = nn.Embedding(model_cfg["vocab_size"], model_cfg["dim"])
+        nn.init.normal_(self.embed.weight, std=0.006)
         self.layers = nn.ModuleList([TransformerBlock(i, model_cfg) for i in range(model_cfg["n_layers"])])
         self.norm = nn.RMSNorm(model_cfg["dim"], eps=1e-6)
         self.weight_tying = model_cfg.get("weight_tying", False)

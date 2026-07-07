@@ -22,11 +22,7 @@ def load_config(path: str) -> dict:
     return cfg
 
 
-@torch.inference_mode()
-def generate_tokens(model: torch.nn.Module, input_ids: torch.Tensor, max_new_tokens: int = 512,
-                    temperature: float = 1.0, top_p: float = 0.9, eos_token_id: Optional[int] = None) -> torch.Tensor:
-    return model.generate(input_ids, max_new_tokens=max_new_tokens, temperature=temperature, top_p=top_p, eos_token_id=eos_token_id)
-
+# ponytail: generate_tokens wrapper removed — Transformer.generate is already @torch.inference_mode decorated.
 
 @torch.inference_mode()
 def generate_interactive(model: torch.nn.Module, tokenizer, args, mtp_module: Optional[MTPModule] = None) -> None:
@@ -53,7 +49,7 @@ def generate_interactive(model: torch.nn.Module, tokenizer, args, mtp_module: Op
         if decoder is not None:
             output_ids = decoder.generate(input_ids, max_new_tokens=args.max_new_tokens, temperature=args.temperature, eos_token_id=eos_id)
         else:
-            output_ids = generate_tokens(model, input_ids, max_new_tokens=args.max_new_tokens, temperature=args.temperature, top_p=args.top_p, eos_token_id=eos_id)
+            output_ids = model.generate(input_ids, max_new_tokens=args.max_new_tokens, temperature=args.temperature, top_p=args.top_p, eos_token_id=eos_id)
         new_tokens = output_ids[0, input_ids.shape[1]:]
         response = tokenizer.decode(new_tokens, skip_special_tokens=True)
         print(f"\nAssistant: {response}")

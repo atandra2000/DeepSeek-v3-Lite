@@ -15,7 +15,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 from models.transformer import Transformer, count_parameters
 from models.mtp import MultiTokenPrediction
 from utils.checkpoint import CheckpointManager
-from utils.distributed import device
 from utils.logging import init_logging, get_logger
 from utils.memory import assert_fits_in_available_gpu, estimate_model_memory_gb
 
@@ -49,7 +48,6 @@ class TrainingConfig:
     beta2: float = 0.95
     max_grad_norm: float = 1.0
     mtp_weight: float = 0.0
-    balance_loss_alpha: float = 0.0
     bias_update_speed: float = 0.001
     bias_update_every: int = 10
     grad_checkpoint: bool = True
@@ -161,7 +159,8 @@ class Pretrainer:
     """BF16 pre-training loop for single GPU."""
     def __init__(self, config: TrainingConfig):
         self.config = config
-        self.device = device()
+        # ponytail: inlined utils.distributed.device() — one-line torch.device call.
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if not torch.cuda.is_available():
             print("[warn] CUDA not available — running on CPU (smoke-testing only).")
         else:
@@ -422,7 +421,6 @@ def main() -> None:
         max_grad_norm=t.get("grad_clip", 1.0),
         grad_checkpoint=t.get("grad_checkpoint", True) and not args.no_checkpoint,
         compile_model=t.get("compile", True) and not args.no_compile,
-        balance_loss_alpha=t.get("balance_loss_alpha", 0.0),
         mtp_weight=t.get("mtp_loss_weight", 0.0),
         bias_update_speed=t.get("bias_update_speed", 0.001),
         bias_update_every=t.get("bias_update_every", 10),

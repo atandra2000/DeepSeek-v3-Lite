@@ -106,7 +106,6 @@ def training_cfg(cfg) -> Dict:
             "bias_update_speed":           0.001,
             "bias_update_every":           10,
             "save_dir":                    "/tmp/test_checkpoints",
-            "balance_loss_alpha":          0.0,
         },
         "data": {
             "train_data_path": "/tmp/test_data.bin",

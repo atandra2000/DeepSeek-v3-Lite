@@ -61,7 +61,6 @@ training:
   nan_guard:                     true
   nan_guard_max_consecutive:     5
   log_per_component_params:      true
-  balance_loss_alpha:            0.0
   bias_update_speed:             0.001
   bias_update_every:             1
   save_dir:                      "checkpoints/pretrain_a100"
