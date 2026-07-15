@@ -30,7 +30,8 @@ DeepSeek-V2/V3 papers cold and the codebase even better.
 
 **Component map:**
 - `models/mla.py` — `kv_lora_rank=192`, `qk_rope_head_dim=24`, absorption
-  trick, YaRN scaling, KV cache. **643-line technical deep-dive in `MLA.md`.**
+  trick, YaRN scaling (gated by `rope_factor > 1.0`; canonical config uses
+  `rope_factor=1.0` so YaRN is dormant), KV cache. **643-line technical deep-dive in `MLA.md`.**
 - `models/moe.py` — `AuxLossFreeGate` + `DeepSeekMoE`: 20 routed (top-4) +
   1 shared, stacked bmm dispatch, dynamic bias updates.
 - `models/mtp.py` — depth=1, shared output head, speculative-decoding
@@ -47,24 +48,25 @@ DeepSeek-V2/V3 papers cold and the codebase even better.
 - `inference/speculative.py` — MTP-based speculative decoder (~0.8
   acceptance, up to 2× throughput).
 
-**Data:** Universal 8.0B-token pipeline (vendored at `data/shared_data/`)
-shared by all 5 LLM projects. Mixture: FineWeb-Edu 0.5 / FineWeb 0.2 /
-the-stack-python 0.15 / OpenMathInstruct-2 0.10 / arxiv 0.05.
-Tokenized with `deepseek-coder-v2-lite` tokenizer (vocab 100,018).
-See `data/DATA_PIPELINE.md`.
+**Data:** Universal 8.0B-token pipeline (lives at `LLM/shared_data/` in the
+workspace umbrella; this project imports it via `sys.path` in
+`data/prepare_data.py` — it is not vendored here). Mixture: FineWeb-Edu
+0.5 / FineWeb 0.2 / the-stack-python 0.15 / OpenMathInstruct-2 0.10 / arxiv
+0.05. Tokenized with `deepseek-ai/deepseek-coder-v2-lite` tokenizer (vocab
+100,018). See `data/DATA_PIPELINE.md`.
 
 **Configs:** `configs/pretrain_a100_422m.yaml` (canonical 422M A100 recipe).
 
 **Hard rules:**
 1. **Raw PyTorch Only:** Never suggest HuggingFace Trainer, PyTorch Lightning, or similar wrappers. The user builds from scratch to understand every detail.
 2. **Hardware Optimization:** Prioritize hardware-optimized training and maximizing hardware utilization.
-2. **Always** preserve the AuxLossFreeGate bias-update mechanism — replacing
+3. **Always** preserve the AuxLossFreeGate bias-update mechanism — replacing
    it with a standard auxiliary loss breaks MoE load balance silently.
-3. **Always** read `MLA.md` before answering MLA questions — it is the
+4. **Always** read `MLA.md` before answering MLA questions — it is the
    643-line authoritative reference.
-4. **Always** verify the embedding dim matches `vocab_size` (100,018) — the
+5. **Always** verify the embedding dim matches `vocab_size` (100,018) — the
    tokenizer has unusual `byte_fallback` tokens.
-5. **Never** disable the NaN guard without explicit user consent.
+6. **Never** disable the NaN guard without explicit user consent.
 
 **Known issues:**
 - Full 8.4B-token run not yet started.

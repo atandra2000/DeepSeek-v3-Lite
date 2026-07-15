@@ -118,7 +118,7 @@ Input tokens (vocab = 100,018)
     │
     ├─ Layers 2-17: MoE Transformer Blocks (×16)
     │     MLA → DeepSeekMoE FFN
-    │             ├─ 2 shared experts (always active)
+    │             ├─ 1 shared expert (always active)
     │             └─ 20 routed experts (top-4 per token)
     │
     └─ RMSNorm → Linear head → logits
@@ -133,7 +133,7 @@ MLA projects keys and values into a low-rank latent space (`kv_lora_rank=192`), 
 
 ### DeepSeekMoE
 
-20 routed experts with top-4 routing plus 2 always-active shared experts. Load balancing uses **aux-loss-free bias updates**: a per-expert bias on the gate logit is adjusted periodically based on observed token count deviation, with no auxiliary gradient term contaminating the task loss. The `stacked` dispatch mode runs one bmm per SwiGLU projection.
+20 routed experts with top-4 routing plus 1 always-active shared expert. Load balancing uses **aux-loss-free bias updates**: a per-expert bias on the gate logit is adjusted periodically based on observed token count deviation, with no auxiliary gradient term contaminating the task loss. The `stacked` dispatch mode runs one bmm per SwiGLU projection.
 
 ### Multi-Token Prediction (MTP)
 
@@ -184,6 +184,14 @@ tokens = decoder.generate(prompt_ids, max_new_tokens=512)
 ## Quick Start
 
 ```bash
+# 0. Get the data pipeline (this project imports the universal pipeline from
+#    a sibling directory — `data/prepare_data.py` adds it to sys.path):
+#    LLM/                       ← workspace root
+#      ├── shared_data/         ← universal 8.0B-token pipeline (single source of truth)
+#      ├── DeepSeek-v3-Lite/    ← this project
+#      ├── ...
+#    Pull or vendor the LLM/shared_data/ directory; otherwise the data step below
+#    will fail with `ModuleNotFoundError: No module named 'shared_data'`.
 git clone https://github.com/atandra2000/DeepSeek-V3-Lite
 cd DeepSeek-V3-Lite
 pip install -r requirements.txt
@@ -192,18 +200,18 @@ pip install -r requirements.txt
 ### Launch Sequence (A100 80GB)
 
 ```bash
-# 1. Data — universal 8.0B-token pipeline (shim over LLM/shared_data)
+# 1. Data — universal 8.0B-token pipeline. Shim over the LLM/shared_data/ package.
 python3 data/prepare_data.py --stage pretrain
 # Optional: --skip-download (re-use an existing corpus)
 # See data/DATA_PIPELINE.md for the full per-project pipeline guide.
 
-# 2. Microbench — measure peak VRAM
+# 2. Microbench — measure peak VRAM (requires CUDA).
 python scripts/microbench_a100.py
 
-# 3. Step-time benchmark — validate MFU
+# 3. Step-time benchmark — validate MFU.
 python scripts/step_time_a100.py --steps 20 --warmup 5
 
-# 4. Launch the full run (~13-15 hours)
+# 4. Launch the full run (~13-15 hours on A100 80GB).
 bash scripts/launch_a100.sh
 ```
 
@@ -226,12 +234,11 @@ bash scripts/launch_a100.sh
 │   └── speculative.py              # MTP speculative decoding
 ├── utils/
 │   ├── checkpoint.py               # Atomic safetensors checkpoint manager
-│   ├── distributed.py              # Single-GPU device helper
 │   ├── logging.py                  # WandB-capable training logger
 │   └── memory.py                   # VRAM estimator + GPU guard
 ├── data/
-│   ├── prepare_data.py             # Shim over data/shared_data/ universal pipeline
-│   ├── shared_data/                # Vendored universal 8.0B-token pipeline
+│   ├── prepare_data.py             # Shim — imports universal pipeline from sibling LLM/shared_data
+│   ├── data_config.yaml            # Materialised at runtime by the shim (deepseek vocab, EOS, PAD)
 │   └── DATA_PIPELINE.md            # Per-project pipeline guide
 └── scripts/
     ├── microbench_a100.py          # Peak VRAM measurement
@@ -244,19 +251,30 @@ bash scripts/launch_a100.sh
 ## Configuration
 
 ```yaml
-# configs/pretrain_a100_422m.yaml
+# configs/pretrain_a100_422m.yaml — abbreviated; full file in configs/.
 model:
   vocab_size:          100018
   dim:                 768
   n_layers:            18           # 2 dense + 16 MoE
   n_heads:             12
+  n_dense_layers:      2
   n_routed_experts:    20
-  n_shared_experts:    2
+  n_shared_experts:    1            # load-bearing: tied to AuxLossFreeGate architecture
   n_activated_experts: 4
+  inter_dim:           1536
+  moe_inter_dim:       384
   kv_lora_rank:        192
+  q_lora_rank:         0
+  qk_nope_head_dim:    48
   qk_rope_head_dim:    24
-  v_head_dim:          96
+  v_head_dim:          64
   max_seq_len:         2048
+  rope_theta:          10000
+  rope_factor:         1.0          # YaRN not enabled at training length
+  mscale:              1.0
+  mtp_depth:           1
+  mtp_loss_weight:     0.3
+  dtype:               bf16
   attn_impl:           "sdpa"
   use_grouped:         "stacked"
   weight_tying:        true
@@ -265,8 +283,29 @@ training:
   micro_batch_size:              8
   gradient_accumulation_steps:   4
   total_steps:                   512000
-  lr:                            5.0e-4    # µP-scaled to ~8.07e-4
+  warmup_steps:                  2000
+  lr:                            8.0e-4    # µP-scaled from 6e-4 @ 757M
+  min_lr_ratio:                  0.05
+  weight_decay:                  0.1
+  beta1:                         0.9
+  beta2:                         0.95
+  grad_clip:                     1.0
+  grad_checkpoint:               true
+  compile:                       true
+  save_interval:                 4000
+  log_interval:                  50
   mup_lr:                        true
+  mup_lr_reference:              6.0e-4
+  mup_lr_reference_params:       757226496
+  nan_guard:                     true
+  nan_guard_max_consecutive:     5
+  bias_update_speed:             0.001
+  bias_update_every:             1
+  save_dir:                      "checkpoints/pretrain_a100"
+
+data:
+  train_data_path:      "data/pretrain_chinchilla"
+  tokenizer_path:       "deepseek-ai/deepseek-coder-v2-lite"
 ```
 
 **~422M params** (embedding: 76.8M, non-embedding: ~345M). Chinchilla-optimal at 8.4B tokens (20:1 ratio).

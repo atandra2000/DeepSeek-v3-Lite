@@ -45,7 +45,7 @@ def generate_interactive(model: torch.nn.Module, tokenizer, args, mtp_module: Op
         if not user_input:
             continue
         messages.append({"role": "user", "content": user_input})
-        input_ids = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to("cuda")
+        input_ids = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(args.device)
         if decoder is not None:
             output_ids = decoder.generate(input_ids, max_new_tokens=args.max_new_tokens, temperature=args.temperature, eos_token_id=eos_id)
         else:
@@ -65,11 +65,13 @@ def main():
     parser.add_argument("--top_p", type=float, default=0.9)
     parser.add_argument("--use_speculative", action="store_true")
     parser.add_argument("--acceptance_threshold", type=float, default=0.8)
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu",
+                        help="Device to run on ('cuda' or 'cpu'). Default: auto-detect.")
     args = parser.parse_args()
     cfg = load_config(args.config)
     model_cfg = cfg["model"]
-    print("Initialising model...")
-    model = Transformer(cfg).to("cuda")
+    print(f"Initialising model on {args.device}...")
+    model = Transformer(model_cfg).to(args.device)
     model.eval()
     ckpt_dir = args.checkpoint if os.path.isdir(args.checkpoint) else str(Path(args.checkpoint).parent)
     ckpt_mgr = CheckpointManager(ckpt_dir)
@@ -84,15 +86,15 @@ def main():
         except ValueError:
             step = ckpt_mgr.latest_step()
     print(f"Loading checkpoint step {step}...")
-    ckpt_mgr.load(model, step)
+    ckpt_mgr.load(model, step, device=args.device)
     mtp_module: Optional[MTPModule] = None
     if args.use_speculative:
-        mtp_module = MTPModule(model_cfg, depth=1).to("cuda")
+        mtp_module = MTPModule(model_cfg, depth=1).to(args.device)
         mtp_module.eval()
         weight_path = Path(ckpt_dir) / f"model_step_{step}.safetensors"
         if weight_path.exists():
             from safetensors.torch import load_file
-            state = load_file(str(weight_path), device="cuda")
+            state = load_file(str(weight_path), device=args.device)
             mtp_state = {k.removeprefix("mtp."): v for k, v in state.items() if k.startswith("mtp.")}
             if mtp_state:
                 mtp_module.load_state_dict(mtp_state, strict=False)

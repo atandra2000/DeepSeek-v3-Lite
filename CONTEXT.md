@@ -41,12 +41,12 @@ Everything in this file is derived from code/configs/tests, not from `MLA.md`.
 ```
 AGENTS.md, SKILLS.md, README.md, MLA.md, requirements.txt, opencode.json
 configs/pretrain_a100_422m.yaml          # canonical 422M A100 recipe
-data/prepare_data.py                     # download+tokenise+pack; mix weights in DATA_MIXES
+data/prepare_data.py                     # shim over sibling LLM/shared_data (universal pipeline)
 models/
   __init__.py (empty)
-  transformer.py                         # SwiGLUFFN, TransformerBlock, ParallelEmbedding, Transformer (+generate, _sample), count_parameters
+  transformer.py                         # SwiGLUFFN, TransformerBlock, Transformer (+generate, _sample), count_parameters
   mla.py                                 # MultiHeadLatentAttention (SDPA + manual absorption paths, RoPE, kv/pe cache, _extend_rope, prefill_cache)
-  moe.py                                 # AuxLossFreeGate, Expert, DeepSeekMoE (stacked bmm dispatch, _update_bias)
+  moe.py                                 # AuxLossFreeGate, Expert, DeepSeekMoE (stacked bmm dispatch, _update_bias, _shared_forward)
   mtp.py                                 # MTPBlock, MTPModule, MultiTokenPrediction (shared head + embed)
 training/pretrain.py                     # TrainingConfig dataclass, PretrainDataset (single+sharded), Pretrainer (BF16, μP, NaN guard, MTP wrap, ckpt mgmt)
 inference/
@@ -54,19 +54,18 @@ inference/
   speculative.py                         # SpeculativeDecoder: accept ratio = min(1, p_main/p_draft), gated by threshold
 utils/
   checkpoint.py                          # CheckpointManager (atomic safetensors+torch+json, dedup, latest_step, keep_last_n)
-  distributed.py                         # single-GPU device helper
   logging.py                             # TrainingLogger (rolling-window print + optional wandb via WANDB_PROJECT env)
   memory.py                              # estimate_model_memory_gb, assert_fits_in_available_gpu
 scripts/
   launch_a100.sh                         # pre-flight + nohup pretrain (PID, log tail)
   microbench_a100.py                     # measure peak VRAM
   step_time_a100.py                      # measure ms/step + MFU (target 30-45%)
-tests/                                   # conftest.py (cfg/small_cfg/nested_cfg/training_cfg/tokens/targets + tmp helpers); CPU-only; 2021 lines
-  test_models.py 766 lines (Transformer, MLA, SwiGLU, Expert, DeepSeekMoE, AuxLossFreeGate, MTP, Generation, CountParameters)
-  test_training.py 592 lines (TrainingConfig, scheduler, dataset, pretrainer construction, ckpt roundtrip, train_step, MoE metric, YAML parse)
-  test_inference.py 314 lines (generate_tokens, SpeculativeDecoder, generate_interactive, helpers)
-  test_utils.py 349 lines (CheckpointManager save/load/MTP, memory estimation)
-.github/workflows/ci.yml                 # CPU smoke (imports + forward); references nonexistent configs.pretrain_a100_422m.get_config (BUG)
+tests/                                   # conftest.py (cfg/small_cfg/nested_cfg/training_cfg/tokens/targets + tmp helpers); CPU-only; 2542 lines
+  test_models.py 934 lines (Transformer, MLA, SwiGLU, Expert, DeepSeekMoE, AuxLossFreeGate, MTP, Generation, CountParameters)
+  test_training.py 711 lines (TrainingConfig, scheduler, dataset, pretrainer construction, ckpt roundtrip, train_step, MoE metric, YAML parse, NaN-guard rollback, µP LR boundary, scheduler boundary)
+  test_inference.py 322 lines (generate_tokens, SpeculativeDecoder, generate_interactive, helpers)
+  test_utils.py 414 lines (CheckpointManager save/load/MTP, memory estimation, atomic-crash recovery, weight-tying)
+.github/workflows/ci.yml                 # CPU smoke (imports + forward); reads configs/pretrain_a100_422m.yaml directly
 assets/architecture_overview.png         # 200 KB diagram
 graphify-out/                            # prior graphify run artefacts (gitignored, but present)
 ```

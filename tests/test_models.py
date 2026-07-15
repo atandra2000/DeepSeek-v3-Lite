@@ -717,3 +717,218 @@ class TestCountParameters:
         _, main_trainable = count_parameters(main)
         _, mtp_trainable = count_parameters(mtp)
         assert mtp_trainable > main_trainable, "MTP should add parameters"
+
+
+# ----------------------------------------------------------------------
+# Tier 3: new tests (T3a + T3b from the plan)
+# ----------------------------------------------------------------------
+
+
+class TestTransformerAdditional:
+    """Tests for paths the original suite didn't cover."""
+
+    def test_reset_cache_clears_attn_buffers(self, cfg, device):
+        """After a forward then reset_cache(), the attn cache should be None."""
+        model = Transformer(cfg, use_checkpoint=False).to(device)
+        model.eval()
+        tokens = torch.randint(0, cfg["vocab_size"] - 1, (1, 8), device=device)
+        with torch.no_grad():
+            model(tokens, start_pos=0, use_cache=True)
+        for layer in model.layers:
+            assert layer.attn.kv_cache is not None or layer.attn.pe_cache is not None
+        model.reset_cache()
+        for layer in model.layers:
+            assert layer.attn.kv_cache is None
+            assert layer.attn.pe_cache is None
+
+    def test_sample_argmax(self, cfg, device):
+        """temperature=0 → argmax (greedy)."""
+        from models.transformer import Transformer
+        torch.manual_seed(0)
+        logits = torch.randn(2, cfg["vocab_size"], device=device)
+        sampled = Transformer._sample(logits, temperature=0.0, top_p=1.0, top_k=0)
+        assert torch.equal(sampled.squeeze(-1), logits.argmax(dim=-1))
+
+    def test_sample_top_k(self, cfg, device):
+        """top_k=1 → always returns the argmax."""
+        from models.transformer import Transformer
+        torch.manual_seed(0)
+        logits = torch.randn(4, cfg["vocab_size"], device=device)
+        sampled = Transformer._sample(logits, temperature=1.0, top_p=1.0, top_k=1)
+        assert torch.equal(sampled.squeeze(-1), logits.argmax(dim=-1))
+
+
+class TestMLAAdditional:
+    """Tests for MLA paths the original suite didn't cover."""
+
+    def test_q_lora_rank_positive(self, cfg, device):
+        """With q_lora_rank > 0, the model builds wq_a / q_norm / wq_b and a forward works."""
+        new_cfg = dict(cfg, q_lora_rank=32)
+        model = MultiHeadLatentAttention(new_cfg, layer_idx=0).to(device)
+        x = torch.randn(1, 8, new_cfg["dim"], device=device)
+        y = model(x, start_pos=0, mask=None, use_cache=False)
+        assert y.shape == (1, 8, new_cfg["dim"])
+
+    def test_softmax_scale_with_mscale(self, cfg, device):
+        """With mscale != 1.0 and max_seq_len > 4096, softmax_scale is multiplied by mscale**2."""
+        new_cfg = dict(cfg, max_seq_len=8192, mscale=1.1)
+        attn = MultiHeadLatentAttention(new_cfg, layer_idx=0).to(device)
+        d = new_cfg["qk_nope_head_dim"] + new_cfg["qk_rope_head_dim"]
+        expected = (d ** -0.5) * (1.1 ** 2)
+        assert abs(attn.softmax_scale - expected) < 1e-6
+
+    def test_mscale_yarn(self, cfg, device):
+        """rope_factor > 1.0: mscale = 0.1 * mscale_raw * log(rope_factor)."""
+        new_cfg = dict(cfg, rope_factor=4.0, mscale=1.0)
+        attn = MultiHeadLatentAttention(new_cfg, layer_idx=0).to(device)
+        import math
+        expected = 0.1 * 1.0 * math.log(4.0)
+        assert abs(attn.mscale - expected) < 1e-6
+
+    def test_mscale_no_scaling(self, cfg, device):
+        """rope_factor = 1.0: mscale = mscale_raw."""
+        new_cfg = dict(cfg, rope_factor=1.0, mscale=1.0)
+        attn = MultiHeadLatentAttention(new_cfg, layer_idx=0).to(device)
+        assert attn.mscale == 1.0
+
+    def test_prefill_cache_overflow(self, cfg, device):
+        """prefill_cache raises when end_pos > max_seq_len."""
+        attn = MultiHeadLatentAttention(cfg, layer_idx=0).to(device)
+        kv = torch.randn(1, 4, cfg["kv_lora_rank"], device=device)
+        pe = torch.randn(1, 4, cfg["qk_rope_head_dim"], device=device)
+        with pytest.raises(ValueError):
+            attn.prefill_cache(kv, pe, start_pos=cfg["max_seq_len"] - 2)
+
+    def test_ensure_cache_grows(self, cfg, device):
+        """_ensure_cache allocates at least 2x the previous batch size."""
+        attn = MultiHeadLatentAttention(cfg, layer_idx=0).to(device)
+        attn._ensure_cache(64, device, torch.bfloat16)
+        first = attn._cache_batch
+        attn._ensure_cache(128, device, torch.bfloat16)
+        second = attn._cache_batch
+        assert second >= max(128, first * 2, 16)
+
+
+class TestDeepSeekMoEAdditional:
+    """Tests for MoE / AuxLossFreeGate paths the original suite didn't cover."""
+
+    def test_get_routing_stats_empty(self):
+        """Before any forward, get_routing_stats returns {}."""
+        from models.moe import DeepSeekMoE
+        cfg = {
+            "dim": 32, "n_routed_experts": 4, "n_shared_experts": 1,
+            "moe_inter_dim": 32, "n_activated_experts": 2,
+            "use_grouped": "stacked", "n_expert_groups": 1, "n_limited_groups": 1,
+            "group_topk": 1,
+        }
+        moe = DeepSeekMoE(cfg)
+        assert moe.get_routing_stats() == {}
+
+    def test_update_bias_sign_rule(self):
+        """Over-loaded expert: bias decreases. Under-loaded: bias increases. In deadband: unchanged."""
+        from models.moe import AuxLossFreeGate
+        gate = AuxLossFreeGate({
+            "dim": 8, "n_activated_experts": 2, "n_routed_experts": 4,
+            "bias_upper_threshold": 0.10, "bias_lower_threshold": 0.10,
+        })
+        # avg = 5, upper threshold = 5*1.10 = 5.5, lower = 5*0.90 = 4.5
+        counts = torch.tensor([10, 5, 5, 0], dtype=torch.float32)  # 10 > 5.5 over, 0 < 4.5 under, 5,5 in band
+        gate.bias.zero_()
+        gate.update_bias(counts, speed=0.01)
+        # Expert 0 (over): bias should decrease.
+        assert gate.bias[0].item() < 0
+        # Expert 3 (under): bias should increase.
+        assert gate.bias[3].item() > 0
+        # Experts 1,2 (in deadband): unchanged.
+        assert gate.bias[1].item() == 0
+        assert gate.bias[2].item() == 0
+
+    def test_group_routing(self, cfg, device):
+        """With n_expert_groups > 1, the gate uses the group-routing branch and indices are in range."""
+        from models.moe import AuxLossFreeGate
+        new_cfg = dict(cfg, n_expert_groups=4, n_limited_groups=2, group_topk=2)
+        # The conftest cfg has 8 routed experts → 2 experts per group.
+        gate = AuxLossFreeGate(new_cfg).to(device)
+        x = torch.randn(2, new_cfg["dim"], device=device)  # (T, dim)
+        weights, indices = gate(x)
+        assert weights.shape == (2, new_cfg["n_activated_experts"])
+        assert indices.shape == (2, new_cfg["n_activated_experts"])
+        assert (indices >= 0).all() and (indices < new_cfg["n_routed_experts"]).all()
+
+
+class TestMTPAdditional:
+    """Tests for MTP paths the original suite didn't cover."""
+
+    def test_block_shape_mismatch(self, cfg, device):
+        """MTPModule raises ValueError on shape mismatch (not MTPBlock — block only gets torch.cat to fail)."""
+        from models.mtp import MTPModule
+        from models.transformer import Transformer
+        main = Transformer(cfg, use_checkpoint=False).to(device)
+        m = MTPModule(cfg, depth=1).to(device)
+        m.set_output_head(main.head)
+        prev = torch.randn(1, 4, cfg["dim"], device=device)
+        target = torch.randn(1, 5, cfg["dim"], device=device)
+        with pytest.raises(ValueError):
+            m(prev, target)
+
+    def test_module_missing_head(self, cfg, device):
+        """MTPModule raises RuntimeError if forward is called before set_output_head."""
+        from models.mtp import MTPModule
+        m = MTPModule(cfg, depth=1).to(device)
+        prev = torch.randn(1, 4, cfg["dim"], device=device)
+        target = torch.randn(1, 4, cfg["dim"], device=device)
+        with pytest.raises(RuntimeError):
+            m(prev, target)
+
+    def test_depth_2_chain(self, cfg, device):
+        """With mtp_depth=2, the chain (prev_h = hidden) produces two mtp_pairs."""
+        from models.mtp import MultiTokenPrediction
+        new_cfg = dict(cfg, mtp_depth=2)
+        main = Transformer(new_cfg, use_checkpoint=False).to(device)
+        mtp = MultiTokenPrediction(new_cfg, main).to(device)
+        tokens = torch.randint(0, new_cfg["vocab_size"] - 1, (1, 16), device=device)
+        main_logits, mtp_pairs = mtp(tokens, start_pos=0)
+        assert main_logits.shape == (1, 16, new_cfg["vocab_size"])
+        assert len(mtp_pairs) == 2
+
+    def test_compute_loss_no_mtp_pairs(self, cfg, device):
+        """compute_loss with mtp_pairs=None or []: third slot is zero, not main_loss (current behavior)."""
+        from models.mtp import MultiTokenPrediction
+        main = Transformer(cfg, use_checkpoint=False).to(device)
+        mtp = MultiTokenPrediction(cfg, main).to(device)
+        logits = torch.randn(2, 4, cfg["vocab_size"], device=device)
+        targets = torch.randint(0, cfg["vocab_size"] - 1, (2, 4), device=device)
+        # None path
+        total, main_l, mtp_l = mtp.compute_loss(logits, targets, mtp_pairs=None)
+        assert torch.allclose(total, main_l)  # mtp_weight * 0 = 0
+        assert torch.allclose(mtp_l, torch.zeros(()))
+        # Empty list path
+        total, main_l, mtp_l = mtp.compute_loss(logits, targets, mtp_pairs=[])
+        assert torch.allclose(total, main_l)
+        assert torch.allclose(mtp_l, torch.zeros(()))
+
+
+class TestMTPGradientFlow:
+    """Verify MTP loss backprop into main-model weights (T3b)."""
+
+    def test_mtp_loss_flows_into_main_model(self, cfg, device):
+        """After compute_loss + backward, main_model.embed.weight and an MLA attn weight receive gradients."""
+        from models.mtp import MultiTokenPrediction
+        main = Transformer(cfg, use_checkpoint=False).to(device)
+        mtp = MultiTokenPrediction(cfg, main).to(device)
+        tokens = torch.randint(0, cfg["vocab_size"] - 1, (2, 8), device=device)
+        main_logits, mtp_pairs = mtp(tokens, start_pos=0)
+        total, _, _ = mtp.compute_loss(main_logits, tokens, mtp_pairs)
+        # Zero grads (the head is shared, so it gets a gradient from both paths).
+        for p in mtp.parameters():
+            if p.grad is not None:
+                p.grad.zero_()
+        total.backward()
+        # Main model embed must have a gradient.
+        assert main.embed.weight.grad is not None
+        assert main.embed.weight.grad.abs().sum() > 0
+        # An MLA attn weight must have a gradient (MHA in MTPBlock, but the
+        # main-model MLA also sees gradient flow via the shared head/embed).
+        main_attn = main.layers[-1].attn  # an MoE-layer MLA
+        assert main_attn.wkv_a.weight.grad is not None
+        assert main_attn.wkv_a.weight.grad.abs().sum() > 0

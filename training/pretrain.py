@@ -101,6 +101,7 @@ class PretrainDataset(Dataset):
         self._n_samples = (self._total_tokens - 1) // self.max_seq_len
         self._shard_cache: dict[int, torch.Tensor] = {}
         self._shard_cache_order: list[int] = []
+        # ponytail: 4-shard LRU (was 2). 2 thrashed on 8-worker DataLoader where workers race for shards.
 
     def _get_window_sharded(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         start = idx * self.max_seq_len
@@ -114,15 +115,18 @@ class PretrainDataset(Dataset):
 
     def _get_window_cross_shard(self, start: int) -> Tuple[torch.Tensor, torch.Tensor]:
         needed = self.max_seq_len + 1
-        collected: list[int] = []
+        # ponytail: cat slices of CPU tensors instead of .tolist() → torch.tensor() round-trip. Same result, no Python-int copy.
+        pieces: list[torch.Tensor] = []
         cursor = start
-        while len(collected) < needed:
+        cursor_pos = 0
+        while cursor_pos < needed:
             shard_idx, offset_in_shard = self._locate(cursor)
             shard = self._load_shard(shard_idx)
-            take = min(needed - len(collected), self.shard_sizes[shard_idx] - offset_in_shard)
-            collected.extend(shard[offset_in_shard: offset_in_shard + take].tolist())
+            take = min(needed - cursor_pos, self.shard_sizes[shard_idx] - offset_in_shard)
+            pieces.append(shard[offset_in_shard: offset_in_shard + take])
             cursor += take
-        chunk = torch.tensor(collected[:needed], dtype=torch.long)
+            cursor_pos += take
+        chunk = torch.cat(pieces)[:needed]
         return chunk[:-1], chunk[1:]
 
     def _locate(self, global_idx: int) -> Tuple[int, int]:
@@ -143,7 +147,7 @@ class PretrainDataset(Dataset):
         t = torch.load(self.shard_paths[shard_idx], weights_only=True, map_location="cpu")
         self._shard_cache[shard_idx] = t
         self._shard_cache_order.append(shard_idx)
-        while len(self._shard_cache_order) > 2:
+        while len(self._shard_cache_order) > 4:
             evict = self._shard_cache_order.pop(0)
             self._shard_cache.pop(evict, None)
         return t
@@ -235,9 +239,12 @@ class Pretrainer:
         for moe in self.raw_model.moe_layers():
             moe.update_gate_bias(speed=self.config.bias_update_speed)
 
-    def _moe_balance_metric(self) -> float:
+    def _moe_balance_metric(self) -> torch.Tensor:
+        """Return the on-device balance loss tensor — .item() is deferred to the logger path (avoid per-step sync)."""
         losses = [moe.get_load_balance_loss() for moe in self.raw_model.moe_layers()]
-        return float(torch.stack(losses).sum().item()) if losses else 0.0
+        if not losses:
+            return torch.tensor(0.0, device=self.device)
+        return torch.stack(losses).sum()
 
     def _log_per_component_params(self, model) -> None:
         from collections import defaultdict
@@ -267,20 +274,21 @@ class Pretrainer:
             self._log(f"    {name_:25s}: {n:>12,}  ({n / total * 100 if total else 0.0:5.2f}%)")
         self._log(f"    {'TOTAL':25s}: {total:>12,}  ({total / 1e6:.2f} M)")
 
-    def train_step(self, tokens: torch.Tensor, targets: torch.Tensor, micro_step: int) -> Optional[Dict[str, float]]:
+    def train_step(self, tokens: torch.Tensor, targets: torch.Tensor, micro_step: int) -> Optional[Dict[str, Optional[float]]]:
         is_opt_step = (micro_step + 1) % self.config.gradient_accumulation_steps == 0
         with self._amp_context():
             if self.mtp_wrapper is not None:
                 main_logits, mtp_pairs = self.model(tokens, start_pos=0)
                 total_loss, main_loss, mtp_loss = self.mtp_wrapper.compute_loss(main_logits, targets, mtp_pairs)
-                _ce_loss_val = float(main_loss.item())
-                _mtp_loss_val = float(mtp_loss.item()) if mtp_pairs else 0.0
+                # ponytail: .detach() instead of .item() — logger does the host round-trip at log_every cadence.
+                _ce_loss_val = main_loss.detach()
+                _mtp_loss_val = mtp_loss.detach() if mtp_pairs else None
                 loss = total_loss / self.config.gradient_accumulation_steps
             else:
                 logits = self.model(tokens, start_pos=0, use_cache=False)
                 main_loss = torch.nn.functional.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=-100)
-                _ce_loss_val = float(main_loss.item())
-                _mtp_loss_val = 0.0
+                _ce_loss_val = main_loss.detach()
+                _mtp_loss_val = None
                 loss = main_loss / self.config.gradient_accumulation_steps
             balance_loss = self._moe_balance_metric()
 
@@ -299,7 +307,7 @@ class Pretrainer:
             if self._opt_steps % self.config.bias_update_every == 0:
                 self._update_moe_bias()
 
-        return {"loss": _ce_loss_val, "mtp_loss": _mtp_loss_val if self.mtp_wrapper is not None else None, "balance_loss": balance_loss}
+        return {"loss": _ce_loss_val, "mtp_loss": _mtp_loss_val, "balance_loss": balance_loss}
 
     def save_checkpoint(self, step: int, tag: str = "") -> None:
         model_to_save = self.raw_model
@@ -341,7 +349,9 @@ class Pretrainer:
         dataset = PretrainDataset(self.config.data_path, self.config.max_seq_len, self.config.vocab_size)
         loader = DataLoader(dataset, batch_size=self.config.batch_size, num_workers=8, pin_memory=True,
                             persistent_workers=True, prefetch_factor=8, drop_last=True)
-        estimate = estimate_model_memory_gb(self.raw_model, seq_len=self.config.max_seq_len, batch_size=self.config.batch_size)
+        # ponytail: when MTP is wrapped, pass the mtp_model so its additional params are counted.
+        mem_model = self.mtp_wrapper if self.mtp_wrapper is not None else self.raw_model
+        estimate = estimate_model_memory_gb(mem_model, seq_len=self.config.max_seq_len, batch_size=self.config.batch_size)
         assert_fits_in_available_gpu(estimate)
         self._log(f"Estimated peak VRAM: {estimate:.1f} GB")
 
@@ -379,10 +389,12 @@ class Pretrainer:
                 nan_guard_streak = 0
                 if global_step % self.config.log_every == 0:
                     lr = self.scheduler.get_last_lr()[0]
-                    log_metrics = {"balance_loss": metrics["balance_loss"]}
+                    # ponytail: single .item() per log step (not per micro-step) — avoids 3-4 forced GPU syncs per step.
+                    log_metrics = {"balance_loss": float(metrics["balance_loss"].item()) if isinstance(metrics["balance_loss"], torch.Tensor) else float(metrics["balance_loss"])}
                     if metrics.get("mtp_loss") is not None:
-                        log_metrics["mtp_loss"] = metrics["mtp_loss"]
-                    self.logger.log(global_step, metrics["loss"], lr=lr, metrics=log_metrics)
+                        log_metrics["mtp_loss"] = float(metrics["mtp_loss"].item()) if isinstance(metrics["mtp_loss"], torch.Tensor) else float(metrics["mtp_loss"])
+                    ce = metrics["loss"]
+                    self.logger.log(global_step, float(ce.item()) if isinstance(ce, torch.Tensor) else float(ce), lr=lr, metrics=log_metrics)
                 if global_step % self.config.save_every == 0 and global_step > 0:
                     self.save_checkpoint(global_step)
                 global_step += 1

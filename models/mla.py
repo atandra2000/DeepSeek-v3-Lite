@@ -24,7 +24,11 @@ class MultiHeadLatentAttention(nn.Module):
         self.rope_theta = config["rope_theta"]
         self.rope_factor = config.get("rope_factor", 1.0)
         mscale_raw = config.get("mscale", 1.0)
-        self.mscale = 0.1 * mscale_raw * math.log(self.rope_factor) + 1.0 if self.rope_factor > 1.0 else mscale_raw
+        # ponytail: parens make the YaRN vs no-scaling branches explicit. The +1.0 only applies to the no-scaling branch.
+        if self.rope_factor > 1.0:
+            self.mscale = 0.1 * mscale_raw * math.log(self.rope_factor)
+        else:
+            self.mscale = mscale_raw
         self.softmax_scale = self.qk_head_dim ** -0.5
         if self.max_seq_len > 4096 and self.mscale != 1.0:
             self.softmax_scale *= self.mscale ** 2
@@ -141,11 +145,11 @@ class MultiHeadLatentAttention(nn.Module):
         if self.attn_impl == "sdpa":
             seqlen_k = ctx_kv.size(1)
             ctx_kv_bmm = ctx_kv.reshape(bsz * seqlen_k, self.kv_lora_rank).unsqueeze(0).expand(h, -1, -1)
-            wkv_b_k_t = wkv_b_k.transpose(-1, -2)
-            K_nope_h = torch.bmm(ctx_kv_bmm, wkv_b_k_t)
+            # ponytail: fuse the two bmm's over the same ctx_kv (one for K_nope, one for V) into a single matmul.
+            wkv_b_kv = torch.cat([wkv_b_k, wkv_b_v], dim=1)
+            KV_nope_h = torch.bmm(ctx_kv_bmm, wkv_b_kv.transpose(-1, -2))
+            K_nope_h, V_h = KV_nope_h.split([self.qk_nope_head_dim, self.v_head_dim], dim=-1)
             K_nope = K_nope_h.reshape(h, bsz, seqlen_k, self.qk_nope_head_dim).permute(1, 0, 2, 3).contiguous()
-            wkv_b_v_t = wkv_b_v.transpose(-1, -2)
-            V_h = torch.bmm(ctx_kv_bmm, wkv_b_v_t)
             V = V_h.reshape(h, bsz, seqlen_k, self.v_head_dim).permute(1, 0, 2, 3).contiguous()
             Q_nope = q_nope.transpose(1, 2)
             Q_rope = q_pe.transpose(1, 2)

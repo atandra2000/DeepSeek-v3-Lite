@@ -72,6 +72,10 @@ class DeepSeekMoE(nn.Module):
         self._stacked_w1: Optional[torch.Tensor] = None
         self._stacked_w2: Optional[torch.Tensor] = None
         self._stacked_w3: Optional[torch.Tensor] = None
+        # ponytail: shared-expert weight stack mirrors the routed-expert one — set lazily in _shared_forward.
+        self._shared_w1: Optional[torch.Tensor] = None
+        self._shared_w2: Optional[torch.Tensor] = None
+        self._shared_w3: Optional[torch.Tensor] = None
         self._last_weights: Optional[torch.Tensor] = None
         self._last_indices: Optional[torch.Tensor] = None
 
@@ -93,9 +97,11 @@ class DeepSeekMoE(nn.Module):
         sorted_weights = flat_w[order]
         sorted_expert_id = flat_idx[order]
         expert_counts = torch.bincount(flat_idx, minlength=self.n_routed_experts)
+        # ponytail: pull counts + offsets + expert ids to host ONCE — never call .item() inside the per-expert loop.
         expert_offsets = torch.cat([torch.zeros(1, dtype=expert_counts.dtype, device=expert_counts.device), expert_counts.cumsum(0)[:-1]])
         counts_list = expert_counts.tolist()
         offsets_list = expert_offsets.tolist()
+        expert_ids_list = sorted_expert_id.tolist()
         chunks = [(offsets_list[e], counts_list[e]) for e in range(self.n_routed_experts) if counts_list[e] > 0]
         y_routed = torch.zeros_like(flat)
         for start, length in chunks:
@@ -103,11 +109,11 @@ class DeepSeekMoE(nn.Module):
             chunk_tokens = sorted_token_ids[start:end]
             chunk_weights = sorted_weights[start:end].unsqueeze(-1)
             expert_in = flat[chunk_tokens]
-            e_id = int(sorted_expert_id[start].item())
+            e_id = expert_ids_list[start]
             y_routed = y_routed.index_add(0, chunk_tokens, self.experts[e_id](expert_in) * chunk_weights)
         y = y_routed
         if self.shared_experts:
-            y = y + torch.stack([e(flat) for e in self.shared_experts], dim=0).sum(dim=0)
+            y = y + self._shared_forward(flat)
         return y.view(shape)
 
     def _forward_stacked(self, x: torch.Tensor) -> torch.Tensor:
@@ -131,6 +137,7 @@ class DeepSeekMoE(nn.Module):
             self._stacked_w3 = torch.stack([ex.w3.weight for ex in self.experts], dim=0).to(device=flat.device, dtype=flat.dtype)
         expert_counts = torch.bincount(flat_idx, minlength=self.n_routed_experts)
         expert_offsets = torch.cat([torch.zeros(1, dtype=expert_counts.dtype, device=expert_counts.device), expert_counts.cumsum(0)[:-1]])
+        # ponytail: one .tolist() each for counts/offsets/ids — replace the per-iteration host round-trip in the loop.
         counts_cpu = expert_counts.tolist()
         offsets_cpu = expert_offsets.tolist()
         y_routed = torch.zeros_like(flat)
@@ -150,8 +157,27 @@ class DeepSeekMoE(nn.Module):
             y_routed = y_routed.index_add(0, chunk_tokens, out * chunk_weights)
         y = y_routed
         if self.shared_experts:
-            y = y + torch.stack([e(flat) for e in self.shared_experts], dim=0).sum(dim=0)
+            y = y + self._shared_forward(flat)
         return y.view(shape)
+
+    def _shared_forward(self, flat: torch.Tensor) -> torch.Tensor:
+        """Batched shared-expert forward. Stacks weights lazily so 1 bmm per SwiGLU projection."""
+        if self.n_shared_experts == 0:
+            return torch.zeros_like(flat)
+        if (self._shared_w1 is None
+                or self._shared_w1.device != flat.device
+                or self._shared_w1.dtype != flat.dtype):
+            self._shared_w1 = torch.stack([e.w1.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
+            self._shared_w2 = torch.stack([e.w2.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
+            self._shared_w3 = torch.stack([e.w3.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
+        # ponytail: one bmm per gate/up/down across all shared experts, then sum. The alternative
+        # (Python loop over self.shared_experts) launches n_shared_experts separate matmuls serially.
+        E = self.n_shared_experts
+        gate = torch.bmm(flat.unsqueeze(0).expand(E, -1, -1), self._shared_w1.transpose(-1, -2))
+        up = torch.bmm(flat.unsqueeze(0).expand(E, -1, -1), self._shared_w3.transpose(-1, -2))
+        h = torch.nn.functional.silu(gate) * up
+        out = torch.bmm(h, self._shared_w2.transpose(-1, -2))
+        return out.sum(dim=0)
 
     def get_load_balance_loss(self) -> torch.Tensor:
         if self._last_weights is None or self._last_indices is None:

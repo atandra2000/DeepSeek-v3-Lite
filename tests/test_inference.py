@@ -288,3 +288,35 @@ class TestInferenceHelpers:
             _yaml.dump({"not_model": {}}, f)
         with pytest.raises(ValueError, match="Config must be a dict with a 'model' section"):
             load_config(str(yaml_path))
+
+
+# ----------------------------------------------------------------------
+# Tier 3: speculative decoder additions
+# ----------------------------------------------------------------------
+
+
+class TestSpeculativeDecoderAdditional:
+    """Tests for paths the original suite didn't cover."""
+
+    def test_generate_step_returns_correct_shapes(self, small_cfg):
+        """generate_step returns (main_token, draft_token, accepted) of the right shapes."""
+        from inference.speculative import SpeculativeDecoder
+        from models.transformer import Transformer
+        from models.mtp import MTPModule
+        torch.manual_seed(0)
+        cfg = dict(small_cfg, mtp_depth=1)
+        main = Transformer(cfg, use_checkpoint=False)
+        # SpeculativeDecoder expects a bare MTPModule (not MultiTokenPrediction wrapper).
+        mtp_module = MTPModule(cfg, depth=1)
+        mtp_module.set_output_head(main.head)
+        decoder = SpeculativeDecoder(main, mtp_module, acceptance_threshold=0.5)
+        # Pre-populate cache by running a forward first.
+        prompt = torch.randint(0, cfg["vocab_size"] - 1, (1, 4))
+        with torch.no_grad():
+            _ = main(prompt, start_pos=0, use_cache=True)
+        last_token = prompt[:, -1:]
+        with torch.no_grad():
+            t_main, t_draft, accepted = decoder.generate_step(last_token, start_pos=3)
+        assert t_main.shape == (1,)
+        assert t_draft.shape == (1,)
+        assert isinstance(accepted, bool)
