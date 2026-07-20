@@ -60,6 +60,21 @@ class CheckpointManager:
     # ponytail: list_checkpoints/delete_checkpoint/keep_last_n retention API removed —
     # only callers were tests; training loop uses save + latest_step. Add back when retention is wired in.
 
+    import contextlib
+    @contextlib.contextmanager
+    def _atomic_write(self, path: Path, suffix: str):
+        fd, tmp = tempfile.mkstemp(dir=self.save_dir, suffix=suffix)
+        os.close(fd)
+        try:
+            yield tmp
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
     def _atomic_save_safetensors(self, state: dict, path: Path) -> None:
         seen_ptrs: set = set()
         deduped: dict = {}
@@ -70,44 +85,17 @@ class CheckpointManager:
             else:
                 seen_ptrs.add(ptr)
                 deduped[k] = v.contiguous()
-        fd, tmp = tempfile.mkstemp(dir=self.save_dir, suffix=".safetensors.tmp")
-        os.close(fd)
-        try:
+        with self._atomic_write(path, ".safetensors.tmp") as tmp:
             save_file(deduped, tmp)
-            os.replace(tmp, path)
-        except Exception:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
 
     def _atomic_save_torch(self, obj, path: Path) -> None:
-        fd, tmp = tempfile.mkstemp(dir=self.save_dir, suffix=".pt.tmp")
-        os.close(fd)
-        try:
+        with self._atomic_write(path, ".pt.tmp") as tmp:
             torch.save(obj, tmp)
-            os.replace(tmp, path)
-        except Exception:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
 
     def _atomic_save_json(self, obj: dict, path: Path) -> None:
-        fd, tmp = tempfile.mkstemp(dir=self.save_dir, suffix=".json.tmp")
-        os.close(fd)
-        try:
+        with self._atomic_write(path, ".json.tmp") as tmp:
             with open(tmp, "w") as f:
                 json.dump(obj, f, indent=2, default=str)
-            os.replace(tmp, path)
-        except Exception:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
 
     def _list_steps(self) -> list:
         steps = []

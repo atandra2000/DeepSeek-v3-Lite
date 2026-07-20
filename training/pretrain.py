@@ -16,7 +16,6 @@ from models.transformer import Transformer, count_parameters
 from models.mtp import MultiTokenPrediction
 from utils.checkpoint import CheckpointManager
 from utils.logging import init_logging, get_logger
-from utils.memory import assert_fits_in_available_gpu, estimate_model_memory_gb
 
 
 def make_warmup_cosine_lambda(warmup_steps: int, total_steps: int, min_lr_ratio: float = 0.1):
@@ -69,94 +68,50 @@ class PretrainDataset(Dataset):
         self.vocab_size = vocab_size
         if not os.path.exists(data_path):
             raise FileNotFoundError(f"Pre-training data not found: {data_path}\nRun `python data/prepare_data.py` first.")
-        self._init_sharded(data_path) if os.path.isdir(data_path) else self._init_single(data_path)
-
-    def _init_single(self, data_path: str) -> None:
-        self.layout = "single"
-        self.data = torch.load(data_path, weights_only=True)
-        self._n_samples = (len(self.data) - 1) // self.max_seq_len
-
-    def _get_window_single(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        start = idx * self.max_seq_len
-        chunk = self.data[start: start + self.max_seq_len + 1]
-        return chunk[:-1], chunk[1:]
-
-    def _init_sharded(self, data_dir: str) -> None:
-        shard_paths = sorted(Path(data_dir).glob("shard_*.bin"))
-        if not shard_paths:
-            raise FileNotFoundError(f"No `shard_*.bin` files in {data_dir}")
-        self.layout = "sharded"
-        self.shard_paths = [str(p) for p in shard_paths]
-        self.shard_sizes: list[int] = []
-        self.shard_offsets: list[int] = []
-        running = 0
-        for p in self.shard_paths:
-            t = torch.load(p, weights_only=True, map_location="cpu")
-            n = t.numel()
-            del t
-            self.shard_sizes.append(n)
-            self.shard_offsets.append(running)
-            running += n
-        self._total_tokens = running
+        self.layout = "sharded" if os.path.isdir(data_path) else "single"
+        if self.layout == "sharded":
+            self.shard_paths = [str(p) for p in sorted(Path(data_path).glob("shard_*.bin"))]
+            if not self.shard_paths:
+                raise FileNotFoundError(f"No `shard_*.bin` files in {data_path}")
+            self.shards = [torch.load(p, weights_only=True, map_location="cpu", mmap=True) for p in self.shard_paths]
+            self.shard_sizes = [s.numel() for s in self.shards]
+            self.shard_offsets = []
+            running = 0
+            for s in self.shard_sizes:
+                self.shard_offsets.append(running)
+                running += s
+            self._total_tokens = sum(self.shard_sizes)
+        else:
+            self.data = torch.load(data_path, weights_only=True, map_location="cpu", mmap=True)
+            self._total_tokens = self.data.numel()
         self._n_samples = (self._total_tokens - 1) // self.max_seq_len
-        self._shard_cache: dict[int, torch.Tensor] = {}
-        self._shard_cache_order: list[int] = []
-        # ponytail: 4-shard LRU (was 2). 2 thrashed on 8-worker DataLoader where workers race for shards.
-
-    def _get_window_sharded(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        start = idx * self.max_seq_len
-        end = start + self.max_seq_len + 1
-        shard_idx, offset_in_shard = self._locate(start)
-        if offset_in_shard + (self.max_seq_len + 1) <= self.shard_sizes[shard_idx]:
-            shard = self._load_shard(shard_idx)
-            chunk = shard[offset_in_shard: offset_in_shard + self.max_seq_len + 1]
-            return chunk[:-1], chunk[1:]
-        return self._get_window_cross_shard(start)
-
-    def _get_window_cross_shard(self, start: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        needed = self.max_seq_len + 1
-        # ponytail: cat slices of CPU tensors instead of .tolist() → torch.tensor() round-trip. Same result, no Python-int copy.
-        pieces: list[torch.Tensor] = []
-        cursor = start
-        cursor_pos = 0
-        while cursor_pos < needed:
-            shard_idx, offset_in_shard = self._locate(cursor)
-            shard = self._load_shard(shard_idx)
-            take = min(needed - cursor_pos, self.shard_sizes[shard_idx] - offset_in_shard)
-            pieces.append(shard[offset_in_shard: offset_in_shard + take])
-            cursor += take
-            cursor_pos += take
-        chunk = torch.cat(pieces)[:needed]
-        return chunk[:-1], chunk[1:]
 
     def _locate(self, global_idx: int) -> Tuple[int, int]:
-        if global_idx < 0 or global_idx >= self._total_tokens:
-            raise IndexError(f"global token index {global_idx} out of range (total={self._total_tokens})")
-        lo, hi = 0, len(self.shard_offsets) - 1
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            if self.shard_offsets[mid] <= global_idx:
-                lo = mid
-            else:
-                hi = mid - 1
+        import bisect
+        lo = bisect.bisect_right(self.shard_offsets, global_idx) - 1
         return lo, global_idx - self.shard_offsets[lo]
-
-    def _load_shard(self, shard_idx: int) -> torch.Tensor:
-        if shard_idx in self._shard_cache:
-            return self._shard_cache[shard_idx]
-        t = torch.load(self.shard_paths[shard_idx], weights_only=True, map_location="cpu")
-        self._shard_cache[shard_idx] = t
-        self._shard_cache_order.append(shard_idx)
-        while len(self._shard_cache_order) > 4:
-            evict = self._shard_cache_order.pop(0)
-            self._shard_cache.pop(evict, None)
-        return t
 
     def __len__(self) -> int:
         return self._n_samples
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self._get_window_single(idx) if self.layout == "single" else self._get_window_sharded(idx)
+        start = idx * self.max_seq_len
+        needed = self.max_seq_len + 1
+        if self.layout == "single":
+            chunk = self.data[start: start + needed].clone()
+        else:
+            pieces = []
+            cursor = start
+            cursor_pos = 0
+            while cursor_pos < needed:
+                shard_idx, offset_in_shard = self._locate(cursor)
+                shard = self.shards[shard_idx]
+                take = min(needed - cursor_pos, self.shard_sizes[shard_idx] - offset_in_shard)
+                pieces.append(shard[offset_in_shard: offset_in_shard + take])
+                cursor += take
+                cursor_pos += take
+            chunk = torch.cat(pieces) if len(pieces) > 1 else pieces[0].clone()
+        return chunk[:-1], chunk[1:]
 
 
 class Pretrainer:
@@ -349,11 +304,6 @@ class Pretrainer:
         dataset = PretrainDataset(self.config.data_path, self.config.max_seq_len, self.config.vocab_size)
         loader = DataLoader(dataset, batch_size=self.config.batch_size, num_workers=8, pin_memory=True,
                             persistent_workers=True, prefetch_factor=8, drop_last=True)
-        # ponytail: when MTP is wrapped, pass the mtp_model so its additional params are counted.
-        mem_model = self.mtp_wrapper if self.mtp_wrapper is not None else self.raw_model
-        estimate = estimate_model_memory_gb(mem_model, seq_len=self.config.max_seq_len, batch_size=self.config.batch_size)
-        assert_fits_in_available_gpu(estimate)
-        self._log(f"Estimated peak VRAM: {estimate:.1f} GB")
 
         global_step = 0
         latest = self._find_latest_checkpoint()

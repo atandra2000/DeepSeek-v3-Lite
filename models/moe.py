@@ -11,10 +11,7 @@ class AuxLossFreeGate(nn.Module):
         self.dim = config["dim"]
         self.topk = config["n_activated_experts"]
         self.n_routed_experts = config["n_routed_experts"]
-        self.n_groups = config.get("n_expert_groups", 1)
-        self.topk_groups = config.get("n_limited_groups", 1)
         self.route_scale = config.get("route_scale", 1.0)
-        self.group_topk = config.get("group_topk", 2)
         self.bias_upper = config.get("bias_upper_threshold", 0.10)
         self.bias_lower = config.get("bias_lower_threshold", 0.10)
         self.weight = nn.Parameter(torch.empty(self.n_routed_experts, self.dim))
@@ -32,14 +29,6 @@ class AuxLossFreeGate(nn.Module):
         T = x.size(0)
         scores = F.linear(x, self.weight).sigmoid()
         biased = scores + self.bias.to(scores.dtype)
-        if self.n_groups > 1:
-            experts_per_group = self.n_routed_experts // self.n_groups
-            biased_grouped = biased.view(T, self.n_groups, experts_per_group)
-            group_scores = biased_grouped.topk(self.group_topk, dim=-1)[0].sum(dim=-1)
-            top_groups = group_scores.topk(self.topk_groups, dim=-1)[1]
-            group_mask = torch.ones(T, self.n_groups, dtype=torch.bool, device=x.device)
-            group_mask.scatter_(1, top_groups, False)
-            biased = biased_grouped.masked_fill(group_mask.unsqueeze(-1), float("-inf")).flatten(1)
         indices = biased.topk(self.topk, dim=-1)[1]
         weights = scores.gather(1, indices)
         weights = (weights / weights.sum(dim=-1, keepdim=True).clamp(min=1e-10) * self.route_scale).to(x.dtype)
@@ -65,7 +54,6 @@ class DeepSeekMoE(nn.Module):
         self.n_routed_experts = config["n_routed_experts"]
         self.n_shared_experts = config["n_shared_experts"]
         self.moe_inter_dim = config["moe_inter_dim"]
-        self.use_grouped_mode = config.get("use_grouped", "stacked")
         self.gate = AuxLossFreeGate(config)
         self.experts = nn.ModuleList([Expert(self.dim, self.moe_inter_dim) for _ in range(self.n_routed_experts)])
         self.shared_experts = nn.ModuleList([Expert(self.dim, self.moe_inter_dim) for _ in range(self.n_shared_experts)])
@@ -80,43 +68,6 @@ class DeepSeekMoE(nn.Module):
         self._last_indices: Optional[torch.Tensor] = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self._forward_stacked(x) if self.use_grouped_mode == "stacked" else self._forward_grouped(x)
-
-    def _forward_grouped(self, x: torch.Tensor) -> torch.Tensor:
-        shape = x.shape
-        flat = x.view(-1, self.dim)
-        T = flat.size(0)
-        weights, indices = self.gate(flat)
-        self._last_weights = weights.detach()
-        self._last_indices = indices.detach()
-        flat_idx = indices.reshape(-1)
-        flat_w = weights.reshape(-1)
-        token_id = torch.arange(T, device=flat.device).repeat_interleave(indices.size(1))
-        order = torch.argsort(flat_idx)
-        sorted_token_ids = token_id[order]
-        sorted_weights = flat_w[order]
-        sorted_expert_id = flat_idx[order]
-        expert_counts = torch.bincount(flat_idx, minlength=self.n_routed_experts)
-        # ponytail: pull counts + offsets + expert ids to host ONCE — never call .item() inside the per-expert loop.
-        expert_offsets = torch.cat([torch.zeros(1, dtype=expert_counts.dtype, device=expert_counts.device), expert_counts.cumsum(0)[:-1]])
-        counts_list = expert_counts.tolist()
-        offsets_list = expert_offsets.tolist()
-        expert_ids_list = sorted_expert_id.tolist()
-        chunks = [(offsets_list[e], counts_list[e]) for e in range(self.n_routed_experts) if counts_list[e] > 0]
-        y_routed = torch.zeros_like(flat)
-        for start, length in chunks:
-            end = start + length
-            chunk_tokens = sorted_token_ids[start:end]
-            chunk_weights = sorted_weights[start:end].unsqueeze(-1)
-            expert_in = flat[chunk_tokens]
-            e_id = expert_ids_list[start]
-            y_routed = y_routed.index_add(0, chunk_tokens, self.experts[e_id](expert_in) * chunk_weights)
-        y = y_routed
-        if self.shared_experts:
-            y = y + self._shared_forward(flat)
-        return y.view(shape)
-
-    def _forward_stacked(self, x: torch.Tensor) -> torch.Tensor:
         shape = x.shape
         flat = x.view(-1, self.dim)
         T = flat.size(0)

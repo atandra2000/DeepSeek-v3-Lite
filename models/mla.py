@@ -22,16 +22,7 @@ class MultiHeadLatentAttention(nn.Module):
         self.max_seq_len = config["max_seq_len"]
         self.n_local_heads = self.n_heads
         self.rope_theta = config["rope_theta"]
-        self.rope_factor = config.get("rope_factor", 1.0)
-        mscale_raw = config.get("mscale", 1.0)
-        # ponytail: parens make the YaRN vs no-scaling branches explicit. The +1.0 only applies to the no-scaling branch.
-        if self.rope_factor > 1.0:
-            self.mscale = 0.1 * mscale_raw * math.log(self.rope_factor)
-        else:
-            self.mscale = mscale_raw
         self.softmax_scale = self.qk_head_dim ** -0.5
-        if self.max_seq_len > 4096 and self.mscale != 1.0:
-            self.softmax_scale *= self.mscale ** 2
         if self.q_lora_rank > 0:
             self.wq_a = nn.Linear(self.dim, self.q_lora_rank, bias=False)
             self.q_norm = nn.RMSNorm(self.q_lora_rank, eps=1e-6)
@@ -53,8 +44,6 @@ class MultiHeadLatentAttention(nn.Module):
             return
         dim = self.qk_rope_head_dim
         inv_freq = 1.0 / (self.rope_theta ** (torch.arange(0, dim, 2, dtype=torch.float32, device=device) / dim))
-        if self.rope_factor > 1.0:
-            inv_freq = inv_freq / self.rope_factor
         grow_to = max(seq_len, self._rope_seq_len * 2, 64)
         grow_to = min(grow_to, self.max_seq_len)
         t = torch.arange(grow_to, dtype=torch.float32, device=device)
@@ -69,14 +58,7 @@ class MultiHeadLatentAttention(nn.Module):
         return torch.view_as_real(x_c * freqs).flatten(-2).to(dtype)
 
     def _per_batch_bmm(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
-        bsz, seqlen_q, h, d_k = q.shape
-        seqlen_k = k.size(1)
-        out = torch.empty(bsz, h, seqlen_q, seqlen_k, dtype=q.dtype, device=q.device)
-        for b in range(bsz):
-            q_h_b = q[b].permute(1, 0, 2).contiguous()
-            k_b = k[b]
-            out[b] = torch.bmm(q_h_b, k_b.t().unsqueeze(0).expand(h, -1, -1))
-        return out
+        return torch.matmul(q.transpose(1, 2), k.unsqueeze(1).transpose(2, 3))
 
     def _ensure_cache(self, bsz: int, device: torch.device, dtype: torch.dtype) -> None:
         need_alloc = self.kv_cache is None or bsz > self._cache_batch or self.kv_cache.device != device or self.kv_cache.dtype != dtype
