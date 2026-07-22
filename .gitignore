@@ -44,3 +44,7 @@ wandb/
 
 # Graphify auto-generated output
 graphify-out/
+
+# Documentation and AGENTS
+documentation/
+AGENTS.md
