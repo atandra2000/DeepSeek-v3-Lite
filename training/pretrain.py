@@ -14,6 +14,7 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).parent.parent))
 from models.transformer import Transformer, count_parameters
 from models.mtp import MultiTokenPrediction
+from models._triton_dispatch import enforce_triton_env_var
 from utils.checkpoint import CheckpointManager
 from utils.logging import init_logging, get_logger
 
@@ -87,6 +88,16 @@ class PretrainDataset(Dataset):
         self._n_samples = (self._total_tokens - 1) // self.max_seq_len
 
     def _locate(self, global_idx: int) -> Tuple[int, int]:
+        """Map a global token index to (shard_idx, offset_within_shard).
+
+        Out-of-range indices raise IndexError. Negative indices are
+        rejected explicitly; indices >= _total_tokens are rejected because
+        the last token position is _total_tokens - 1.
+        """
+        if global_idx < 0 or global_idx >= self._total_tokens:
+            raise IndexError(
+                f"global_idx {global_idx} out of range [0, {self._total_tokens})"
+            )
         import bisect
         lo = bisect.bisect_right(self.shard_offsets, global_idx) - 1
         return lo, global_idx - self.shard_offsets[lo]
@@ -132,6 +143,10 @@ class Pretrainer:
         self.logger = get_logger()
 
         self._log("Initialising model...")
+        # AGENTS rule #7: a default-config run must never silently switch
+        # to a Triton path. Force-back any 'triton' dispatch keys in the
+        # model config to their PyTorch defaults unless the env-var is set.
+        enforce_triton_env_var(config.model_config, self._log)
         raw_model = Transformer(config.model_config, use_checkpoint=config.grad_checkpoint).to(self.device)
         total, trainable = count_parameters(raw_model)
         self._log(f"Parameters: {total:,} total / {trainable:,} trainable")

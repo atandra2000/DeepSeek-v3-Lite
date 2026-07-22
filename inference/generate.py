@@ -9,7 +9,17 @@ from models.transformer import Transformer
 from models.mtp import MTPModule
 from utils.checkpoint import CheckpointManager
 from inference.speculative import SpeculativeDecoder
-from transformers import AutoTokenizer
+
+# `transformers` is only required for the interactive `main()` entry point
+# (tokenizer loading). The pure-decode helpers used by tests import this
+# module without `transformers` installed; the optional import keeps the
+# test collection green on a CPU/Mac dev box.
+try:
+    from transformers import AutoTokenizer
+    HAS_TRANSFORMERS = True
+except ImportError:
+    AutoTokenizer = None  # type: ignore[assignment]
+    HAS_TRANSFORMERS = False
 
 
 def load_config(path: str) -> dict:
@@ -57,6 +67,12 @@ def generate_interactive(model: torch.nn.Module, tokenizer, args, mtp_module: Op
 
 
 def main():
+    if not HAS_TRANSFORMERS:
+        raise RuntimeError(
+            "The `transformers` package is required for `python -m inference.generate`. "
+            "Install with `pip install transformers`. For CPU/Mac development the "
+            "pure-decode helpers in this module are importable without it."
+        )
     parser = ArgumentParser(description="Run DeepSeek-V3-Lite inference")
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("--checkpoint", type=str, required=True)

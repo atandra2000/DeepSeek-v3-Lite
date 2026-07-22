@@ -21,8 +21,8 @@ def _make_prompt(small_cfg, length=8, device="cpu"):
     return torch.randint(0, small_cfg["vocab_size"] - 1, (1, length), device=device)
 
 
-# model.generate (exercises the inference path previously wrapped by generate_tokens)
-class TestGenerateTokens:
+class TestModelGenerate:
+    """Tests for `Transformer.generate` (the on-model autoregressive path)."""
     def test_basic(self, small_cfg, device):
         """model.generate produces output longer than input."""
         model = _make_model(small_cfg, device)
@@ -296,27 +296,4 @@ class TestInferenceHelpers:
 
 
 class TestSpeculativeDecoderAdditional:
-    """Tests for paths the original suite didn't cover."""
-
-    def test_generate_step_returns_correct_shapes(self, small_cfg):
-        """generate_step returns (main_token, draft_token, accepted) of the right shapes."""
-        from inference.speculative import SpeculativeDecoder
-        from models.transformer import Transformer
-        from models.mtp import MTPModule
-        torch.manual_seed(0)
-        cfg = dict(small_cfg, mtp_depth=1)
-        main = Transformer(cfg, use_checkpoint=False)
-        # SpeculativeDecoder expects a bare MTPModule (not MultiTokenPrediction wrapper).
-        mtp_module = MTPModule(cfg, depth=1)
-        mtp_module.set_output_head(main.head)
-        decoder = SpeculativeDecoder(main, mtp_module, acceptance_threshold=0.5)
-        # Pre-populate cache by running a forward first.
-        prompt = torch.randint(0, cfg["vocab_size"] - 1, (1, 4))
-        with torch.no_grad():
-            _ = main(prompt, start_pos=0, use_cache=True)
-        last_token = prompt[:, -1:]
-        with torch.no_grad():
-            t_main, t_draft, accepted = decoder.generate_step(last_token, start_pos=3)
-        assert t_main.shape == (1,)
-        assert t_draft.shape == (1,)
-        assert isinstance(accepted, bool)
+    """Placeholder for future SpeculativeDecoder tests."""

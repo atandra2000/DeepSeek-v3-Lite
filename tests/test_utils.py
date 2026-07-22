@@ -200,7 +200,6 @@ class TestMemoryEstimation:
     def test_parameter_bytes(self, small_cfg):
         """_parameter_bytes returns deduped param count × 2 (BF16)."""
         model = Transformer(small_cfg, use_checkpoint=False)
-        # ponytail: weight tying means head.weight shares storage with embed.weight; deduped.
         seen = set()
         deduped = 0
         for p in model.parameters():
@@ -232,7 +231,7 @@ class TestMemoryEstimation:
         assert bytes_2x == 2 * bytes_
 
     def test_activation_bytes(self, small_cfg):
-        """_activation_bytes computes correct scaling. ponytail: factor 24/36 (DeepSeek-V3/PaLM)."""
+        """_activation_bytes scales as 24× (grad-ckpt) or 36× (no grad-ckpt) of B·S·D·L."""
         with_ckpt = _activation_bytes(
             seq_len=64, batch_size=2,
             hidden_dim=small_cfg["dim"],

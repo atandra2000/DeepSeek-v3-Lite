@@ -30,8 +30,7 @@ class SpeculativeDecoder:
         token_draft = draft_probs.argmax(dim=-1)
         p_main_of_draft = main_probs[0, token_draft[0]].item()
         p_draft_of_draft = draft_probs[0, token_draft[0]].item()
-        acceptance_ratio = min(1.0, p_main_of_draft / p_draft_of_draft) if p_draft_of_draft > 1e-12 else 0.0
-        return token_main, token_draft, acceptance_ratio >= self.threshold
+        return token_main, token_draft, p_main_of_draft >= self.threshold * max(p_draft_of_draft, 1e-12)
 
     @torch.inference_mode()
     def generate(self, input_ids: torch.Tensor, max_new_tokens: int = 512, temperature: float = 1.0,

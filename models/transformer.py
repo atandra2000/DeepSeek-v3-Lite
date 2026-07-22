@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 
 from .mla import MultiHeadLatentAttention
 from .moe import DeepSeekMoE
+from ._triton_dispatch import enforce_triton_env_var
 
 
 class SwiGLUFFN(nn.Module):
@@ -42,6 +43,12 @@ class Transformer(nn.Module):
     def __init__(self, config: dict, use_checkpoint: bool = False):
         super().__init__()
         model_cfg = config.get("model", config)
+        # AGENTS rule #7: a default-config run must never silently switch
+        # to a Triton path. The same guard also runs in
+        # `training.pretrain._enforce_triton_env_var` at pretrain time; this
+        # second call covers the case where the model is built outside
+        # the pretrain entry point (tests, inference scripts).
+        enforce_triton_env_var(model_cfg, print)
         self.use_checkpoint = use_checkpoint
         self.max_seq_len = model_cfg["max_seq_len"]
         self.config = model_cfg
@@ -67,9 +74,9 @@ class Transformer(nn.Module):
     def _run_layers(self, h: torch.Tensor, start_pos: int, mask: Optional[torch.Tensor], use_cache: bool) -> torch.Tensor:
         for layer in self.layers:
             if self.use_checkpoint and self.training:
-                def _block(h, layer=layer, sp=start_pos, m=mask, uc=use_cache):
-                    return layer(h, sp, m, uc)
-                h = torch.utils.checkpoint.checkpoint(_block, h, use_reentrant=False)
+                h = torch.utils.checkpoint.checkpoint(
+                    layer, h, start_pos, mask, use_cache, use_reentrant=False,
+                )
             else:
                 h = layer(h, start_pos, mask, use_cache)
         return h

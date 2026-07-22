@@ -598,7 +598,7 @@ class TestMuPLRBoundary:
             "kv_lora_rank": 4, "q_lora_rank": 0, "qk_nope_head_dim": 4, "qk_rope_head_dim": 2,
             "v_head_dim": 4, "max_seq_len": 8, "rope_theta": 10000, "rope_factor": 1.0,
             "mscale": 1.0, "mtp_depth": 0, "mtp_loss_weight": 0.0, "dtype": "bf16",
-            "attn_impl": "sdpa", "use_grouped": "stacked", "weight_tying": True,
+            "attn_impl": "sdpa", "weight_tying": True,
         }
         # 1) total == reference → factor 1.0
         config = TrainingConfig(
@@ -628,7 +628,7 @@ class TestMuPLRBoundary:
             "kv_lora_rank": 4, "q_lora_rank": 0, "qk_nope_head_dim": 4, "qk_rope_head_dim": 2,
             "v_head_dim": 4, "max_seq_len": 8, "rope_theta": 10000, "rope_factor": 1.0,
             "mscale": 1.0, "mtp_depth": 0, "mtp_loss_weight": 0.0, "dtype": "bf16",
-            "attn_impl": "sdpa", "use_grouped": "stacked", "weight_tying": True,
+            "attn_impl": "sdpa", "weight_tying": True,
         }
         original_lr = 2.2e-4
         config = TrainingConfig(

@@ -35,7 +35,6 @@ def cfg() -> Dict:
         "mtp_loss_weight":     0.3,
         "dtype":               "bf16",
         "attn_impl":           "sdpa",
-        "use_grouped":         "stacked",
         "weight_tying":        True,
     }
 
@@ -67,7 +66,6 @@ def small_cfg() -> Dict:
         "mtp_loss_weight":     0.3,
         "dtype":               "bf16",
         "attn_impl":           "sdpa",
-        "use_grouped":         "stacked",
         "weight_tying":        True,
     }
 
@@ -75,12 +73,6 @@ def small_cfg() -> Dict:
 @pytest.fixture(scope="session")
 def device() -> torch.device:
     return torch.device("cpu")
-
-
-@pytest.fixture(scope="session")
-def nested_cfg(cfg) -> Dict:
-    """Config nested under the 'model' key (YAML format)."""
-    return {"model": cfg}
 
 
 @pytest.fixture(scope="session")

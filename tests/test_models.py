@@ -22,7 +22,7 @@ def _make_hidden(cfg, bsz=2, seq_len=None, device="cpu"):
     return torch.randn(bsz, seq, cfg["dim"], device=device)
 
 
-# Embedding / weight tying — ParallelEmbedding wrapper removed; nn.Embedding is stdlib.
+# Embedding / weight tying
 class TestEmbedding:
     def test_weight_tying_shared(self, small_cfg):
         """Verify weight tying shares the same storage."""
@@ -196,15 +196,6 @@ class TestMLA:
         assert mla.pe_cache is None
         assert mla._cache_batch == 0
 
-    def test_prefill_cache(self, small_cfg, device):
-        mla = MultiHeadLatentAttention(small_cfg).to(device)
-        bsz, seq = 1, 8
-        kv = torch.randn(bsz, seq, small_cfg["kv_lora_rank"], device=device)
-        pe = torch.randn(bsz, seq, small_cfg["qk_rope_head_dim"], device=device)
-        mla.prefill_cache(kv, pe, start_pos=0)
-        assert mla.kv_cache is not None
-        assert torch.allclose(mla.kv_cache[:bsz, :seq], kv)
-
     def test_forward_manual_impl(self, small_cfg, device):
         """Manual attention path works and produces correct shapes."""
         cfg = dict(small_cfg, attn_impl="manual")
@@ -245,14 +236,6 @@ class TestMLA:
         x = _make_hidden(small_cfg, seq_len=max_len + 1, device=device)
         with pytest.raises(RuntimeError, match="exceeds max_seq_len"):
             mla(x, start_pos=0, use_cache=False)
-
-    def test_prefill_overflow_raises(self, small_cfg, device):
-        """prefill_cache beyond max_seq_len raises."""
-        mla = MultiHeadLatentAttention(small_cfg).to(device)
-        kv = torch.randn(1, small_cfg["max_seq_len"] + 1, small_cfg["kv_lora_rank"], device=device)
-        pe = torch.randn(1, small_cfg["max_seq_len"] + 1, small_cfg["qk_rope_head_dim"], device=device)
-        with pytest.raises(ValueError, match="end_pos.*> max_seq_len"):
-            mla.prefill_cache(kv, pe, start_pos=0)
 
 
 # SwiGLUFFN
@@ -298,33 +281,11 @@ class TestDeepSeekMoE:
         assert out.shape == x.shape
 
     def test_forward_stacked(self, small_cfg, device):
-        """Stacked forward produces correct output shape."""
-        cfg = dict(small_cfg, use_grouped="stacked")
-        moe = DeepSeekMoE(cfg).to(device)
+        """Default (stacked) forward produces correct output shape."""
+        moe = DeepSeekMoE(small_cfg).to(device)
         x = _make_hidden(small_cfg, device=device)
         out = moe(x)
         assert out.shape == x.shape
-
-    def test_forward_grouped(self, small_cfg, device):
-        """Grouped forward produces correct output shape."""
-        cfg = dict(small_cfg, use_grouped=True)
-        moe = DeepSeekMoE(cfg).to(device)
-        x = _make_hidden(small_cfg, device=device)
-        out = moe(x)
-        assert out.shape == x.shape
-
-    def test_stacked_and_grouped_agree(self, small_cfg, device):
-        """Stacked and grouped forward should produce similar results."""
-        stacked = DeepSeekMoE(dict(small_cfg, use_grouped="stacked")).to(device)
-        grouped = DeepSeekMoE(dict(small_cfg, use_grouped=True)).to(device)
-        # Share weights
-        grouped.load_state_dict(stacked.state_dict())
-        x = _make_hidden(small_cfg, device=device)
-        with torch.no_grad():
-            out_s = stacked(x)
-            out_g = grouped(x)
-        assert torch.allclose(out_s, out_g, atol=1e-5), \
-            "stacked and grouped forward should match"
 
     def test_gate_routing_correct_shape(self, small_cfg, device):
         """Gate returns (T, topk) weights and indices."""
@@ -380,16 +341,6 @@ class TestDeepSeekMoE:
         moe = DeepSeekMoE(small_cfg).to(device)
         loss = moe.get_load_balance_loss()
         assert loss.item() == 0.0
-
-    def test_routing_stats(self, small_cfg, device):
-        """get_routing_stats returns expected keys."""
-        moe = DeepSeekMoE(small_cfg).to(device)
-        x = _make_hidden(small_cfg, device=device)
-        _ = moe(x)
-        stats = moe.get_routing_stats()
-        for key in ("counts", "load", "mean_weight", "utilisation"):
-            assert key in stats, f"Missing key: {key}"
-        assert stats["counts"].shape == (small_cfg["n_routed_experts"],)
 
 
 # AuxLossFreeGate (standalone)
@@ -579,8 +530,7 @@ class TestMultiTokenPrediction:
                 "Each MTP module should share the main model's head"
 
     def test_registered_embed(self, small_cfg, device):
-        """Embedding parameters are included in the MTP wrapper's parameter set
-        (ensuring they are trained and moved to the correct device)."""
+        """Embedding parameters are included in the MTP wrapper's parameter set (ensuring they're trained and moved to the right device)."""
         main = Transformer(small_cfg, use_checkpoint=False)
         mtp = MultiTokenPrediction(small_cfg, main)
 
@@ -791,14 +741,6 @@ class TestMLAAdditional:
         attn = MultiHeadLatentAttention(new_cfg, layer_idx=0).to(device)
         assert attn.mscale == 1.0
 
-    def test_prefill_cache_overflow(self, cfg, device):
-        """prefill_cache raises when end_pos > max_seq_len."""
-        attn = MultiHeadLatentAttention(cfg, layer_idx=0).to(device)
-        kv = torch.randn(1, 4, cfg["kv_lora_rank"], device=device)
-        pe = torch.randn(1, 4, cfg["qk_rope_head_dim"], device=device)
-        with pytest.raises(ValueError):
-            attn.prefill_cache(kv, pe, start_pos=cfg["max_seq_len"] - 2)
-
     def test_ensure_cache_grows(self, cfg, device):
         """_ensure_cache allocates at least 2x the previous batch size."""
         attn = MultiHeadLatentAttention(cfg, layer_idx=0).to(device)
@@ -812,17 +754,11 @@ class TestMLAAdditional:
 class TestDeepSeekMoEAdditional:
     """Tests for MoE / AuxLossFreeGate paths the original suite didn't cover."""
 
-    def test_get_routing_stats_empty(self):
-        """Before any forward, get_routing_stats returns {}."""
+    def test_routing_stats_empty(self):
+        """get_routing_stats removed — guard the drop."""
         from models.moe import DeepSeekMoE
-        cfg = {
-            "dim": 32, "n_routed_experts": 4, "n_shared_experts": 1,
-            "moe_inter_dim": 32, "n_activated_experts": 2,
-            "use_grouped": "stacked", "n_expert_groups": 1, "n_limited_groups": 1,
-            "group_topk": 1,
-        }
-        moe = DeepSeekMoE(cfg)
-        assert moe.get_routing_stats() == {}
+        assert not hasattr(DeepSeekMoE, "get_routing_stats"), \
+            "get_routing_stats should be deleted; tests may need cleanup"
 
     def test_update_bias_sign_rule(self):
         """Over-loaded expert: bias decreases. Under-loaded: bias increases. In deadband: unchanged."""

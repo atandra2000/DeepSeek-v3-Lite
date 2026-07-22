@@ -19,9 +19,8 @@ class CheckpointManager:
         state = state_dict if state_dict is not None else model.state_dict()
         self._atomic_save_safetensors(state, self.save_dir / f"model_step_{step}.safetensors")
         self._atomic_save_torch(optimizer.state_dict(), self.save_dir / f"optim_step_{step}.pt")
-        meta: dict = {"step": step}
-        if extra_meta:
-            meta.update({k: v for k, v in extra_meta.items() if k != "step"})
+        # `step` always comes from the function arg; ignore any caller-supplied key.
+        meta: dict = {"step": step, **{k: v for k, v in (extra_meta or {}).items() if k != "step"}}
         self._atomic_save_json(meta, self.save_dir / f"meta_step_{step}.json")
         logger.info("[checkpoint] saved step %d → %s", step, self.save_dir)
 
