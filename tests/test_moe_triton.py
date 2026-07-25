@@ -258,37 +258,52 @@ class TestMoeTritonKernelGPU:
             triton_grouped_moe_dispatch(x, w1, w2, w3, gw, offsets)
 
     def test_autograd_gradcheck_tiny(self):
-        """Run forward + backward, verify every input got a gradient."""
+        """Run forward + backward, verify every input got a gradient.
+
+        Note: shape (D, I) must be ≥ 16 — Triton's `tl.dot` rejects smaller matmul
+        tiles. We pad to (16, 16) and trim the result; this still exercises the
+        kernel's autograd path end-to-end.
+
+        Inputs are constructed with `randn().mul(0.1)`-style scaling which leaves
+        them as leaf tensors (the test asserts `.grad is not None` after backward,
+        which only works on leaves — a non-leaf would just emit a warning and
+        leave `.grad` None).
+        """
         torch.manual_seed(45)
-        T, D, E, I = 32, 8, 2, 8
+        T, D, E, I = 32, 16, 2, 16
         device = torch.device("cuda")
-        x = torch.randn(T, D, dtype=torch.float32, device=device, requires_grad=True) * 0.1
-        w1 = torch.randn(E, I, D, dtype=torch.float32, device=device, requires_grad=True) * 0.1
-        w2 = torch.randn(E, D, I, dtype=torch.float32, device=device, requires_grad=True) * 0.1
-        w3 = torch.randn(E, I, D, dtype=torch.float32, device=device, requires_grad=True) * 0.1
+        x = (torch.randn(T, D, dtype=torch.float32, device=device) * 0.1).detach().requires_grad_(True)
+        w1 = (torch.randn(E, I, D, dtype=torch.float32, device=device) * 0.1).detach().requires_grad_(True)
+        w2 = (torch.randn(E, D, I, dtype=torch.float32, device=device) * 0.1).detach().requires_grad_(True)
+        w3 = (torch.randn(E, I, D, dtype=torch.float32, device=device) * 0.1).detach().requires_grad_(True)
         counts = torch.tensor([16, 16], dtype=torch.int64, device=device)
         offsets = torch.cat(
             [torch.zeros(1, dtype=torch.int64, device=device), counts.cumsum(0)]
         )
-        gw = torch.rand(T, dtype=torch.float32, device=device, requires_grad=True) * 0.1
+        gw = (torch.rand(T, dtype=torch.float32, device=device) * 0.1).detach().requires_grad_(True)
         y = triton_grouped_moe_dispatch(x, w1, w2, w3, gw, offsets)
         y.sum().backward()
         for name, p in [("x", x), ("w1", w1), ("w2", w2), ("w3", w3), ("gw", gw)]:
             assert p.grad is not None, f"{name} has no grad after backward"
 
     def test_backward_matches_pytorch_tiny(self):
+        """Bump shape to (D=16, I=16) so Triton's tl.dot accepts the matmul tiles
+        (each input dim must be ≥ 16). Same intent: cross-check autograd grads vs
+        the pure-PyTorch reference.
+
+        Inputs are scaled-leaf so `.grad` actually populates on backward."""
         torch.manual_seed(46)
-        T, D, E, I = 16, 8, 2, 8
+        T, D, E, I = 16, 16, 2, 16
         device = torch.device("cuda")
-        x = torch.randn(T, D, dtype=torch.float32, device=device, requires_grad=True) * 0.1
-        w1 = torch.randn(E, I, D, dtype=torch.float32, device=device, requires_grad=True) * 0.1
-        w2 = torch.randn(E, D, I, dtype=torch.float32, device=device, requires_grad=True) * 0.1
-        w3 = torch.randn(E, I, D, dtype=torch.float32, device=device, requires_grad=True) * 0.1
+        x = (torch.randn(T, D, dtype=torch.float32, device=device) * 0.1).detach().requires_grad_(True)
+        w1 = (torch.randn(E, I, D, dtype=torch.float32, device=device) * 0.1).detach().requires_grad_(True)
+        w2 = (torch.randn(E, D, I, dtype=torch.float32, device=device) * 0.1).detach().requires_grad_(True)
+        w3 = (torch.randn(E, I, D, dtype=torch.float32, device=device) * 0.1).detach().requires_grad_(True)
         counts = torch.tensor([8, 8], dtype=torch.int64, device=device)
         offsets = torch.cat(
             [torch.zeros(1, dtype=torch.int64, device=device), counts.cumsum(0)]
         )
-        gw = torch.rand(T, dtype=torch.float32, device=device, requires_grad=True) * 0.1
+        gw = (torch.rand(T, dtype=torch.float32, device=device) * 0.1).detach().requires_grad_(True)
 
         y_ref = grouped_moe_pytorch(x, w1, w2, w3, offsets, gw)
         g = torch.randn_like(y_ref)

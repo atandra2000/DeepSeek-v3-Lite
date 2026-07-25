@@ -210,7 +210,10 @@ class TestPretrainerConstruction:
         """Pretrainer can be constructed on CPU."""
         config = _build_training_config(small_cfg, str(tmp_ckpt_dir))
         # fused AdamW requires CUDA — patch to False on CPU
-        with patch("training.pretrain.AdamW", lambda *a, **kw: torch.optim.AdamW(*a, **{**kw, "fused": False})):
+        # Also force Pretrainer to pick CPU even if the host has CUDA, since this
+        # test exercises the smoke-test path on a CPU-only fixture.
+        with patch("training.pretrain.AdamW", lambda *a, **kw: torch.optim.AdamW(*a, **{**kw, "fused": False})), \
+             patch("training.pretrain.torch.cuda.is_available", return_value=False):
             trainer = Pretrainer(config)
         assert trainer.device.type == "cpu"
         assert trainer.raw_model is not None

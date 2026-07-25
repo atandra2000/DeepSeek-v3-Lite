@@ -294,9 +294,12 @@ class TestMemoryEstimation:
 
     def test_assert_fits_no_cuda(self):
         """assert_fits_in_available_gpu is a no-op when CUDA is not available."""
-        # Should not raise
-        assert_fits_in_available_gpu(999.0)
-        assert_fits_in_available_gpu(0.0)
+        # Force the no-CUDA path even on hosts that have a GPU, since this test
+        # is specifically verifying the "no CUDA" branch.
+        with patch("utils.memory.torch.cuda.is_available", return_value=False):
+            # Should not raise
+            assert_fits_in_available_gpu(999.0)
+            assert_fits_in_available_gpu(0.0)
 
     def test_overhead_detection(self):
         """_detect_overhead_gb returns 2.0 on CPU."""
