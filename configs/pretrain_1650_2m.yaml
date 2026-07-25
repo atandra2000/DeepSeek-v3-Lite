@@ -1,0 +1,64 @@
+# configs/pretrain_1650_2m.yaml
+# DeepSeek-V3-Lite ~2M param tiny config for the GTX 1650 (4GB) end-to-end test.
+# Same architecture features as the 422M config (MLA, MoE aux-loss-free, MTP) but
+# sized to fit comfortably in 4GB VRAM, leaving headroom for activations + optimizer
+# state + a few MTP-drafting buffers.
+#
+# Architecture: dim=64, 4 layers (2 dense + 2 MoE × 4 experts), 1 activated expert,
+# 50K vocab (GPT-2). All MLA/MoE/MTP invariants preserved.
+
+model:
+  vocab_size:          50257        # GPT-2 vocab (avoids HF-auth for deepseek-coder-v2-lite)
+  dim:                 64
+  n_layers:            4            # 2 dense + 2 MoE
+  n_heads:             4
+  n_dense_layers:      2
+  n_routed_experts:    4
+  n_shared_experts:    1
+  n_activated_experts: 1
+  inter_dim:           128
+  moe_inter_dim:       32
+  kv_lora_rank:        16           # must be >= 16 for Triton's tl.dot
+  q_lora_rank:         0
+  qk_nope_head_dim:    16           # must be >= 16
+  qk_rope_head_dim:    16           # must be >= 16
+  v_head_dim:          16           # must be >= 16
+  max_seq_len:         128
+  rope_theta:          10000
+  rope_factor:         1.0
+  mscale:              1.0
+  mtp_depth:           1
+  mtp_loss_weight:     0.3
+  dtype:               bf16
+  attn_impl:           "sdpa"
+  use_grouped:         "stacked"   # stacked is the PyTorch default; triton is the
+                                   # kernel hot-path (requires CUDA, gated by env var)
+  weight_tying:        true
+
+training:
+  micro_batch_size:              2
+  gradient_accumulation_steps:   2
+  total_steps:                   10000
+  warmup_steps:                  50
+  lr:                            1.0e-3
+  min_lr_ratio:                  0.05
+  weight_decay:                  0.1
+  beta1:                         0.9
+  beta2:                         0.95
+  grad_clip:                     1.0
+  grad_checkpoint:               false   # tiny model, no need
+  compile:                       false   # compilation can OOM on 4GB; PyTorch eager
+                                          # is fast enough for the smoke test
+  save_interval:                 100
+  log_interval:                  10
+  mup_lr:                        false   # mup LR scaling only useful for large models
+  nan_guard:                     true
+  nan_guard_max_consecutive:     5
+  log_per_component_params:      true
+  bias_update_speed:             0.001
+  bias_update_every:             1
+  save_dir:                      "checkpoints/pretrain_1650_2m"
+
+data:
+  train_data_path:      "data/pretrain_chinchilla"
+  tokenizer_path:       "gpt2"
