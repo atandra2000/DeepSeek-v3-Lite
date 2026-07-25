@@ -125,7 +125,10 @@ if HAS_TRITON:
             mask=(d_idx[:, None] < D) & (i_idx[None, :] < I),
             other=0.0,
         )
-        out_acc = tl.dot(h, tl.trans(w2_tile))
+        # `h` is fp32 (from gate_acc/up_acc SwiGLU accumulators). Cast to the
+        # input dtype so the final bf16·bf16 dot has matching operand dtypes.
+        h_typed = h.to(x_ptr.dtype.element_ty)
+        out_acc = tl.dot(h_typed, tl.trans(w2_tile))
 
         gw = tl.load(gw_ptr + (start + t_off) * stride_gw_t, mask=t_mask, other=0.0)
         out_acc = out_acc * gw[:, None]
@@ -342,14 +345,21 @@ if HAS_TRITON:
                         mask=t_mask[:, None] & d_mask[None, :], other=0.0,
                     )
 
-                    dgate_masked = tl.where(i_mask[:, None], dgate_pre, 0.0)
-                    dup_masked = tl.where(i_mask[:, None], dup, 0.0)
-                    h_t = tl.where(i_mask[None, :], tl.trans(h), 0.0)
-                    dy_w_t = tl.where(d_mask[:, None], tl.trans(dy_w), 0.0)
+                    # Mask broadcast: pair each 1-D mask with the axis it owns.
+                    # i_mask/d_mask are 1-D; the tensors they gate are 2-D with
+                    # shapes (BLOCK_T, BLOCK_I), (BLOCK_I, BLOCK_T), (BLOCK_D, BLOCK_T) —
+                    # so use [None, :] (axis 0) rather than [:, None] which would
+                    # require axis-0 size to equal BLOCK_I. dw2 dot uses un-transposed h.
+                    dgate_masked = tl.where(i_mask[None, :], dgate_pre, 0.0)
+                    dup_masked = tl.where(i_mask[None, :], dup, 0.0)
+                    t_i_mask = t_mask[:, None] & i_mask[None, :]
+                    h_masked = tl.where(t_i_mask, h, 0.0)
+                    d_t_mask = d_mask[:, None] & t_mask[None, :]
+                    dy_w_t = tl.where(d_t_mask, tl.trans(dy_w), 0.0)
 
                     dw1_local += tl.dot(tl.trans(dgate_masked), x_tile)
                     dw3_local += tl.dot(tl.trans(dup_masked), x_tile)
-                    dw2_local += tl.dot(dy_w_t, h_t)
+                    dw2_local += tl.dot(dy_w_t, h_masked)
 
                 mask_1d = (i_idx[:, None] < I) & (d_off[None, :] < D)
                 tl.store(
