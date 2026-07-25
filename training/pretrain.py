@@ -246,6 +246,14 @@ class Pretrainer:
 
     def train_step(self, tokens: torch.Tensor, targets: torch.Tensor, micro_step: int) -> Optional[Dict[str, Optional[float]]]:
         is_opt_step = (micro_step + 1) % self.config.gradient_accumulation_steps == 0
+        # Cast uint32 → int64 at the boundary. PretrainDataset stores tokens as
+        # uint32 for memory efficiency (4 bytes vs 8), but `nn.Embedding` and
+        # `F.cross_entropy` both require Long indices. Doing the cast here keeps
+        # the dataset's storage compact and the training path dtype-correct.
+        if tokens.dtype != torch.long:
+            tokens = tokens.to(torch.long)
+        if targets.dtype != torch.long:
+            targets = targets.to(torch.long)
         with self._amp_context():
             if self.mtp_wrapper is not None:
                 main_logits, mtp_pairs = self.model(tokens, start_pos=0)

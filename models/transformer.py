@@ -93,6 +93,10 @@ class Transformer(nn.Module):
 
     def forward(self, tokens: torch.Tensor, start_pos: int = 0, use_cache: bool = True) -> torch.Tensor:
         """(bsz, seqlen) -> (bsz, seqlen, vocab_size). start_pos: KV-cache offset."""
+        # `nn.Embedding` requires Long indices. Accept uint32 (common from mmap'd
+        # token shards) by casting at the boundary.
+        if tokens.dtype != torch.long:
+            tokens = tokens.to(torch.long)
         bsz, seqlen = tokens.shape
         h = self.embed(tokens)
         mask = self._build_causal_mask(seqlen, tokens.device) if seqlen > 1 else None
