@@ -13,8 +13,8 @@ from typing import Callable
 # Triton dispatch keys + their PyTorch defaults. A config with the
 # Triton value for any of these is force-backed to the PyTorch default
 # when ENABLE_TRITON_KERNELS != '1'.
-# ponytail: single tuple table — earlier `_TRITON_DISPATCH_KEYS` + `_PYTORCH_DEFAULTS`
-# dict pair enforced in lockstep via a dedicated test; one source of truth now.
+# Single tuple table — earlier _TRITON_DISPATCH_KEYS + _PYTORCH_DEFAULTS pair
+# was enforced in lockstep via a dedicated test; one source of truth now.
 _DISPATCH = {
     ("attn_impl",    "triton"):         "sdpa",
     ("moe_dispatch", "triton_grouped"): "stacked",

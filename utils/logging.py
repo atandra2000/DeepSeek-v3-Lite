@@ -44,7 +44,7 @@ class TrainingLogger:
         self._loss_window = []
         self._step_start = time.time()
 
-    # ponytail: save_log/finish removed — zero callers. Add back when log persistence or wandb teardown is wired in.
+    # save_log/finish removed — zero callers. Add back when log persistence or wandb teardown is wired in.
 
 
 _logger: Optional[TrainingLogger] = None

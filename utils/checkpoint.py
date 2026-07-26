@@ -56,8 +56,7 @@ class CheckpointManager:
         steps = self._list_steps()
         return next((s for s in sorted(steps, reverse=True) if self._checkpoint_complete(s)), None)
 
-    # ponytail: list_checkpoints/delete_checkpoint/keep_last_n retention API removed —
-    # only callers were tests; training loop uses save + latest_step. Add back when retention is wired in.
+    # Only callers were tests; training loop uses save + latest_step. Add back when retention is wired in.
 
     import contextlib
     @contextlib.contextmanager
@@ -108,6 +107,3 @@ class CheckpointManager:
     def _checkpoint_complete(self, step: int) -> bool:
         return all((self.save_dir / n).exists() for n in [
             f"model_step_{step}.safetensors", f"optim_step_{step}.pt", f"meta_step_{step}.json"])
-
-# ponytail: local _json_default removed — duplicate of shared_data.common._json_default.
-# Only caller writes plain types (scheduler state_dict, asdict(config)); default=str is the safety net.

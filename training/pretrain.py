@@ -254,7 +254,7 @@ class Pretrainer:
             if self.mtp_wrapper is not None:
                 main_logits, mtp_pairs = self.model(tokens, start_pos=0)
                 total_loss, main_loss, mtp_loss = self.mtp_wrapper.compute_loss(main_logits, targets, mtp_pairs)
-                # ponytail: .detach() instead of .item() — logger does the host round-trip at log_every cadence.
+                # Defer host round-trip to the logger (avoids per-step GPU sync).
                 _ce_loss_val = main_loss.detach()
                 _mtp_loss_val = mtp_loss.detach() if mtp_pairs else None
                 loss = total_loss / self.config.gradient_accumulation_steps
@@ -358,7 +358,7 @@ class Pretrainer:
                 nan_guard_streak = 0
                 if global_step % self.config.log_every == 0:
                     lr = self.scheduler.get_last_lr()[0]
-                    # ponytail: single .item() per log step (not per micro-step) — avoids 3-4 forced GPU syncs per step.
+                    # Single .item() per log step (not per micro-step) — avoids 3-4 forced GPU syncs.
                     log_metrics = {"balance_loss": float(metrics["balance_loss"].item()) if isinstance(metrics["balance_loss"], torch.Tensor) else float(metrics["balance_loss"])}
                     if metrics.get("mtp_loss") is not None:
                         log_metrics["mtp_loss"] = float(metrics["mtp_loss"].item()) if isinstance(metrics["mtp_loss"], torch.Tensor) else float(metrics["mtp_loss"])

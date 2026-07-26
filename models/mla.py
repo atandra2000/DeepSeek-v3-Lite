@@ -152,7 +152,7 @@ class MultiHeadLatentAttention(nn.Module):
         if self.attn_impl == "sdpa":
             seqlen_k = ctx_kv.size(1)
             ctx_kv_bmm = ctx_kv.reshape(bsz * seqlen_k, self.kv_lora_rank).unsqueeze(0).expand(h, -1, -1)
-            # ponytail: fuse the two bmm's over the same ctx_kv (one for K_nope, one for V) into a single matmul.
+            # Fused: one bmm over ctx_kv produces K_nope and V together.
             wkv_b_kv = torch.cat([wkv_b_k, wkv_b_v], dim=1)
             KV_nope_h = torch.bmm(ctx_kv_bmm, wkv_b_kv.transpose(-1, -2))
             K_nope_h, V_h = KV_nope_h.split([self.qk_nope_head_dim, self.v_head_dim], dim=-1)
