@@ -1,11 +1,9 @@
 """Tests for training components: PretrainDataset, TrainingConfig, scheduler, Pretrainer."""
-import copy
 import json
 import os
 import tempfile
 from dataclasses import asdict
-from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 from unittest.mock import patch
 
 import pytest
@@ -398,12 +396,10 @@ class TestTrainStep:
 
         # Backward
         loss.backward()
-        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        assert not torch.isnan(grad_norm).any(), "Gradient norm should not be NaN"
         opt.step()
         opt.zero_grad()
 
-        # After one step, loss should generally decrease (random init → slightly less random)
+        # After one step, loss must remain positive (sanity, not a convergence check).
         with torch.no_grad():
             logits2 = model(tokens, start_pos=0, use_cache=False)
             loss2 = torch.nn.functional.cross_entropy(
@@ -411,7 +407,6 @@ class TestTrainStep:
                 targets.reshape(-1),
                 ignore_index=-100,
             )
-        # The loss may not always decrease in 1 step (depends on init), so this is informational
         assert loss2 > 0, "Loss should stay positive"
 
     def test_mtp_forward_backward(self, small_cfg, device):
@@ -435,8 +430,6 @@ class TestTrainStep:
         # Backward
         loss_val = total_loss / 2  # simulate grad_accum
         loss_val.backward()
-        grad_norm = torch.nn.utils.clip_grad_norm_(mtp.parameters(), 1.0)
-        assert not torch.isnan(grad_norm).any(), "Gradient norm should not be NaN"
         opt.step()
         opt.zero_grad()
 

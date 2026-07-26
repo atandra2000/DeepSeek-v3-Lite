@@ -16,6 +16,7 @@ from utils.memory import (
     _kv_cache_bytes,
     _activation_bytes,
     _infer_dim_n_layers,
+    _detect_overhead_gb,
     estimate_model_memory_gb,
     assert_fits_in_available_gpu,
 )
@@ -400,7 +401,7 @@ class TestMemoryEstimationAdditional:
         from utils.memory import _parameter_bytes
         assert _parameter_bytes(model) == n_total * 2
 
-    def test_inference_flag_in_estimator(self, small_cfg):
+    def test_inference_flag_in_estimator(self, small_cfg, device):
         """Setting inference=True vs False runs both paths in estimate_model_memory_gb without error."""
         from models.transformer import Transformer
         model = Transformer(small_cfg, use_checkpoint=False)
@@ -408,9 +409,3 @@ class TestMemoryEstimationAdditional:
         est_inf = estimate_model_memory_gb(model, seq_len=64, batch_size=2, overhead_gb=0.0, inference=True)
         assert est_train > 0
         assert est_inf > 0
-
-
-# Helper for the test above
-def _detect_overhead_gb():
-    """Replicated from utils.memory for CPU-only testing."""
-    return 2.0

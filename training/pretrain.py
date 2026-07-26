@@ -14,7 +14,6 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).parent.parent))
 from models.transformer import Transformer, count_parameters
 from models.mtp import MultiTokenPrediction
-from models._triton_dispatch import enforce_triton_env_var
 from utils.checkpoint import CheckpointManager
 from utils.logging import init_logging, get_logger
 
@@ -129,7 +128,6 @@ class Pretrainer:
     """BF16 pre-training loop for single GPU."""
     def __init__(self, config: TrainingConfig):
         self.config = config
-        # ponytail: inlined utils.distributed.device() — one-line torch.device call.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if not torch.cuda.is_available():
             print("[warn] CUDA not available — running on CPU (smoke-testing only).")
@@ -143,10 +141,8 @@ class Pretrainer:
         self.logger = get_logger()
 
         self._log("Initialising model...")
-        # AGENTS rule #7: a default-config run must never silently switch
-        # to a Triton path. Force-back any 'triton' dispatch keys in the
-        # model config to their PyTorch defaults unless the env-var is set.
-        enforce_triton_env_var(config.model_config, self._log)
+        # AGENTS rule #7: default-config run must never silently switch to a Triton path.
+        # Guard already ran in Transformer.__init__; this is a no-op.
         raw_model = Transformer(config.model_config, use_checkpoint=config.grad_checkpoint).to(self.device)
         total, trainable = count_parameters(raw_model)
         self._log(f"Parameters: {total:,} total / {trainable:,} trainable")

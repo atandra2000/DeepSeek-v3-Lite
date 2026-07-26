@@ -8,7 +8,6 @@ step + finite loss, (4) checkpoint round-trip with MTP, (5) KV-cache generation,
 """
 import argparse
 import gc
-import json
 import sys
 import tempfile
 import time
@@ -39,18 +38,6 @@ class Results:
 
     def all_ok(self) -> bool:
         return all(ok for _, ok, _ in self.cases)
-
-    def summary(self) -> dict:
-        return {
-            "total": len(self.cases),
-            "passed": sum(1 for _, ok, _ in self.cases if ok),
-            "failed": sum(1 for _, ok, _ in self.cases if not ok),
-            "cases": [
-                # Coerce to str: detail strings sometimes embed torch.Tensors.
-                {"name": str(n), "passed": bool(ok), "detail": str(d)}
-                for n, ok, d in self.cases
-            ],
-        }
 
 
 def _build_config(model_cfg_path: Path, ckpt_dir: Path, train_steps: int) -> TrainingConfig:
@@ -311,10 +298,10 @@ def main() -> int:
     results = run_e2e(cfg_path, args.train_steps, ckpt_dir)
 
     _section("Summary")
-    summary = results.summary()
-    print(json.dumps(summary, indent=2))
-    print(f"\n{summary['passed']}/{summary['total']} cases passed, "
-          f"{summary['failed']} failed")
+    passed = sum(1 for _, ok, _ in results.cases if ok)
+    total = len(results.cases)
+    failed = total - passed
+    print(f"\n{passed}/{total} cases passed, {failed} failed")
 
     return 0 if results.all_ok() else 1
 

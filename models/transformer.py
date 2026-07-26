@@ -37,17 +37,12 @@ class TransformerBlock(nn.Module):
         return x
 
 
-# ponytail: ParallelEmbedding wrapper removed — nn.Embedding + normal init is the same thing.
 class Transformer(nn.Module):
     """DeepSeek-V3-style Transformer: MLA attention, MoE FFN, optional MTP."""
     def __init__(self, config: dict, use_checkpoint: bool = False):
         super().__init__()
         model_cfg = config.get("model", config)
-        # AGENTS rule #7: a default-config run must never silently switch
-        # to a Triton path. The same guard also runs in
-        # `training.pretrain._enforce_triton_env_var` at pretrain time; this
-        # second call covers the case where the model is built outside
-        # the pretrain entry point (tests, inference scripts).
+        # Same guard as training.pretrain — covers model construction outside the pretrain entry point.
         enforce_triton_env_var(model_cfg, print)
         self.use_checkpoint = use_checkpoint
         self.max_seq_len = model_cfg["max_seq_len"]

@@ -43,7 +43,7 @@ print(f'CUDA: {torch.version.cuda}')
 "
 
 # Check data is present
-DATA_DIR="$REPO_ROOT/data/shards"
+DATA_DIR="$REPO_ROOT/data/pretrain_chinchilla"
 if [[ ! -d "$DATA_DIR" ]] || [[ -z "$(ls -A "$DATA_DIR"/shard_*.bin 2>/dev/null)" ]]; then
     echo "ERROR: no shard_*.bin files in $DATA_DIR"
     echo "Run first:  python3 data/prepare_data.py --stage pretrain"

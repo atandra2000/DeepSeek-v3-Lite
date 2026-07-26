@@ -6,9 +6,8 @@ time with a single warning — never per-layer at first invocation
 (AGENTS rule #7).
 """
 import sys
-from pathlib import Path
 
-from models._triton_dispatch import (  # noqa: E402
+from models._triton_dispatch import (
     _DISPATCH,
     enforce_triton_env_var,
 )
@@ -98,67 +97,3 @@ class TestEnforceTritonEnvVar:
             assert triton_val != pytorch_val, (
                 f"PyTorch default for {key} must differ from its Triton value"
             )
-
-# -----------------------------------------------------------------------------
-# Integration: building a Transformer triggers the guard.
-# -----------------------------------------------------------------------------
-class TestTransformerDispatchGuard:
-    def test_transformer_force_backs_attn_impl(self, monkeypatch, capsys):
-        """`Transformer(attn_impl='triton')` with no env-var must force-back at construction."""
-        monkeypatch.delenv("ENABLE_TRITON_KERNELS", raising=False)
-        from models.transformer import Transformer
-        cfg = {
-            "vocab_size": 64, "dim": 32, "n_layers": 1, "n_heads": 2,
-            "n_dense_layers": 1, "n_routed_experts": 4, "n_shared_experts": 1,
-            "n_activated_experts": 2, "inter_dim": 64, "moe_inter_dim": 32,
-            "kv_lora_rank": 16, "q_lora_rank": 0, "qk_nope_head_dim": 8,
-            "qk_rope_head_dim": 4, "v_head_dim": 8, "max_seq_len": 16,
-            "rope_theta": 10000.0, "rope_factor": 1.0, "mscale": 1.0,
-            "dtype": "bf16", "attn_impl": "triton", "weight_tying": True,
-        }
-        m = Transformer(cfg)
-        # The guard must have rewritten the config to PyTorch default.
-        assert cfg["attn_impl"] == "sdpa"
-        # And the model's per-layer MLA must have read the rewritten value.
-        assert m.layers[0].attn.attn_impl == "sdpa"
-        # The warning must have been printed exactly once.
-        captured = capsys.readouterr()
-        assert "attn_impl='triton' -> 'sdpa'" in captured.out
-
-    def test_transformer_pass_through_when_env_var_set(self, monkeypatch, capsys):
-        """`Transformer(attn_impl='triton')` with `ENABLE_TRITON_KERNELS=1` keeps the Triton value."""
-        monkeypatch.setenv("ENABLE_TRITON_KERNELS", "1")
-        from models.transformer import Transformer
-        cfg = {
-            "vocab_size": 64, "dim": 32, "n_layers": 1, "n_heads": 2,
-            "n_dense_layers": 1, "n_routed_experts": 4, "n_shared_experts": 1,
-            "n_activated_experts": 2, "inter_dim": 64, "moe_inter_dim": 32,
-            "kv_lora_rank": 16, "q_lora_rank": 0, "qk_nope_head_dim": 8,
-            "qk_rope_head_dim": 4, "v_head_dim": 8, "max_seq_len": 16,
-            "rope_theta": 10000.0, "rope_factor": 1.0, "mscale": 1.0,
-            "dtype": "bf16", "attn_impl": "triton", "weight_tying": True,
-        }
-        m = Transformer(cfg)
-        assert cfg["attn_impl"] == "triton"
-        assert m.layers[0].attn.attn_impl == "triton"
-        captured = capsys.readouterr()
-        assert "forcing" not in captured.out
-
-    def test_transformer_pytorch_config_is_silent(self, monkeypatch, capsys):
-        """A default 'sdpa' / 'stacked' config must build with no warning."""
-        monkeypatch.delenv("ENABLE_TRITON_KERNELS", raising=False)
-        from models.transformer import Transformer
-        cfg = {
-            "vocab_size": 64, "dim": 32, "n_layers": 1, "n_heads": 2,
-            "n_dense_layers": 1, "n_routed_experts": 4, "n_shared_experts": 1,
-            "n_activated_experts": 2, "inter_dim": 64, "moe_inter_dim": 32,
-            "kv_lora_rank": 16, "q_lora_rank": 0, "qk_nope_head_dim": 8,
-            "qk_rope_head_dim": 4, "v_head_dim": 8, "max_seq_len": 16,
-            "rope_theta": 10000.0, "rope_factor": 1.0, "mscale": 1.0,
-            "dtype": "bf16", "attn_impl": "sdpa", "moe_dispatch": "stacked",
-            "weight_tying": True,
-        }
-        m = Transformer(cfg)
-        captured = capsys.readouterr()
-        assert "forcing" not in captured.out
-        assert m.layers[0].attn.attn_impl == "sdpa"

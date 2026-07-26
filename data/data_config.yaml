@@ -32,5 +32,3 @@ pipeline:
   seed: 42
   streaming_download: true
   verify_after_pack: true
-_generator: DeepSeek-v3-Lite/data/prepare_data.py
-_tokenizer_family: deepseek-coder-v2

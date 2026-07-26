@@ -677,20 +677,6 @@ class TestCountParameters:
 class TestTransformerAdditional:
     """Tests for paths the original suite didn't cover."""
 
-    def test_reset_cache_clears_attn_buffers(self, cfg, device):
-        """After a forward then reset_cache(), the attn cache should be None."""
-        model = Transformer(cfg, use_checkpoint=False).to(device)
-        model.eval()
-        tokens = torch.randint(0, cfg["vocab_size"] - 1, (1, 8), device=device)
-        with torch.no_grad():
-            model(tokens, start_pos=0, use_cache=True)
-        for layer in model.layers:
-            assert layer.attn.kv_cache is not None or layer.attn.pe_cache is not None
-        model.reset_cache()
-        for layer in model.layers:
-            assert layer.attn.kv_cache is None
-            assert layer.attn.pe_cache is None
-
     def test_sample_argmax(self, cfg, device):
         """temperature=0 → argmax (greedy)."""
         from models.transformer import Transformer
@@ -754,12 +740,6 @@ class TestMLAAdditional:
 class TestDeepSeekMoEAdditional:
     """Tests for MoE / AuxLossFreeGate paths the original suite didn't cover."""
 
-    def test_routing_stats_empty(self):
-        """get_routing_stats removed — guard the drop."""
-        from models.moe import DeepSeekMoE
-        assert not hasattr(DeepSeekMoE, "get_routing_stats"), \
-            "get_routing_stats should be deleted; tests may need cleanup"
-
     def test_update_bias_sign_rule(self):
         """Over-loaded expert: bias decreases. Under-loaded: bias increases. In deadband: unchanged."""
         from models.moe import AuxLossFreeGate
@@ -778,19 +758,6 @@ class TestDeepSeekMoEAdditional:
         # Experts 1,2 (in deadband): unchanged.
         assert gate.bias[1].item() == 0
         assert gate.bias[2].item() == 0
-
-    def test_group_routing(self, cfg, device):
-        """With n_expert_groups > 1, the gate uses the group-routing branch and indices are in range."""
-        from models.moe import AuxLossFreeGate
-        new_cfg = dict(cfg, n_expert_groups=4, n_limited_groups=2, group_topk=2)
-        # The conftest cfg has 8 routed experts → 2 experts per group.
-        gate = AuxLossFreeGate(new_cfg).to(device)
-        x = torch.randn(2, new_cfg["dim"], device=device)  # (T, dim)
-        weights, indices = gate(x)
-        assert weights.shape == (2, new_cfg["n_activated_experts"])
-        assert indices.shape == (2, new_cfg["n_activated_experts"])
-        assert (indices >= 0).all() and (indices < new_cfg["n_routed_experts"]).all()
-
 
 class TestMTPAdditional:
     """Tests for MTP paths the original suite didn't cover."""

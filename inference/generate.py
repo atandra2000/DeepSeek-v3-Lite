@@ -32,8 +32,6 @@ def load_config(path: str) -> dict:
     return cfg
 
 
-# ponytail: generate_tokens wrapper removed — Transformer.generate is already @torch.inference_mode decorated.
-
 @torch.inference_mode()
 def generate_interactive(model: torch.nn.Module, tokenizer, args, mtp_module: Optional[MTPModule] = None) -> None:
     print("DeepSeek-V3-Lite  |  /exit to quit  |  /clear to reset context")
