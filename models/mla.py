@@ -1,3 +1,20 @@
+"""
+Multi-Head Latent Attention (MLA) layer from DeepSeek-V3.
+
+Mechanism:
+- The MLA layer takes an input tensor of shape (B, S, D) where B is the batch size, S is the sequence length, and D is the embedding dimension.
+- It computes queries (Q), keys (K), and values (V) using linear projections, with optional LoRA (Low-Rank Adaptation) for Q and K/V.
+- The queries are split into two parts: one for standard attention (Q_nope) and one for RoPE (Q_pe).
+- The keys are also split into two parts: one for standard attention (K_nope) and one for RoPE (K_pe).
+- The attention scores are computed using scaled dot-product attention, combining both the standard and RoPE components.
+- The output is computed by applying the attention scores to the values and projecting back to the original dimension.
+- The layer supports caching of K and V for efficient autoregressive generation.
+
+The implementation supports two attention mechanisms:
+1. Standard Dot-Product Attention (SDPA): Uses PyTorch's built-in scaled dot-product attention function.
+2. Triton-based fused attention: A custom implementation that fuses the materialization of K and V, RoPE application, and attention computation into a single kernel for improved performance
+"""
+
 import math
 import torch
 import torch.nn as nn
@@ -6,7 +23,8 @@ from typing import Optional
 
 
 class MultiHeadLatentAttention(nn.Module):
-    """Multi-Head Latent Attention (MLA) from DeepSeek-V3."""
+    """ Multi-Head Latent Attention (MLA) layer with optional LoRA and RoPE support."""
+
     def __init__(self, config: dict, layer_idx: int = 0):
         super().__init__()
         self.layer_idx = layer_idx
@@ -23,13 +41,7 @@ class MultiHeadLatentAttention(nn.Module):
         self.n_local_heads = self.n_heads
         self.rope_theta = config["rope_theta"]
         self.rope_factor = config.get("rope_factor", 1.0)
-        # mscale: DeepSeek-V3 / YaRN-style softplus on the raw mscale, gated
-        # by the YaRN rope_factor. When rope_factor > 1.0 the long-context
-        # schedule multiplies the raw mscale by 0.1 * log(rope_factor) so
-        # the attention logits grow as the context stretches; otherwise
-        # the raw mscale is the multiplier. softmax_scale is then
-        # `qk_head_dim**-0.5` scaled by `mscale**2` for long-context
-        # (max_seq_len > 4096) and left at `qk_head_dim**-0.5` otherwise.
+        # The mscale factor is used to scale the softmax in attention.
         mscale_raw = config.get("mscale", 1.0)
         if self.rope_factor > 1.0:
             self.mscale = 0.1 * mscale_raw * math.log(self.rope_factor)
@@ -131,11 +143,7 @@ class MultiHeadLatentAttention(nn.Module):
         q_nope_proj = q_nope_proj_h.reshape(h, bsz, seqlen_q, self.kv_lora_rank).permute(1, 2, 0, 3).contiguous()
 
         if self.attn_impl == "triton":
-            # Fused MLA materialise+RoPE+attn via models/mla_triton.py.
-            # See AGENTS.md rule #1: this is one of the two sanctioned
-            # Triton paths. Falls back to the SDPA path with a one-time
-            # warning if the kernel is unavailable or a dim exceeds the
-            # 256 cap.
+            # Try to use the fused triton kernel for MLA attention. If unavailable, fall back to SDPA.
             try:
                 return self._forward_triton(
                     q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v,
@@ -195,17 +203,13 @@ class MultiHeadLatentAttention(nn.Module):
         mask: Optional[torch.Tensor],
     ) -> torch.Tensor:
         """Fused MLA materialise+RoPE+attn path. See models/mla_triton.py.
-
-        Re-arranges the q_* tensors to (B, H, S_q, D) for the kernel,
-        calls `triton_mla_attention`, then runs the `wo` output
-        projection outside the kernel.
-        """
+        Re-arranges the input tensors to match the expected layout of the triton kernel, and calls it."""
+        
         from .mla_triton import triton_mla_attention
         # Kernel layout: q_nope (B, H, S_q, D_nope), q_pe (B, H, S_q, D_rope)
         q_nope_k = q_nope.permute(0, 2, 1, 3).contiguous()
         q_pe_k = q_pe.permute(0, 2, 1, 3).contiguous()
-        # Causal mask: when training (use_cache=False or prefill),
-        # S_q == S_kv. The kernel applies the mask internally.
+        # Causal mask: only applies if the query length equals the context length (i.e., no KV cache).
         is_causal = (mask is not None) and (seqlen == ctx_kv.size(1))
         out = triton_mla_attention(
             q_nope=q_nope_k,
