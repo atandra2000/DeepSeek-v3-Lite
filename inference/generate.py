@@ -100,7 +100,7 @@ def main():
         except ValueError:
             step = ckpt_mgr.latest_step()
     print(f"Loading checkpoint step {step}...")
-    ckpt_mgr.load(model, step, device=args.device)
+    ckpt_mgr.load(model, step, device=args.device, strict=False)
     mtp_module: Optional[MTPModule] = None
     if args.use_speculative:
         mtp_module = MTPModule(model_cfg, depth=1).to(args.device)

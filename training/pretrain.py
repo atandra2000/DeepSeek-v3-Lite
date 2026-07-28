@@ -59,6 +59,7 @@ class TrainingConfig:
     mup_lr_reference: float = 6.0e-4
     mup_lr_reference_params: int = 757226496
     log_per_component_params: bool = True
+    seed: int = 42
 
 
 class PretrainDataset(Dataset):
@@ -128,6 +129,8 @@ class Pretrainer:
     """BF16 pre-training loop for single GPU."""
     def __init__(self, config: TrainingConfig):
         self.config = config
+        # Seed before model construction for reproducible init + data order.
+        torch.manual_seed(config.seed)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if not torch.cuda.is_available():
             print("[warn] CUDA not available — running on CPU (smoke-testing only).")
@@ -186,7 +189,7 @@ class Pretrainer:
         self.optimizer = AdamW([
             {"params": decay_params, "weight_decay": config.weight_decay},
             {"params": no_decay_params, "weight_decay": 0.0},
-        ], lr=config.lr, betas=(config.beta1, config.beta2), fused=True)
+        ], lr=config.lr, betas=(config.beta1, config.beta2), fused=torch.cuda.is_available())
 
         lr_lambda = make_warmup_cosine_lambda(warmup_steps=config.warmup_steps, total_steps=config.max_steps, min_lr_ratio=config.min_lr_ratio)
         self.scheduler = LambdaLR(self.optimizer, lr_lambda)
@@ -286,6 +289,11 @@ class Pretrainer:
     def save_checkpoint(self, step: int, tag: str = "") -> None:
         model_to_save = self.raw_model
         state = model_to_save.state_dict()
+        # Weight tying: head.weight IS embed.weight (same tensor). Dropping the
+        # duplicate saves ~vocab×dim×4B per checkpoint; load_state_dict(strict=False)
+        # leaves head.weight missing, but the shared tensor is restored via embed.
+        if getattr(model_to_save, "weight_tying", False):
+            state = {k: v for k, v in state.items() if k != "head.weight"}
         if self.mtp_wrapper is not None:
             mtp_mod = self.mtp_wrapper
             orig = getattr(mtp_mod, "_orig_mod", mtp_mod)
@@ -321,7 +329,14 @@ class Pretrainer:
 
     def train(self) -> None:
         dataset = PretrainDataset(self.config.data_path, self.config.max_seq_len, self.config.vocab_size)
-        loader = DataLoader(dataset, batch_size=self.config.batch_size, num_workers=8, pin_memory=True,
+        # Shuffle with a seeded generator so each epoch reshuffles (no more
+        # identical sequential order every epoch). Resume does not restore the
+        # sampler RNG, so order differs across a restart — benign at this scale
+        # (samples are seen ~uniformly); exact resume would need sampler
+        # checkpointing.
+        g = torch.Generator().manual_seed(self.config.seed)
+        loader = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True, generator=g,
+                            num_workers=8, pin_memory=True,
                             persistent_workers=True, prefetch_factor=8, drop_last=True)
 
         global_step = 0
@@ -413,6 +428,7 @@ def main() -> None:
         mup_lr_reference=t.get("mup_lr_reference", 6.0e-4),
         mup_lr_reference_params=t.get("mup_lr_reference_params", 757226496),
         log_per_component_params=t.get("log_per_component_params", True),
+        seed=t.get("seed", 42),
     )
 
     trainer = Pretrainer(config)

@@ -59,7 +59,6 @@ if HAS_TRITON:
     @triton.jit
     def _grouped_moe_fwd_kernel(
         x_ptr, w1_ptr, w2_ptr, w3_ptr,
-        gw_ptr,
         offsets_ptr,
         y_ptr,
         T, D, I, E,
@@ -67,7 +66,6 @@ if HAS_TRITON:
         stride_w1_e, stride_w1_i, stride_w1_d,
         stride_w3_e, stride_w3_i, stride_w3_d,
         stride_w2_e, stride_w2_d, stride_w2_i,
-        stride_gw_t,
         stride_y_t, stride_y_d,
         BLOCK_T: tl.constexpr,
         BLOCK_D: tl.constexpr,
@@ -75,6 +73,8 @@ if HAS_TRITON:
     ):
         # One program per (expert, token-block). Caller enforces
         # BLOCK_I = next_pow2(I), BLOCK_D = next_pow2(D), I,D <= 256.
+        # Returns UNWEIGHTED out = h @ w2^T; the gate-weight multiply is done
+        # outside the autograd Function so the gate receives a gradient.
         e = tl.program_id(0)
         pid_t = tl.program_id(1)
 
@@ -130,21 +130,20 @@ if HAS_TRITON:
         h_typed = h.to(x_ptr.dtype.element_ty)
         out_acc = tl.dot(h_typed, tl.trans(w2_tile))
 
-        gw = tl.load(gw_ptr + (start + t_off) * stride_gw_t, mask=t_mask, other=0.0)
-        out_acc = out_acc * gw[:, None]
-
         tl.store(
             y_ptr + (start + t_off)[:, None] * stride_y_t + d_idx[None, :] * stride_y_d,
-            out_acc.to(tl.bfloat16),
+            out_acc.to(y_ptr.dtype.element_ty),
             mask=t_mask[:, None] & (d_idx[None, :] < D),
         )
 
     # Backward: re-compute silu(g), u, h on the fly from saved x,w1,w2,w3.
-    # dh = dy@w2; dsilu = dh*u; dgate_pre = dsilu*silu'(g);
-    # dup = dsilu*silu(g); dx = dgate_pre@w1 + dup@w3.
+    # dy arrives already scaled by the gate weight (autograd handles the
+    # outside multiply), so no gw load here. dh = dy@w2; dsilu = dh*u;
+    # dgate_pre = dsilu*silu'(g); dup = dsilu*silu(g);
+    # dx = dgate_pre@w1 + dup@w3.
     @triton.jit
     def _grouped_moe_bwd_dx_kernel(
-        x_ptr, w1_ptr, w2_ptr, w3_ptr, gw_ptr, offsets_ptr,
+        x_ptr, w1_ptr, w2_ptr, w3_ptr, offsets_ptr,
         dy_ptr, dx_ptr,
         T, D, I, E,
         stride_x_t, stride_x_d,
@@ -204,8 +203,6 @@ if HAS_TRITON:
             dy_ptr + (start + t_off)[:, None] * stride_dy_t + d_idx[None, :] * stride_dy_d,
             mask=t_mask[:, None] & (d_idx[None, :] < D), other=0.0,
         ).to(tl.float32)
-        gw = tl.load(gw_ptr + (start + t_off), mask=t_mask, other=0.0)
-        dy_w = dy_tile * gw[:, None]
 
         w2_tile = tl.load(
             w2_ptr + e * stride_w2_e
@@ -213,7 +210,7 @@ if HAS_TRITON:
             + i_idx[None, :] * stride_w2_i,
             mask=(d_idx[:, None] < D) & (i_idx[None, :] < I), other=0.0,
         )
-        dh = tl.dot(dy_w, w2_tile)
+        dh = tl.dot(dy_tile, w2_tile)
 
         # silu'(g) = sig(g) * (1 + g*(1 - sig(g)))
         dsilu = dh * up_acc
@@ -237,7 +234,7 @@ if HAS_TRITON:
 
         tl.store(
             dx_ptr + (start + t_off)[:, None] * stride_dx_t + d_idx[None, :] * stride_dx_d,
-            dx.to(tl.bfloat16),
+            dx.to(dx_ptr.dtype.element_ty),
             mask=t_mask[:, None] & (d_idx[None, :] < D),
         )
 
@@ -245,7 +242,7 @@ if HAS_TRITON:
     # gradient tile and writes directly after the token loop.
     @triton.jit
     def _grouped_moe_bwd_dw_kernel(
-        x_ptr, w1_ptr, w2_ptr, w3_ptr, gw_ptr, offsets_ptr,
+        x_ptr, w1_ptr, w2_ptr, w3_ptr, offsets_ptr,
         dy_ptr,
         dw1_ptr, dw3_ptr, dw2_ptr,           # (E, I, D), (E, I, D), (E, D, I)
         T, D, I, E,
@@ -257,7 +254,6 @@ if HAS_TRITON:
         stride_dw3_e, stride_dw3_i, stride_dw3_d,
         stride_dw2_e, stride_dw2_d, stride_dw2_i,
         stride_dy_t, stride_dy_d,
-        stride_gw_t,
         BLOCK_T: tl.constexpr,
         BLOCK_I: tl.constexpr,
         BLOCK_D: tl.constexpr,
@@ -323,9 +319,6 @@ if HAS_TRITON:
                         + d_off[None, :] * stride_dy_d,
                         mask=t_mask[:, None] & d_mask[None, :], other=0.0,
                     ).to(tl.float32)
-                    gw = tl.load(gw_ptr + (start + t_off) * stride_gw_t,
-                                 mask=t_mask, other=0.0)
-                    dy_w = dy_tile * gw[:, None]
 
                     w2_tile = tl.load(
                         w2_ptr + e * stride_w2_e
@@ -333,7 +326,7 @@ if HAS_TRITON:
                         + i_off[None, :] * stride_w2_i,
                         mask=d_mask[:, None] & i_mask[None, :], other=0.0,
                     )
-                    dh = tl.dot(dy_w, w2_tile)
+                    dh = tl.dot(dy_tile, w2_tile)
 
                     dsilu = dh * up_acc
                     dgate_pre = dsilu * sig_g * (1.0 + gate_acc * (1.0 - sig_g))
@@ -355,11 +348,11 @@ if HAS_TRITON:
                     t_i_mask = t_mask[:, None] & i_mask[None, :]
                     h_masked = tl.where(t_i_mask, h, 0.0)
                     d_t_mask = d_mask[:, None] & t_mask[None, :]
-                    dy_w_t = tl.where(d_t_mask, tl.trans(dy_w), 0.0)
+                    dy_t = tl.where(d_t_mask, tl.trans(dy_tile), 0.0)
 
                     dw1_local += tl.dot(tl.trans(dgate_masked), x_tile)
                     dw3_local += tl.dot(tl.trans(dup_masked), x_tile)
-                    dw2_local += tl.dot(dy_w_t, h_masked)
+                    dw2_local += tl.dot(dy_t, h_masked)
 
                 mask_1d = (i_idx[:, None] < I) & (d_off[None, :] < D)
                 tl.store(
@@ -413,7 +406,6 @@ if HAS_TRITON:
             w1: torch.Tensor,               # (E, I, D) BF16
             w2: torch.Tensor,               # (E, D, I) BF16
             w3: torch.Tensor,               # (E, I, D) BF16
-            sorted_weights: torch.Tensor,   # (T,) BF16
             expert_offsets: torch.Tensor,   # (E+1,) INT64
         ) -> torch.Tensor:
             T, D = x_sorted.shape
@@ -430,7 +422,6 @@ if HAS_TRITON:
 
             _grouped_moe_fwd_kernel[grid](
                 x_sorted, w1, w2, w3,
-                sorted_weights,
                 expert_offsets,
                 y_sorted,
                 T, D, I, E,
@@ -438,7 +429,6 @@ if HAS_TRITON:
                 w1.stride(0), w1.stride(1), w1.stride(2),
                 w3.stride(0), w3.stride(1), w3.stride(2),
                 w2.stride(0), w2.stride(1), w2.stride(2),
-                sorted_weights.stride(0),
                 y_sorted.stride(0), y_sorted.stride(1),
                 BLOCK_T=BLOCK_T,
                 BLOCK_D=BLOCK_D,
@@ -447,9 +437,7 @@ if HAS_TRITON:
                 num_stages=2,
             )
 
-            ctx.save_for_backward(
-                x_sorted, w1, w2, w3, sorted_weights, expert_offsets
-            )
+            ctx.save_for_backward(x_sorted, w1, w2, w3, expert_offsets)
             ctx.T, ctx.D, ctx.I, ctx.E = T, D, I, E
             ctx.BLOCK_T = BLOCK_T
             ctx.BLOCK_D = BLOCK_D
@@ -460,11 +448,11 @@ if HAS_TRITON:
         def backward(
             ctx: Any, *grad_outputs: torch.Tensor,
         ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
-                   torch.Tensor, torch.Tensor, None]:
+                   torch.Tensor, None]:
             dy_sorted = grad_outputs[0]
             if dy_sorted is None:
-                return None, None, None, None, None, None
-            x_sorted, w1, w2, w3, sorted_weights, expert_offsets = ctx.saved_tensors
+                return None, None, None, None, None
+            x_sorted, w1, w2, w3, expert_offsets = ctx.saved_tensors
             T, D, I, E = ctx.T, ctx.D, ctx.I, ctx.E
             BLOCK_T = ctx.BLOCK_T
             BLOCK_D = ctx.BLOCK_D
@@ -474,7 +462,7 @@ if HAS_TRITON:
             grid_dx = (E, n_blocks_per_expert)
             dx = torch.empty(T, D, dtype=x_sorted.dtype, device=x_sorted.device)
             _grouped_moe_bwd_dx_kernel[grid_dx](
-                x_sorted, w1, w2, w3, sorted_weights, expert_offsets,
+                x_sorted, w1, w2, w3, expert_offsets,
                 dy_sorted, dx,
                 T, D, I, E,
                 x_sorted.stride(0), x_sorted.stride(1),
@@ -494,7 +482,7 @@ if HAS_TRITON:
             dw2 = torch.zeros(E, D, I, dtype=torch.float32, device=w1.device)
             dw3 = torch.zeros(E, I, D, dtype=torch.float32, device=w1.device)
             _grouped_moe_bwd_dw_kernel[(E,)](
-                x_sorted, w1, w2, w3, sorted_weights, expert_offsets,
+                x_sorted, w1, w2, w3, expert_offsets,
                 dy_sorted,
                 dw1, dw3, dw2,
                 T, D, I, E,
@@ -506,7 +494,6 @@ if HAS_TRITON:
                 dw3.stride(0), dw3.stride(1), dw3.stride(2),
                 dw2.stride(0), dw2.stride(1), dw2.stride(2),
                 dy_sorted.stride(0), dy_sorted.stride(1),
-                sorted_weights.stride(0),
                 BLOCK_T=BLOCK_T,
                 BLOCK_D=BLOCK_D,
                 BLOCK_I=BLOCK_I,
@@ -518,7 +505,6 @@ if HAS_TRITON:
                 dw1.to(w1.dtype),
                 dw2.to(w2.dtype),
                 dw3.to(w3.dtype),
-                sorted_weights,
                 None,
             )
 
@@ -533,6 +519,9 @@ def triton_grouped_moe_dispatch(
 ) -> torch.Tensor:
     """Fused grouped-GEMM SwiGLU forward. Returns y_sorted (T, D).
 
+    The gate-weight multiply is applied outside the autograd Function so the
+    gate receives a gradient (the kernel returns the unweighted expert output).
+
     Raises:
         ImportError: triton not installed.
         ValueError:  I or D exceeds 256.
@@ -543,6 +532,5 @@ def triton_grouped_moe_dispatch(
             "Install with `pip install triton` (Linux + CUDA only). "
             "For CPU/Mac, use `moe_dispatch='stacked'` in your config."
         )
-    return _TritonGroupedMoeFunction.apply(
-        x_sorted, w1, w2, w3, sorted_weights, expert_offsets
-    )
+    out = _TritonGroupedMoeFunction.apply(x_sorted, w1, w2, w3, expert_offsets)
+    return out * sorted_weights.unsqueeze(-1)

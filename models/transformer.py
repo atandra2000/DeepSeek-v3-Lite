@@ -99,13 +99,13 @@ class Transformer(nn.Module):
         return self.head(self.norm(h))
 
     def forward_with_hidden(self, tokens: torch.Tensor, start_pos: int = 0, use_cache: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Returns (logits, h_norm). Used by MultiTokenPrediction."""
+        """Returns (logits, h). h is the pre-norm trunk hidden (V3 feeds this
+        to MTP blocks, which apply their own norms); logits use the normed h."""
         bsz, seqlen = tokens.shape
         h = self.embed(tokens)
         mask = self._build_causal_mask(seqlen, tokens.device) if seqlen > 1 else None
         h = self._run_layers(h, start_pos, mask, use_cache)
-        h_norm = self.norm(h)
-        return self.head(h_norm), h_norm
+        return self.head(self.norm(h)), h
 
     @torch.inference_mode()
     def generate(self, input_ids: torch.Tensor, max_new_tokens: int = 512, temperature: float = 1.0,
@@ -120,11 +120,14 @@ class Transformer(nn.Module):
         output = input_ids.clone()
         prefill_logits = self.forward(output, start_pos=0, use_cache=True)
         next_logits = prefill_logits[:, -1, :]
+        finished = torch.zeros(bsz, dtype=torch.bool, device=input_ids.device)
         for step in range(max_new_tokens):
             next_token = self._sample(next_logits, temperature, top_p, top_k)
             output = torch.cat([output, next_token], dim=1)
-            if eos_token_id is not None and (next_token == eos_token_id).any():
-                break
+            if eos_token_id is not None:
+                finished = finished | (next_token.squeeze(-1) == eos_token_id)
+                if finished.all():
+                    break
             if output.size(1) >= self.max_seq_len:
                 break
             decode_logits = self.forward(next_token, start_pos=prompt_len + step, use_cache=True)

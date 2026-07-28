@@ -78,14 +78,15 @@ class DeepSeekMoE(nn.Module):
         self._last_weights = weights.detach()
         self._last_indices = indices.detach()
         E, I, D = self.n_routed_experts, self.moe_inter_dim, self.dim
-        if self._stacked_w1 is None or self._stacked_w1.device != flat.device or self._stacked_w1.dtype != flat.dtype:
-            self._stacked_w1 = torch.stack([ex.w1.weight for ex in self.experts], dim=0).to(device=flat.device, dtype=flat.dtype)
-            self._stacked_w2 = torch.stack([ex.w2.weight for ex in self.experts], dim=0).to(device=flat.device, dtype=flat.dtype)
-            self._stacked_w3 = torch.stack([ex.w3.weight for ex in self.experts], dim=0).to(device=flat.device, dtype=flat.dtype)
+        # Re-stack every forward: caching across steps leaves stale copies
+        # after optimizer.step() (experts would be frozen at init values).
+        self._stacked_w1 = torch.stack([ex.w1.weight for ex in self.experts], dim=0).to(device=flat.device, dtype=flat.dtype)
+        self._stacked_w2 = torch.stack([ex.w2.weight for ex in self.experts], dim=0).to(device=flat.device, dtype=flat.dtype)
+        self._stacked_w3 = torch.stack([ex.w3.weight for ex in self.experts], dim=0).to(device=flat.device, dtype=flat.dtype)
         dispatch = self.moe_dispatch
         if dispatch == "triton_grouped":
             try:
-                y_routed = self._routed_forward_triton(flat)
+                y_routed = self._routed_forward_triton(flat, indices, weights)
             except (ImportError, ValueError) as exc:
                 # One-shot fallback: warn once per model, subsequent calls are silent.
                 if not getattr(self, "_triton_fallback_warned", False):
@@ -132,20 +133,20 @@ class DeepSeekMoE(nn.Module):
             y_routed = y_routed.index_add(0, chunk_tokens, out * chunk_weights.unsqueeze(-1))
         return y_routed
 
-    def _routed_forward_triton(self, flat: torch.Tensor) -> torch.Tensor:
+    def _routed_forward_triton(self, flat: torch.Tensor, indices: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
         """Triton grouped-GEMM SwiGLU path. See models/moe_triton.py.
+
+        `weights`/`indices` carry grad to the gate (unlike the detached
+        `_last_*` snapshots used only for the balance metric / bias update).
 
         Raises ImportError (no triton) or ValueError (dim > 256); both are
         caught by `forward()` and fall back to the stacked path.
         """
         from .moe_triton import triton_grouped_moe_dispatch
-        assert self._last_indices is not None and self._last_weights is not None
-        last_indices = self._last_indices
-        last_weights = self._last_weights
         T = flat.size(0)
-        flat_idx = last_indices.reshape(-1)
-        flat_w = last_weights.reshape(-1)
-        token_id = torch.arange(T, device=flat.device).repeat_interleave(last_indices.size(1))
+        flat_idx = indices.reshape(-1)
+        flat_w = weights.reshape(-1)
+        token_id = torch.arange(T, device=flat.device).repeat_interleave(indices.size(1))
         order = torch.argsort(flat_idx)
         sorted_token_ids = token_id[order]
         sorted_weights_1d = flat_w[order]
@@ -174,12 +175,10 @@ class DeepSeekMoE(nn.Module):
         """Batched shared-expert forward. Stacks weights lazily so 1 bmm per SwiGLU projection."""
         if self.n_shared_experts == 0:
             return torch.zeros_like(flat)
-        if (self._shared_w1 is None
-                or self._shared_w1.device != flat.device
-                or self._shared_w1.dtype != flat.dtype):
-            self._shared_w1 = torch.stack([e.w1.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
-            self._shared_w2 = torch.stack([e.w2.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
-            self._shared_w3 = torch.stack([e.w3.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
+        # Re-stack every forward (same staleness bug as the routed path).
+        self._shared_w1 = torch.stack([e.w1.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
+        self._shared_w2 = torch.stack([e.w2.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
+        self._shared_w3 = torch.stack([e.w3.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
         E = self.n_shared_experts
         gate = torch.bmm(flat.unsqueeze(0).expand(E, -1, -1), self._shared_w1.transpose(-1, -2))
         up = torch.bmm(flat.unsqueeze(0).expand(E, -1, -1), self._shared_w3.transpose(-1, -2))
@@ -202,5 +201,7 @@ class DeepSeekMoE(nn.Module):
     def update_gate_bias(self, speed: float = 0.001) -> None:
         if self._last_indices is None:
             return
-        counts = torch.bincount(self._last_indices.flatten().cpu(), minlength=self.n_routed_experts)
+        # Keep counts on the bias's device: boolean indexing in update_bias
+        # requires the mask and self.bias to share a device.
+        counts = torch.bincount(self._last_indices.flatten(), minlength=self.n_routed_experts)
         self.gate.update_bias(counts, speed=speed)

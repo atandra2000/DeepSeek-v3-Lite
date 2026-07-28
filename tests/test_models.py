@@ -759,6 +759,29 @@ class TestDeepSeekMoEAdditional:
         assert gate.bias[1].item() == 0
         assert gate.bias[2].item() == 0
 
+    def test_stacked_weights_refresh_after_optimizer_step(self, small_cfg, device):
+        """Regression: stacked/shared weight copies must track live expert
+        weights across optimizer steps (cached copies froze experts at init)."""
+        from models.transformer import Transformer
+        torch.manual_seed(0)
+        model = Transformer(small_cfg).to(device)
+        model.train()
+        opt = torch.optim.SGD(model.parameters(), lr=0.1)
+        tokens = torch.randint(0, small_cfg["vocab_size"], (2, 16), device=device)
+        for _ in range(2):
+            logits = model(tokens, use_cache=False)
+            loss = torch.nn.functional.cross_entropy(
+                logits.reshape(-1, logits.size(-1)), tokens.reshape(-1))
+            opt.zero_grad(); loss.backward(); opt.step()
+        model(tokens, use_cache=False)  # rebuild stacks from updated weights
+        for moe in model.moe_layers():
+            for e, expert in enumerate(moe.experts):
+                assert torch.allclose(moe._stacked_w1[e].detach(), expert.w1.weight), \
+                    f"stale _stacked_w1 for expert {e}"
+            for e, expert in enumerate(moe.shared_experts):
+                assert torch.allclose(moe._shared_w1[e].detach(), expert.w1.weight), \
+                    f"stale _shared_w1 for shared expert {e}"
+
 class TestMTPAdditional:
     """Tests for MTP paths the original suite didn't cover."""
 

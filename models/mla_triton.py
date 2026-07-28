@@ -84,15 +84,18 @@ if HAS_TRITON:
         BLOCK_D_NOPE: tl.constexpr,
         BLOCK_D_ROPE: tl.constexpr,
         BLOCK_D_V: tl.constexpr,
+        BLOCK_Q: tl.constexpr,
         BLOCK_N: tl.constexpr,
     ):
-        # One program per (B, H). K_nope and V are materialised inside
-        # the inner K-block loop from per-head wkv_b_k / wkv_b_v, so
-        # the K_nope / V HBM roundtrips in the SDPA path disappear.
+        # One program per (B, H, query-block). K_nope and V are materialised
+        # inside the inner K-block loop from per-head wkv_b_k / wkv_b_v, so
+        # the K_nope / V HBM roundtrips in the SDPA path disappear. Query
+        # tiling (BLOCK_Q) keeps the score tile bounded for training seq lens.
         b_id = tl.program_id(0)
         h_id = tl.program_id(1)
+        q_blk = tl.program_id(2)
 
-        s_q_off = tl.arange(0, BLOCK_N)
+        s_q_off = q_blk * BLOCK_Q + tl.arange(0, BLOCK_Q)
         s_q_mask = s_q_off < S_q
         r_idx = tl.arange(0, BLOCK_R)
         d_nope_idx = tl.arange(0, BLOCK_D_NOPE)
@@ -112,9 +115,9 @@ if HAS_TRITON:
         )
 
         # FA2 online-softmax accumulators
-        m_i = tl.full((BLOCK_N,), float("-inf"), dtype=tl.float32)
-        l_i = tl.zeros((BLOCK_N,), dtype=tl.float32)
-        acc = tl.zeros((BLOCK_N, BLOCK_D_V), dtype=tl.float32)
+        m_i = tl.full((BLOCK_Q,), float("-inf"), dtype=tl.float32)
+        l_i = tl.zeros((BLOCK_Q,), dtype=tl.float32)
+        acc = tl.zeros((BLOCK_Q, BLOCK_D_V), dtype=tl.float32)
 
         # Per-head up-projection weights stay in registers across the loop
         w_k = tl.load(
@@ -218,15 +221,17 @@ if HAS_TRITON:
 
             _check_mla_dim_limits(S_q, S_kv, R, D_nope, D_rope, D_v)
 
-            BLOCK_N = _next_pow2(max(S_q, 32))
+            BLOCK_Q = 64
+            BLOCK_N = 64
             BLOCK_R = _next_pow2(R)
             BLOCK_D_NOPE = _next_pow2(D_nope)
             BLOCK_D_ROPE = _next_pow2(D_rope)
             BLOCK_D_V = _next_pow2(D_v)
+            n_q_blocks = (S_q + BLOCK_Q - 1) // BLOCK_Q
 
             out = torch.empty(B, S_q, H, D_v, dtype=q_nope.dtype, device=q_nope.device)
 
-            _mla_flash_fwd_kernel[(B, H, 1)](
+            _mla_flash_fwd_kernel[(B, H, n_q_blocks)](
                 q_nope, q_pe,
                 ctx_kv, ctx_pe,
                 wkv_b_k, wkv_b_v,
@@ -245,6 +250,7 @@ if HAS_TRITON:
                 BLOCK_D_NOPE=BLOCK_D_NOPE,
                 BLOCK_D_ROPE=BLOCK_D_ROPE,
                 BLOCK_D_V=BLOCK_D_V,
+                BLOCK_Q=BLOCK_Q,
                 BLOCK_N=BLOCK_N,
                 num_warps=4,
                 num_stages=2,
