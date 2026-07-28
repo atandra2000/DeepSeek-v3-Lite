@@ -14,6 +14,23 @@ A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, desig
 | Config | Parameters | Tokens | GPU | Wall time | Peak VRAM | Status |
 |---|---|---|---|---|---|---|
 | `configs/pretrain_a100_422m.yaml` | ~422M | 8.4B | A100 80GB SXM | ~13-15 h | ~35 GB | Code complete |
+| `configs/pretrain_1650_2m.yaml` | ~2M | 50K vocab (GPT-2) | GTX 1650 4GB | minutes | <1 GB | Smoke-test config — see [documentation/README.md](documentation/README.md#configs) |
+
+Two configurations ship in `configs/`:
+
+- **`pretrain_a100_422m.yaml`** — the canonical Chinchilla-optimal
+  recipe for a single A100 80GB SXM. Full MLA + MoE + MTP. The target
+  end-to-end run described throughout the README and the rest of the
+  docs.
+- **`pretrain_1650_2m.yaml`** — a ~2M-param tiny config for the
+  **GTX 1650 4GB** end-to-end smoke test. Same architecture features
+  (MLA, MoE aux-loss-free, MTP) scaled down to fit 4 GB: `dim=64,
+  n_layers=4 (2 dense + 2 MoE × 4 experts)`, GPT-2 vocab (avoids
+  HuggingFace auth for the deepseek-coder tokenizer). All MLA / MoE
+  / MTP invariants are preserved. Useful for verifying the full
+  training loop, Triton kernel paths (gated on CUDA), and inference
+  on hardware too small for the real run. Used by
+  `tests/conftest.py::small_cfg` and the 1650 smoke test suite.
 
 TF32 forward, `F.scaled_dot_product_attention` (Flash-Attn-2), `torch.compile(mode="max-autotune")`, zero custom CUDA.
 
@@ -76,8 +93,7 @@ flowchart LR
         ├──► routed_expert_2 (SwiGLU)
         ├──► routed_expert_3 (SwiGLU)
         ├──► routed_expert_4 (SwiGLU)
-        ├──► shared_expert_1  (always active, no routing)
-        └──► shared_expert_2  (always active, no routing)
+        └──► shared_expert   (always active, no routing)
                                         │
                                         ▼
                                 weighted sum
@@ -203,7 +219,7 @@ pip install -r requirements.txt
 # 1. Data — universal 8.0B-token pipeline. Shim over the LLM/shared_data/ package.
 python3 data/prepare_data.py --stage pretrain
 # Optional: --skip-download (re-use an existing corpus)
-# See data/DATA_PIPELINE.md for the full per-project pipeline guide.
+# See documentation/data_pipeline.md for the full per-project pipeline guide.
 
 # 2. Microbench — measure peak VRAM (requires CUDA).
 python scripts/microbench_a100.py
@@ -237,9 +253,7 @@ bash scripts/launch_a100.sh
 │   ├── logging.py                  # WandB-capable training logger
 │   └── memory.py                   # VRAM estimator + GPU guard
 ├── data/
-│   ├── prepare_data.py             # Shim — imports universal pipeline from sibling LLM/shared_data
-│   ├── data_config.yaml            # Materialised at runtime by the shim (deepseek vocab, EOS, PAD)
-│   └── DATA_PIPELINE.md            # Per-project pipeline guide
+│   └── prepare_data.py             # Shim — imports universal pipeline from sibling LLM/shared_data
 └── scripts/
     ├── microbench_a100.py          # Peak VRAM measurement
     ├── step_time_a100.py           # MFU benchmark (target 30-45%)
@@ -276,7 +290,7 @@ model:
   mtp_loss_weight:     0.3
   dtype:               bf16
   attn_impl:           "sdpa"
-  use_grouped:         "stacked"
+  moe_dispatch:         "stacked"
   weight_tying:        true
 
 training:

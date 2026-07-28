@@ -47,7 +47,7 @@ DATA_DIR="$REPO_ROOT/data/pretrain_chinchilla"
 if [[ ! -d "$DATA_DIR" ]] || [[ -z "$(ls -A "$DATA_DIR"/shard_*.bin 2>/dev/null)" ]]; then
     echo "ERROR: no shard_*.bin files in $DATA_DIR"
     echo "Run first:  python3 data/prepare_data.py --stage pretrain"
-    echo "See data/DATA_PIPELINE.md for the full pipeline guide."
+    echo "See documentation/data_pipeline.md for the full pipeline guide."
     exit 1
 fi
 echo "Data: $(ls "$DATA_DIR"/shard_*.bin 2>/dev/null | wc -l) shards"

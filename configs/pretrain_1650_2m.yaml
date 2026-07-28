@@ -31,7 +31,7 @@ model:
   mtp_loss_weight:     0.3
   dtype:               bf16
   attn_impl:           "sdpa"
-  use_grouped:         "stacked"   # stacked is the PyTorch default; triton is the
+  moe_dispatch:         "stacked"   # stacked is the PyTorch default; triton is the
                                    # kernel hot-path (requires CUDA, gated by env var)
   weight_tying:        true
 

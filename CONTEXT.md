@@ -5,12 +5,21 @@
 
 ## Scoping note
 
-`MLA.md` (643-line MLA deep-dive) is a **human study doc**, not an agent artifact.
-- Do **not** preload it into context.
-- Do **not** read it on every MLA question — derive MLA answers from the code in `models/mla.py`.
-- Read it only if the user explicitly asks for the conceptual deep-dive and is willing to spend the tokens.
+There are **two** MLA docs in this repo:
 
-Everything in this file is derived from code/configs/tests, not from `MLA.md`.
+- Top-level `MLA.md` — 643-line theory + paper-grounded reference.
+  This is a **human study doc**, not an agent artifact.
+  - Do **not** preload it into context.
+  - Do **not** read it on every MLA question — derive MLA answers from the code in `models/mla.py`.
+  - Read it only if the user explicitly asks for the conceptual deep-dive and is willing to spend the tokens.
+- `documentation/MLA.md` — project-specific notes, SDPA / manual /
+  triton walkthrough, comparison tables. Reflects the current
+  canonical 422M config (after the 422M-sync pass; see the
+  `## Authoritative MLA reference` section in
+  `documentation/README.md`).
+
+Everything in this file (`CONTEXT.md`) is derived from
+code/configs/tests, not from `MLA.md`.
 
 ## Project snapshot
 
@@ -84,7 +93,7 @@ graphify-out/                            # prior graphify run artefacts (gitigno
 - **Two MLA paths**: `attn_impl="sdpa"` (default, FA2-friendly) materialises K_nope/V via bmm; manual path implements true absorption (per-batch bmm, 4× FLOPs, debug/ref). Cache is identical.
 - **YaRN/RoPE**: `_extend_rope` doubles to `max_seq_len`; `rope_factor > 1.0` divides inv_freq and adds `mscale`. With factor=1.0 everything is bypassed.
 - **MoE bias (load-bearing)**: `self.bias` is a **buffer** (not Parameter), so it does not receive autograd updates and is not in `state_dict()`. Updates are gated by `bias_update_every` (config: 1). Init zero. Update rule: subtract `speed` if count > avg·(1+upper); add if count < avg·(1-lower). Default upper/lower=0.10.
-- **Stacked MoE dispatch** (`use_grouped="stacked"`): builds `_stacked_w1/w2/w3` lazily on first forward, one Python loop over experts (no segment-CuMoE / group-gemm). `_forward_grouped` exists for reference; both should agree per `test_stacked_and_grouped_agree`.
+- **Stacked MoE dispatch** (`moe_dispatch="stacked"`): builds `_stacked_w1/w2/w3` lazily on first forward, one Python loop over experts (no segment-CuMoE / group-gemm). `_forward_grouped` exists for reference; both should agree per `test_stacked_and_grouped_agree`.
 - **MTP wiring**: `MultiTokenPrediction(main_model)` registers `embed = main_model.embed`, shares `main_model.head` via `set_output_head`. MTP states saved under `mtp.` prefix in safetensors, optim state intentionally skipped.
 - **NaN guard**: rolls back to last good checkpoint after `nan_guard_max_consecutive=5` consecutive NaN/Inf; resumes that step's scheduler/optimizer state.
 - **µP LR**: `new_lr = mup_lr_reference * (mup_lr_reference_params / total) ** 0.5`. Note: scaling factor applied AFTER counting total params (post MTP-wrap), so may use mtp_total if wrapping is enabled.
@@ -94,8 +103,8 @@ graphify-out/                            # prior graphify run artefacts (gitigno
 ## Known issues / sharp edges
 
 - **CI is broken**: `.github/workflows/ci.yml` imports `from configs.pretrain_a100_422m import get_config` but that module doesn't exist (only `.yaml`). Smoke step will fail in CI.
-- **MoE inter_dim vs shared expert count**: yaml says `n_shared_experts: 1` but README says 2 — single shared expert is what the code actually builds. README text outdated.
-- **`n_dense_layers` semantics**: Transformer swaps to MoE for `layer_id >= n_dense_layers`. With `n_dense_layers=2`, layers 0-1 are dense SwiGLU, layers 2-17 are MoE (16 MoE layers). README claims "20 routed + 2 shared" but config+code have 20 routed + 1 shared.
+- **MoE inter_dim vs shared expert count**: yaml says `n_shared_experts: 1` and that's what code builds. ~~README text previously said 2~~ (fixed; see [README.md](../../README.md) MoE section).
+- **`n_dense_layers` semantics**: Transformer swaps to MoE for `layer_id >= n_dense_layers`. With `n_dense_layers=2`, layers 0-1 are dense SwiGLU, layers 2-17 are MoE (16 MoE layers). Config+code have 20 routed + 1 shared.
 - **`mtp_depth` in cfg**: `Pretrainer.__init__` looks up `config.model_config.get("model", config.model_config).get("mtp_depth", 0)` — must be at the top level of the model section (works with both flat and nested YAML).
 - **Pretrainer mup_lr vs MTP**: µP scales by post-MTP total, which inflates ref count slightly. Document this if user asks about exact 8.07e-4.
 - **`MTPModule` gradient through main model**: `forward_with_hidden` uses `use_cache=False` (correct for training); in `SpeculativeDecoder.generate_step` it uses `use_cache=True` — cache grows during draft.
@@ -127,9 +136,7 @@ graphify-out/                            # prior graphify run artefacts (gitigno
 
 ## Open questions / TODOs user may ask about
 
-1. Why is README "2 shared experts" when code has 1? (config vs prose drift)
-2. Why is the CI workflow referencing a non-existent `configs.pretrain_a100_422m.get_config`?
-3. µP scaling math: 6e-4 × sqrt(757_226_496 / total_params) — for ~422M → ~8.07e-4.
+1. µP scaling math: 6e-4 × sqrt(757_226_496 / total_params) — for ~422M → ~8.07e-4.
 4. NaN guard threshold semantics — config flag default in dataclass differs from yaml.
 5. Loss = main + 0.3 × mtp_loss (mean across depths); only `loss` is divided by `gradient_accumulation_steps` in the train_step.
 6. `MTPBlock.attn` uses `nn.MultiheadAttention` (SDPA under the hood), not the MLA module — separate causal mask buffer, no KV cache.
@@ -149,7 +156,7 @@ cfg = {'vocab_size':100018,'dim':768,'n_layers':2,'n_heads':12,'n_dense_layers':
        'inter_dim':1024,'moe_inter_dim':256,'kv_lora_rank':64,'q_lora_rank':0,
        'qk_nope_head_dim':32,'qk_rope_head_dim':16,'v_head_dim':32,'max_seq_len':64,
        'rope_theta':10000,'rope_factor':1.0,'mscale':1.0,'attn_impl':'sdpa',
-       'use_grouped':'stacked','weight_tying':True,'dtype':'bf16','mtp_depth':1,
+       'moe_dispatch':'stacked','weight_tying':True,'dtype':'bf16','mtp_depth':1,
        'mtp_loss_weight':0.3}
 m = Transformer(cfg).cuda().to(torch.bfloat16)
 x = torch.randint(0, cfg['vocab_size'], (2, 64), device='cuda')

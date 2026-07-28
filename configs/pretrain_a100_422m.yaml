@@ -37,7 +37,7 @@ model:
   mtp_loss_weight:     0.3
   dtype:               bf16
   attn_impl:           "sdpa"
-  use_grouped:         "stacked"
+  moe_dispatch:         "stacked"
   weight_tying:        true
 
 training:

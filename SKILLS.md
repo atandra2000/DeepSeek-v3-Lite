@@ -18,7 +18,7 @@ cfg = {
   'kv_lora_rank': 192, 'q_lora_rank': 0, 'qk_nope_head_dim': 48,
   'qk_rope_head_dim': 24, 'v_head_dim': 64, 'max_seq_len': 2048,
   'rope_theta': 10000, 'rope_factor': 1.0, 'mscale': 1.0,
-  'attn_impl': 'sdpa', 'use_grouped': 'stacked', 'weight_tying': True,
+  'attn_impl': 'sdpa', 'moe_dispatch': 'stacked', 'weight_tying': True,
   'dtype': 'bf16', 'mtp_depth': 1, 'mtp_loss_weight': 0.3,
 }
 m = Transformer(cfg).to('cuda').to(dtype=torch.bfloat16)
