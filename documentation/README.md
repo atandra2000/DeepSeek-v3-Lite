@@ -106,7 +106,7 @@ See [configs.md](configs.md) for every key.
 | transformer.md | 618 | Comprehensive |
 | data_pipeline.md | 617 | Comprehensive |
 | utils.md | 575 | Comprehensive |
-| architecture.md | 565 | Comprehensive |
+| architecture.md | 518 | Comprehensive |
 | testing.md | 514 | Comprehensive |
 | inference.md | 507 | Comprehensive |
 | scripts.md | 476 | Comprehensive |

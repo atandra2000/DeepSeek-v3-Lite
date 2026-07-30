@@ -24,6 +24,11 @@ You should understand (or have skimmed):
 7. [Memory Budget](#memory-budget)
 8. [File Map](#file-map)
 9. [Config → Code Routing](#config--code-routing)
+10. [Module Dependency Graph](#module-dependency-graph)
+11. [Scaling Knobs](#scaling-knobs)
+12. [Request Lifecycles](#request-lifecycles)
+13. [Load-Bearing Invariants](#load-bearing-invariants)
+14. [Further Reading](#further-reading)
 
 ---
 
@@ -34,7 +39,6 @@ You should understand (or have skimmed):
 3. **Single-GPU training** — 1× A100 80GB, Chinchilla-optimal 8.4B tokens.
 4. **CPU-testable** — all correctness tests run without CUDA or Triton.
 5. **Optional Triton** — fused kernels for MoE dispatch and MLA attention (opt-in).
-
 
 ### Design philosophy — inspectability over convenience
 
@@ -47,7 +51,7 @@ Every architectural choice trades **framework magic** for **readable math**:
 | Explicit `uint32` shards | WebDataset streaming | On-disk format matches `PretrainDataset` line-by-line |
 | Opt-in Triton | Always-on fused kernels | CPU tests compare against PyTorch reference |
 
-**Pedagogical implication:** When you see a 15-line function instead of a one-liner, it is usually guarding an invariant documented in tests.
+**Pedagogical implication:** When you see a 15-line function instead of a one-liner, it is usually guarding an invariant documented in [testing.md](testing.md).
 
 ---
 
@@ -118,6 +122,7 @@ Understanding **where dtypes and shapes change** prevents subtle bugs:
 
 **Gradient path:** `loss.backward()` flows through MTP heads (if enabled) into trunk, through MoE experts (only top-4 + shared receive gradients per token), through MLA, into embedding. MoE **gate bias** is updated out-of-band — not via autograd.
 
+**Weight path:** uint32 shard → CPU DataLoader → `.to(cuda)` → int64 cast in `train_step` → BF16 activations; AdamW keeps FP32 master weights.
 
 ---
 
@@ -168,7 +173,6 @@ DeepSeek-V3 places **dense** SwiGLU FFN in the first layers and MoE in deeper la
 
 At 422M scale: `n_dense_layers=2` of 18 total. The 1650 smoke config preserves the same pattern at 2 of 4 layers.
 
-
 ---
 
 ## Data Flow — Training
@@ -203,7 +207,6 @@ $$
 where $\mathcal{L}_{\text{CE}}^{(0)}$ is next-token loss on the main head and $\mathcal{L}_{\text{CE}}^{(1)}$ predicts $t+2$ from $(h_t, e_{t+1})$.
 
 **Alignment detail:** For sequence length $S$, MTP usable positions = $S - 2$ (need $t$, $t+1$, $t+2$). See `models/mtp.py:MultiTokenPrediction.forward`.
-
 
 Key: `use_cache=False` during training. KV cache is inference-only.
 
@@ -242,7 +245,6 @@ $$
 
 with $\tau = 0.8$ default. This is **not** the full optimal speculative sampling algorithm (Leviathan et al.) but a pedagogical approximation that preserves correctness (reject → fall back to one token).
 
-
 See [inference.md](inference.md) and [mtp.md](mtp.md).
 
 ---
@@ -262,20 +264,17 @@ Approximate breakdown for 422M (with weight tying):
 
 MoE dominates because each of 16 layers stores 21 SwiGLU experts (20 routed + 1 shared), but only 5 execute per token.
 
-### Parameter budget — derivation sketch
+### Derivation sketch
 
 **MoE expert params** (one SwiGLU expert): $3 \times d \times I = 3 \times 768 \times 384 = 884736$.
 
-Per MoE layer: $(20 + 1) \times 884736 \approx 18.6$M.
-
-16 MoE layers: $\approx 298$M.
+Per MoE layer: $(20 + 1) \times 884736 \approx 18.6$M. Sixteen MoE layers: $\approx 298$M.
 
 **Embedding + tied head:** $100018 \times 768 \approx 77$M (counted once).
 
 **MLA per layer (approx.):** $4dR + 2d(q_{\mathrm{k,nope}} + q_{\mathrm{k,rope}})H + \ldots \approx 2$M × 18 layers.
 
 Full component breakdown logged at train init when `log_per_component_params: true`.
-
 
 ---
 
@@ -295,7 +294,7 @@ Measured peak: ~35 GB (working set spikes during compile and backward recompute)
 
 See [utils.md](utils.md) for formulas.
 
-### Memory budget — why measured > estimated
+### Why measured > estimated
 
 Analytical estimate (`utils/memory.py`) sums:
 
@@ -311,46 +310,73 @@ $$
 
 Rule of thumb: add **15–20% headroom** above estimate before launching multi-hour runs.
 
-
 ---
 
 ## File Map
 
+### Directory layout
+
 ```
 models/
-  transformer.py    # Transformer, TransformerBlock, SwiGLUFFN
-  mla.py            # MultiHeadLatentAttention
-  mla_triton.py     # Optional fused MLA kernel
-  moe.py            # AuxLossFreeGate, DeepSeekMoE
-  moe_triton.py     # Optional fused MoE kernel
-  mtp.py            # MultiTokenPrediction
+  transformer.py       # Transformer, TransformerBlock, SwiGLUFFN
+  mla.py               # MultiHeadLatentAttention
+  mla_triton.py        # Optional fused MLA kernel
+  moe.py               # AuxLossFreeGate, DeepSeekMoE
+  moe_triton.py        # Optional fused MoE kernel
+  mtp.py               # MultiTokenPrediction
   _triton_dispatch.py  # ENABLE_TRITON_KERNELS guard
 
 training/
-  pretrain.py       # Pretrainer, PretrainDataset, TrainingConfig
+  pretrain.py          # Pretrainer, PretrainDataset, TrainingConfig
 
 inference/
-  generate.py       # Interactive CLI
-  speculative.py  # SpeculativeDecoder
+  generate.py          # Interactive CLI
+  speculative.py       # SpeculativeDecoder
 
 utils/
-  checkpoint.py   # CheckpointManager
-  memory.py       # VRAM estimation
-  logging.py      # TrainingLogger + WandB
+  checkpoint.py        # CheckpointManager
+  memory.py            # VRAM estimation
+  logging.py           # TrainingLogger + WandB
 
 data/
-  prepare_data.py # Shim to universal pipeline
+  prepare_data.py      # Shim to universal pipeline (LLM/shared_data)
 
 configs/
   pretrain_a100_422m.yaml   # Canonical recipe
   pretrain_1650_2m.yaml     # Tiny smoke config
 
 scripts/
-  launch_a100.sh, microbench_a100.py, step_time_a100.py, ...
+  launch_a100.sh, microbench_a100.py, step_time_a100.py, smoke_forward.py, ...
 
 tests/
-  test_models.py, test_training.py, test_inference.py, ...
+  test_models.py, test_training.py, test_inference.py, test_moe_triton.py, ...
 ```
+
+### Quick lookup
+
+| Question | File |
+|---|---|
+| Where is LR schedule? | `training/pretrain.py` (`make_warmup_cosine_lambda`) |
+| Where is MoE routing? | `models/moe.py` (`AuxLossFreeGate`) |
+| Where is MLA absorption? | `models/mla.py` (SDPA path) |
+| Where is speculative accept? | `inference/speculative.py` (`generate_step`) |
+| Where is config parsed? | `training/pretrain.py` (`main`) |
+| Where are test fixtures? | `tests/conftest.py` |
+
+### Key files by size
+
+| Path | LOC | Responsibility |
+|---|---|---|
+| `models/moe_triton.py` | 536 | Fused grouped-GEMM MoE kernel |
+| `training/pretrain.py` | 441 | Train loop |
+| `models/mla_triton.py` | 323 | Fused MLA attention kernel |
+| `models/mla.py` | 225 | MLA attention + cache |
+| `models/moe.py` | 207 | Aux-loss-free MoE |
+| `models/transformer.py` | 175 | Stack + generate |
+| `models/mtp.py` | 117 | MTP heads |
+| `utils/checkpoint.py` | 109 | Atomic I/O |
+| `inference/generate.py` | 125 | Interactive CLI |
+| `inference/speculative.py` | 56 | Speculative decode |
 
 ---
 
@@ -368,117 +394,52 @@ tests/
 
 Full reference: [configs.md](configs.md).
 
-## Compute graph — who calls whom
-
-```
-main() / generate CLI
-  └─ Pretrainer.train()          training/pretrain.py
-       ├─ PretrainDataset         mmap uint32 shards
-       ├─ MultiTokenPrediction    models/mtp.py (if mtp_depth>0)
-       │    └─ Transformer.forward_with_hidden
-       ├─ CheckpointManager       utils/checkpoint.py
-       └─ TrainingLogger          utils/logging.py
-
-Transformer.forward
-  └─ TransformerBlock × L
-       ├─ MultiHeadLatentAttention   models/mla.py
-       └─ SwiGLUFFN | DeepSeekMoE    models/moe.py
-```
-
-## Scaling dimensions — what to change for experiments
-
-| Goal | Knobs | Doc |
-|---|---|---|
-| Fit smaller GPU | ↓ `micro_batch_size`, ↓ `max_seq_len`, enable `grad_checkpoint` | [configs.md](configs.md) |
-| Faster iteration | `pretrain_1650_2m.yaml`, `build_small_pretrain_data.py` | [scripts.md](scripts.md) |
-| Higher MFU | `ENABLE_TRITON_KERNELS=1`, `moe_dispatch: triton_grouped` (if dims allow) | [triton_kernels.md](triton_kernels.md) |
-| Longer context | ↑ `max_seq_len`, consider YaRN `rope_factor` | [MLA.md](MLA.md) |
-
-
----
-
-## Further Reading
-
-- Attention deep-dive: [MLA.md](MLA.md)
-- MoE deep-dive: [moe.md](moe.md)
-- Training loop: [training.md](training.md)
-- Learning path: [getting_started.md](getting_started.md)
-
-
-## End-to-End Request Lifecycles
-
-### Training job lifecycle
-
-```
-launch_a100.sh
-  → python -m training.pretrain --config configs/pretrain_a100_422m.yaml
-    → Pretrainer reads YAML
-    → PretrainDataset mmap shards
-    → train loop: forward/backward/optim
-    → CheckpointManager writes triplets every save_every
-```
-
-### Inference session lifecycle
-
-```
-python -m inference.generate --config ... --checkpoint ...
-  → Transformer + optional MTPModule load
-  → REPL: chat template → tokenize → generate / speculative
-  → KV cache lives until process exit or reset_cache()
-```
-
 ---
 
 ## Module Dependency Graph
 
+**Call graph (runtime):**
+
 ```
-training/pretrain.py
-  ├── models/transformer.py
-  │     ├── models/mla.py
-  │     ├── models/moe.py
-  │     └── models/_triton_dispatch.py
-  ├── models/mtp.py
-  └── utils/{checkpoint,memory,logging}.py
+main() / generate CLI
+  └─ Pretrainer.train()              training/pretrain.py
+       ├─ PretrainDataset            mmap uint32 shards
+       ├─ MultiTokenPrediction       models/mtp.py (if mtp_depth>0)
+       │    └─ Transformer.forward_with_hidden
+       ├─ CheckpointManager          utils/checkpoint.py
+       └─ TrainingLogger             utils/logging.py
+
+Transformer.forward
+  └─ TransformerBlock × L
+       ├─ MultiHeadLatentAttention   models/mla.py [→ mla_triton.py opt]
+       └─ SwiGLUFFN | DeepSeekMoE    models/moe.py [→ moe_triton.py opt]
+```
+
+**Import graph (build time):**
+
+```
+configs/*.yaml
+    ├── models/transformer.py ──┬── models/mla.py
+    │                           ├── models/moe.py ── models/moe_triton.py (opt)
+    │                           ├── models/mtp.py
+    │                           └── models/_triton_dispatch.py
+    ├── training/pretrain.py ─── utils/{checkpoint,memory,logging}.py
+    ├── data/prepare_data.py ── LLM/shared_data/ (external)
+    └── inference/generate.py ── inference/speculative.py
 
 inference/generate.py
   ├── models/transformer.py
   ├── models/mtp.py
   └── inference/speculative.py
-
-data/prepare_data.py  →  LLM/shared_data pipeline (external)
 ```
 
-**Acyclic rule:** `models/` never imports `training/` or `inference/`.
+**Acyclic rule:** `models/` never imports `training/` or `inference/`. Utilities are leaf nodes.
 
 ---
 
-## Tensor Type Flow (Training)
+## Scaling Knobs
 
-```
-uint32 shard (CPU mmap)
-  → DataLoader batch (CPU)
-  → .to(cuda, non_blocking=True)
-  → int64 cast in train_step
-  → embed → BF16 activations
-  → FP32 master weights in AdamW
-```
-
----
-
-## File Map — Quick Lookup
-
-| Question | File |
-|---|---|
-| Where is LR schedule? | `training/pretrain.py:make_warmup_cosine_lambda` |
-| Where is MoE routing? | `models/moe.py:AuxLossFreeGate` |
-| Where is MLA absorption? | `models/mla.py` SDPA path |
-| Where is speculative accept? | `inference/speculative.py:generate_step` |
-| Where is config parsed? | `training/pretrain.py:main` |
-| Where are tests fixtures? | `tests/conftest.py` |
-
----
-
-## Scaling Story — 2M → 422M → (Future)
+### Config presets
 
 | Stage | Config | Purpose |
 |---|---|---|
@@ -488,57 +449,16 @@ uint32 shard (CPU mmap)
 
 The **same code paths** run at all scales; only YAML dimensions and batch settings change.
 
+### Experiment goals
 
+| Goal | Knobs | Doc |
+|---|---|---|
+| Fit smaller GPU | ↓ `micro_batch_size`, ↓ `max_seq_len`, enable `grad_checkpoint` | [configs.md](configs.md) |
+| Faster iteration | `pretrain_1650_2m.yaml`, `build_small_pretrain_data.py` | [scripts.md](scripts.md) |
+| Higher MFU | `ENABLE_TRITON_KERNELS=1`, `moe_dispatch: triton_grouped` | [triton_kernels.md](triton_kernels.md) |
+| Longer context | ↑ `max_seq_len`, consider YaRN `rope_factor` | [MLA.md](MLA.md) |
 
-## Load-Bearing Invariants
-
-| Invariant | Where enforced |
-|---|---|
-| `use_cache=False` during training | `train_step`, `forward_with_hidden` default |
-| MoE bias buffer not Parameter | `models/moe.py:AuxLossFreeGate` |
-| Triton gated by env var | `models/_triton_dispatch.py` |
-| Weight tying dedup on save | `Pretrainer.save_checkpoint` |
-| μP LR after MTP wrap | `Pretrainer.__init__` |
-
-## Tensor Lifecycle — Training Forward
-
-Trace one micro-batch $(B, S) = (8, 2048)$ through the stack:
-
-```
-input_ids (8, 2048) uint32 → int64 at train_step
-  embed → (8, 2048, 768)
-  for layer in 0..17:
-    h = h + MLA(RMSNorm(h))     # (8, 2048, 768)
-    h = h + FFN(RMSNorm(h))     # SwiGLU or MoE
-  norm → (8, 2048, 768)
-  head → (8, 2048, 100018)
-```
-
-**MTP branch (training):** `forward_with_hidden` returns `h`; MTPModule takes `(h[:, :usable], embed(tokens[:, d+1:d+1+usable]))` → auxiliary logits.
-
----
-
-## Dependency Graph
-
-```
-configs/*.yaml
-    ├── models/transformer.py ──┬── models/mla.py
-    │                           ├── models/moe.py ── models/moe_triton.py (opt)
-    │                           └── models/mtp.py
-    ├── training/pretrain.py ─── utils/checkpoint.py
-    │                        ├── utils/logging.py
-    │                        └── utils/memory.py
-    ├── data/prepare_data.py ── shared_data/ (external)
-    └── inference/generate.py ── inference/speculative.py
-```
-
-**Import rule:** `models/` never imports `training/` or `inference/`. Utilities are leaf nodes.
-
----
-
-## Scaling Story — 422M → Larger
-
-This repo is fixed at 422M for single-GPU pedagogy. To scale:
+### Width / depth trade-offs (422M → larger)
 
 | Knob | Effect | Risk |
 |---|---|---|
@@ -552,14 +472,47 @@ Full DeepSeek-V3 (671B) uses the same **family** of components at different scal
 
 ---
 
-## File Map (Extended)
+## Request Lifecycles
 
-| Path | LOC (approx) | Responsibility |
+### Training job
+
+```
+launch_a100.sh
+  → python -m training.pretrain --config configs/pretrain_a100_422m.yaml
+    → Pretrainer reads YAML
+    → PretrainDataset mmap shards
+    → train loop: forward/backward/optim
+    → CheckpointManager writes triplets every save_every
+```
+
+### Inference session
+
+```
+python -m inference.generate --config ... --checkpoint ...
+  → Transformer + optional MTPModule load
+  → REPL: chat template → tokenize → generate / speculative
+  → KV cache lives until process exit or reset_cache()
+```
+
+---
+
+## Load-Bearing Invariants
+
+| Invariant | Where enforced | Test (if any) |
 |---|---|---|
-| `models/mla.py` | ~800 | MLA attention + cache |
-| `models/moe.py` | ~400 | Aux-loss-free MoE |
-| `models/transformer.py` | ~180 | Stack + generate |
-| `models/mtp.py` | ~120 | MTP heads |
-| `training/pretrain.py` | ~440 | Train loop |
-| `utils/checkpoint.py` | ~110 | Atomic I/O |
-| `inference/speculative.py` | ~60 | Speculative decode |
+| `use_cache=False` during training | `train_step`, `forward_with_hidden` default | `test_training.py` |
+| MoE bias buffer not Parameter | `models/moe.py:AuxLossFreeGate` | `test_bias_not_in_parameters` |
+| Triton gated by env var | `models/_triton_dispatch.py` | `test_force_back.py` |
+| Weight tying dedup on save | `Pretrainer.save_checkpoint` | checkpoint roundtrip tests |
+| μP LR after MTP wrap | `Pretrainer.__init__` | `test_mup_lr_scaling` |
+
+Full test mapping: [testing.md](testing.md).
+
+---
+
+## Further Reading
+
+- Attention deep-dive: [MLA.md](MLA.md)
+- MoE deep-dive: [moe.md](moe.md)
+- Training loop: [training.md](training.md)
+- Learning path: [getting_started.md](getting_started.md)
