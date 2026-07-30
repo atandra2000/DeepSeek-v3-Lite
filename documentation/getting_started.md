@@ -453,3 +453,5 @@ Expect ~hundreds of keys; `head.weight` may be absent when `weight_tying: true`.
 4. **Triton kernel** — set `ENABLE_TRITON_KERNELS=1`, compare against stacked in `test_moe_triton.py`
 
 Never skip step 1 (tests) when touching `mla.py`, `moe.py`, or `mtp.py`.
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

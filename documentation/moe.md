@@ -922,3 +922,5 @@ When modifying MoE code, verify:
 - `documentation/triton_kernels.md` §3 — Triton grouped-GEMM design and benchmarks
 - `models/moe.py` — authoritative implementation
 - `models/moe_triton.py` — Triton kernel + PyTorch reference
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

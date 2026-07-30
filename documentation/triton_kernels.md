@@ -766,3 +766,5 @@ The 50% MFU target is the headline number: it's the gap between "the model works
 - **vLLM MLA implementation** (DeepSeek-specific kernel patterns): https://github.com/vllm-project/vllm/tree/main/vllm/model_executor/layers/attention/MLA — our main reference for the flash-decoding split-K pattern.
 - **Project docs (authoritative):** `documentation/MLA.md`, `documentation/moe.md`, `documentation/mtp.md`.
 - **Project hard rules:** `AGENTS.md §1, §Hard rules`, `AGENTS.md §2.13 (deepseek-v3-engineer subagent)`.
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

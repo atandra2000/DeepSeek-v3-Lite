@@ -615,3 +615,5 @@ DeepSeek-v3-Lite/data/prepare_data.py
 13. **Compression:** Measure bytes/token for packed uint32 vs raw UTF-8 on 1 MB sample.
 14. **Mixture ablation:** Train 1000 steps on single-source data; compare loss to full mixture.
 15. **Manifest audit:** Verify SHA-256 in `manifest.json` matches on-disk shards.
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

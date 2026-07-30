@@ -1424,3 +1424,5 @@ To verify a correct MLA implementation, check these invariants:
 
 7. **DeepSeek-V3-Lite** — This repo. 422M faithful reimplementation.
    [github.com/atandra2000/DeepSeek-V3-Lite](https://github.com/atandra2000/DeepSeek-V3-Lite)
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

@@ -766,3 +766,5 @@ Given token embedding $\mathbf{x}$:
 | Chinchilla-optimal | ~20 tokens per parameter for compute-efficient training |
 | MFU | Achieved FLOPs / peak hardware FLOPs |
 | Speculative decode | Draft model proposes tokens; main model verifies |
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

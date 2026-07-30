@@ -616,3 +616,5 @@ def _build_causal_mask(self, seqlen, device):
 | Batched speculative decode | `inference/speculative.py` (not implemented) |
 | Multi-GPU | New `training/pretrain_distributed.py` (out of scope) |
 | Different vocab | YAML `vocab_size` + re-tokenize data |
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

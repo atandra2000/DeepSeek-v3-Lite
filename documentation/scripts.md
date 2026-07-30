@@ -15,8 +15,9 @@
 5. [smoke_forward.py](#smoke_forwardpy)
 6. [e2e_test_gpu.py](#e2e_test_gpupy)
 7. [build_small_pretrain_data.py](#build_small_pretrain_datapy)
-8. [Recommended Workflow](#recommended-workflow)
-9. [Environment Variables](#environment-variables)
+8. [check_docs.py](#check_docspy)
+9. [Recommended Workflow](#recommended-workflow)
+10. [Environment Variables](#environment-variables)
 
 ---
 
@@ -38,6 +39,20 @@ Each script mirrors a phase of the [getting_started.md](getting_started.md) ment
 | `smoke_forward.py` | Single forward+backward sanity | Yes |
 | `e2e_test_gpu.py` | End-to-end GPU test suite | Yes |
 | `build_small_pretrain_data.py` | Tiny dataset for local dev | No |
+| `check_docs.py` | Lint `documentation/` links, paths, stale patterns | No |
+
+---
+
+## check_docs.py
+
+Validates documentation quality (also runs in CI):
+
+```bash
+python scripts/check_docs.py              # lint only
+python scripts/check_docs.py --update-sizes --stamp-footers   # refresh README line counts + verification stamps
+```
+
+Checks: control characters, stale math/status patterns, internal `.md` links, and backtick-quoted repo paths. Generated data dirs and planned Triton files are allowlisted.
 
 ---
 
@@ -474,3 +489,5 @@ python training/pretrain.py --config configs/pretrain_1650_2m.yaml --data-path <
 | step_time MFU < 20% | Memory bound | Try Triton MoE (with env var) |
 | smoke_forward shape mismatch | Config / code drift | Run `pytest tests/test_models.py` |
 | launch_a100 no shards | Data not prepared | `python3 data/prepare_data.py --stage pretrain` |
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

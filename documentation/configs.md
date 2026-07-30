@@ -428,3 +428,5 @@ Before launching a 15-hour run:
 - [ ] `micro_batch_size × grad_accum × seq_len` matches expected tokens/step
 - [ ] If `attn_impl: triton` or `moe_dispatch: triton_grouped`, set `ENABLE_TRITON_KERNELS=1`
 - [ ] `moe_inter_dim > 256` with triton_grouped → expect stacked fallback at runtime
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

@@ -97,19 +97,23 @@ See [configs.md](configs.md) for every key.
 
 | Doc | ~Lines | Status |
 |---|---|---|
-| MLA.md | 1,424 | Comprehensive |
-| moe.md | 924 | Comprehensive |
-| training.md | 819 | Comprehensive |
-| foundations.md | 768 | Comprehensive |
-| triton_kernels.md | 738 | Comprehensive |
-| mtp.md | 650 | Comprehensive |
-| transformer.md | 618 | Comprehensive |
-| data_pipeline.md | 617 | Comprehensive |
-| utils.md | 575 | Comprehensive |
-| architecture.md | 518 | Comprehensive |
-| testing.md | 514 | Comprehensive |
-| inference.md | 507 | Comprehensive |
-| scripts.md | 476 | Comprehensive |
-| getting_started.md | 455 | Comprehensive |
-| configs.md | 430 | Comprehensive |
-| **Total** | **10,201** | |
+| MLA.md | 1,428 | Comprehensive |
+| moe.md | 926 | Comprehensive |
+| training.md | 821 | Comprehensive |
+| foundations.md | 770 | Comprehensive |
+| triton_kernels.md | 770 | Comprehensive |
+| mtp.md | 652 | Comprehensive |
+| transformer.md | 620 | Comprehensive |
+| data_pipeline.md | 619 | Comprehensive |
+| utils.md | 577 | Comprehensive |
+| testing.md | 530 | Comprehensive |
+| architecture.md | 520 | Comprehensive |
+| inference.md | 509 | Comprehensive |
+| scripts.md | 493 | Comprehensive |
+| getting_started.md | 457 | Comprehensive |
+| configs.md | 432 | Comprehensive |
+| **Total** | **10,124** | |
+
+
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

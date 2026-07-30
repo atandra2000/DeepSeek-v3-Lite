@@ -648,3 +648,5 @@ Only `total_loss / grad_accum` is backpropped. `main_loss` and `mtp_loss` are de
 ## Depth > 1 (Not Enabled at 422M)
 
 `ModuleList([MTPModule(config, d+1) for d in range(depth)])` supports stacking. Depth 2 would predict $t+3$ from depth-1 hidden. DeepSeek-V3 paper uses multiple depths; this repo sets `mtp_depth: 1` for simplicity.
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

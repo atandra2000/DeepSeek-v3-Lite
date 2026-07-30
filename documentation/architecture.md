@@ -516,3 +516,5 @@ Full test mapping: [testing.md](testing.md).
 - MoE deep-dive: [moe.md](moe.md)
 - Training loop: [training.md](training.md)
 - Learning path: [getting_started.md](getting_started.md)
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

@@ -505,3 +505,5 @@ input_ids = tokenizer.apply_chat_template(
 The template inserts role tokens (`user`, `assistant`) per DeepSeek-Coder format. **Tokenizer path** comes from `data.tokenizer_path` in YAML (`deepseek-ai/deepseek-coder-v2-lite`).
 
 Multi-turn: each turn appends to `messages`; KV cache grows with full history unless you call `model.reset_cache()`.
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

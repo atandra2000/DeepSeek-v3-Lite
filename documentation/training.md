@@ -817,3 +817,5 @@ python training/pretrain.py --config configs/pretrain_a100_422m.yaml --resume 40
 **Not restored:** DataLoader shuffle order (benign at 8.4B scale).
 
 **Restored:** Model weights, AdamW state, scheduler, `opt_steps`, MTP weights if `has_mtp: true`.
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->

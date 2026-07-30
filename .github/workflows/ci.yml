@@ -22,6 +22,8 @@ jobs:
           pip install pytest pytest-cov
       - name: Import checks
         run: python -c "import models.transformer; import models.mla; import models.moe; import models.mtp"
+      - name: Check documentation
+        run: python scripts/check_docs.py
       - name: Run test suite
         run: python -m pytest tests/ -q --tb=short
       - name: Model forward smoke test

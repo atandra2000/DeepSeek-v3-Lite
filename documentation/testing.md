@@ -526,3 +526,5 @@ Major test classes (grep `class Test` in file):
 4. Name test `test_<behaviour>_<condition>`
 5. Add one-line docstring referencing doc section if non-obvious
 6. Run `pytest tests/test_yourfile.py -v` before committing
+
+<!-- docs:verified 2026-07-31 · 88cb863 -->
