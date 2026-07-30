@@ -4,6 +4,8 @@
 
 > **Covers**: `utils/checkpoint.py`, `utils/memory.py`, `utils/logging.py` — production infrastructure for training and inference.
 
+> **Read this if** you're debugging checkpoints, VRAM estimates, or WandB logging. **Skip if** you're changing model math → component docs.
+
 ---
 
 ## Table of Contents
@@ -574,4 +576,4 @@ step=   4000 | loss=2.8541 | ppl=17.28 | lr=7.92e-04 | tps=128,000 | balance_los
 | `head.weight` missing on load | Expected with weight tying — use `strict=False` |
 | MTP keys missing | `has_mtp: false` in meta or train without speculative decode |
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

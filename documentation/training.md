@@ -4,6 +4,8 @@
 
 > **Covers**: `training/pretrain.py` — the full single-GPU BF16 training stack for DeepSeek-V3-Lite.
 
+> **Read this if** you're debugging NaN loss, μP LR, checkpoints, or the train loop. **Skip if** you only need launch commands → [scripts.md](scripts.md).
+
 ---
 
 ## Table of Contents
@@ -818,4 +820,4 @@ python training/pretrain.py --config configs/pretrain_a100_422m.yaml --resume 40
 
 **Restored:** Model weights, AdamW state, scheduler, `opt_steps`, MTP weights if `has_mtp: true`.
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

@@ -215,20 +215,13 @@ pip install -r requirements.txt
 
 ### Launch Sequence (A100 80GB)
 
+See **[documentation/getting_started.md](documentation/getting_started.md)** §8–9 for the full workflow: CPU tests → GPU microbench → data prep → `launch_a100.sh`.
+
 ```bash
-# 1. Data — universal 8.0B-token pipeline. Shim over the LLM/shared_data/ package.
-python3 data/prepare_data.py --stage pretrain
-# Optional: --skip-download (re-use an existing corpus)
-# See documentation/data_pipeline.md for the full per-project pipeline guide.
-
-# 2. Microbench — measure peak VRAM (requires CUDA).
-python scripts/microbench_a100.py
-
-# 3. Step-time benchmark — validate MFU.
-python scripts/step_time_a100.py --steps 20 --warmup 5
-
-# 4. Launch the full run (~13-15 hours on A100 80GB).
-bash scripts/launch_a100.sh
+python -m pytest tests/ -q                    # CPU correctness
+python scripts/microbench_a100.py             # VRAM headroom (CUDA)
+python3 data/prepare_data.py --stage pretrain # once
+bash scripts/launch_a100.sh                   # ~13–15 h on A100 80GB
 ```
 
 ---

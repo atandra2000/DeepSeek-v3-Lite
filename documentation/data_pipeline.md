@@ -4,6 +4,8 @@
 
 > **Covers**: How DeepSeek-V3-Lite obtains its 8.4B-token training corpus, from raw HuggingFace datasets to packed `uint32` shards consumed by `PretrainDataset`.
 
+> **Read this if** you're preparing or validating training data. **Skip if** shards already exist → [getting_started.md](getting_started.md) §8.
+
 ---
 
 ## Table of Contents
@@ -239,7 +241,7 @@ See [training.md](training.md) for full details.
 
 **Q: Can I use GPT-2 tokenizer?** Only for the 1650 smoke config (`vocab_size=50257`). The 422M config requires DeepSeek tokenizer.
 
-**Q: Where is DATA_PIPELINE.md?** The universal pipeline README is at `LLM/shared_data/README.md`.
+**Q: Where is DATA_PIPELINE.md?** This repo ships `data/DATA_PIPELINE.md` (redirect) and the full guide at [data_pipeline.md](data_pipeline.md). The universal pipeline README is at `LLM/shared_data/README.md`.
 
 **Q: How long does full prep take?** Hours to days depending on bandwidth and CPU cores. Use `--skip-*` flags for incremental reruns.
 
@@ -616,4 +618,4 @@ DeepSeek-v3-Lite/data/prepare_data.py
 14. **Mixture ablation:** Train 1000 steps on single-source data; compare loss to full mixture.
 15. **Manifest audit:** Verify SHA-256 in `manifest.json` matches on-disk shards.
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

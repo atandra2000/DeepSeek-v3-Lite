@@ -490,4 +490,4 @@ python training/pretrain.py --config configs/pretrain_1650_2m.yaml --data-path <
 | smoke_forward shape mismatch | Config / code drift | Run `pytest tests/test_models.py` |
 | launch_a100 no shards | Data not prepared | `python3 data/prepare_data.py --stage pretrain` |
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

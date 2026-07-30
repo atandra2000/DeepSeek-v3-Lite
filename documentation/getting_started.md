@@ -454,4 +454,4 @@ Expect ~hundreds of keys; `head.weight` may be absent when `weight_tying: true`.
 
 Never skip step 1 (tests) when touching `mla.py`, `moe.py`, or `mtp.py`.
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

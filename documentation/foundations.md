@@ -2,6 +2,8 @@
 
 > **Purpose:** A self-contained textbook chapter covering every prerequisite concept you need before reading the component-specific docs (MLA, MoE, MTP, training, inference). Read this first if you are learning the project from scratch.
 
+> **Read this if** transformer basics, RoPE, or Chinchilla are unfamiliar. **Skip if** you're ready to run smoke tests → [getting_started.md](getting_started.md).
+
 ---
 
 ## Table of Contents
@@ -767,4 +769,4 @@ Given token embedding $\mathbf{x}$:
 | MFU | Achieved FLOPs / peak hardware FLOPs |
 | Speculative decode | Draft model proposes tokens; main model verifies |
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

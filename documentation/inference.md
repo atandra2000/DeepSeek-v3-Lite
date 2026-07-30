@@ -4,6 +4,8 @@
 
 > **Covers**: `inference/generate.py`, `inference/speculative.py`, and `Transformer.generate()` — from checkpoint to tokens.
 
+> **Read this if** you're debugging generation, KV cache, or speculative decode. **Skip if** you're training only → [training.md](training.md).
+
 ---
 
 ## Table of Contents
@@ -394,6 +396,7 @@ Use `estimate_model_memory_gb(..., inference=True)` from `utils/memory.py` for a
 4. **Triton MoE kernel not validated for decode** — use `moe_dispatch="stacked"` for inference.
 5. **`transformers` required for CLI** — optional import; tests import helpers without it.
 6. **Speculative path is greedy** — no temperature / top-p in `SpeculativeDecoder.generate`.
+7. **Simplified speculative sampling** — threshold accept rule, not optimal Metropolis–Hastings (Leviathan et al.). Future work: full speculative sampling for higher acceptance at equal correctness.
 
 ---
 
@@ -506,4 +509,4 @@ The template inserts role tokens (`user`, `assistant`) per DeepSeek-Coder format
 
 Multi-turn: each turn appends to `messages`; KV cache grows with full history unless you call `model.reset_cache()`.
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

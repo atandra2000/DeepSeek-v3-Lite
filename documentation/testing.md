@@ -16,10 +16,11 @@
 6. [test_inference.py](#test_inferencepy)
 7. [test_utils.py](#test_utilspy)
 8. [test_moe_triton.py](#test_moe_tritonpy)
-9. [test_force_back.py](#test_force_backpy)
-10. [Load-Bearing Tests](#load-bearing-tests)
-11. [Adding New Tests](#adding-new-tests)
-12. [CI](#ci)
+9. [test_mla_triton.py](#test_mla_tritonpy)
+10. [test_force_back.py](#test_force_backpy)
+11. [Load-Bearing Tests](#load-bearing-tests)
+12. [Adding New Tests](#adding-new-tests)
+13. [CI](#ci)
 
 ---
 
@@ -67,9 +68,9 @@ python -m pytest tests/ -k "MoE or MTP or bias"
 python -m pytest tests/ --cov=models --cov=training
 ```
 
-Expected: all **184** tests pass on a fresh clone with `torch` installed (~1–3 min on CPU).
+Expected: all tests pass on a fresh clone with `torch` installed (~1–3 min on CPU).
 
-### Suite overview (2026-07-30)
+### Suite overview (2026-07-31)
 
 | File | Tests | Primary coverage |
 |---|---|---|
@@ -78,10 +79,11 @@ Expected: all **184** tests pass on a fresh clone with `torch` installed (~1–3
 | `test_utils.py` | 26 | Checkpoint I/O, memory estimates, logging |
 | `test_moe_triton.py` | 16 | MoE Triton vs PyTorch reference (`@pytest.mark.gpu` for kernel) |
 | `test_inference.py` | 13 | Generate, speculative decode |
+| `test_mla_triton.py` | 5 | MLA reference + import surface; GPU Triton vs reference |
 | `test_force_back.py` | 8 | `ENABLE_TRITON_KERNELS` force-back guard |
-| **Total** | **184** | |
+| **Total** | **189** | |
 
-**Gap:** `test_mla_triton.py` is planned but not yet in the tree — MLA Triton is wired in `models/mla_triton.py` without a dedicated test module. Track in [triton_kernels.md](triton_kernels.md#status-2026-07-30).
+**Remaining gap:** full-model `test_sdpa_and_triton_agree` (end-to-end `attn_impl: triton`) is not yet in the suite — track in [triton_kernels.md](triton_kernels.md#status-2026-07-30).
 
 ---
 
@@ -177,6 +179,16 @@ test_shared_head_mtp        # MTP head sharing
 | `TestMoeTritonKernelGPU` | Triton ≈ reference on GPU (`@pytest.mark.gpu`) |
 
 CPU tests always pass. GPU tests skipped on Mac.
+
+---
+
+## test_mla_triton.py
+
+| Class | What it verifies |
+|---|---|
+| `TestMlaAttentionReference` | PyTorch reference shapes + decode step |
+| `TestMlaTritonImport` | `HAS_TRITON` gating, ImportError without triton |
+| `TestMlaTritonKernelGPU` | Triton ≈ reference on GPU (`@pytest.mark.gpu`) |
 
 ---
 
@@ -527,4 +539,4 @@ Major test classes (grep `class Test` in file):
 5. Add one-line docstring referencing doc section if non-obvious
 6. Run `pytest tests/test_yourfile.py -v` before committing
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

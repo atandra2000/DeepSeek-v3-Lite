@@ -2,6 +2,8 @@
 
 > **Canonical MLA reference for this repo.** Theory (DeepSeek-V2/V3), the absorption trick, decoupled RoPE, and the implementation in `models/mla.py` / `models/mla_triton.py`. If prose and code disagree, `models/mla.py` wins.
 
+> **Read this if** you're debugging attention, KV-cache layout, or the absorption trick. **Skip if** you only need YAML knobs → [configs.md](configs.md).
+
 ## A Comprehensive Technical Reference
 
 > **Covers**: DeepSeek-V2/V3 original formulation, the absorption trick, decoupled RoPE, and the implementation in this repo (`models/mla.py`).
@@ -1425,4 +1427,4 @@ To verify a correct MLA implementation, check these invariants:
 7. **DeepSeek-V3-Lite** — This repo. 422M faithful reimplementation.
    [github.com/atandra2000/DeepSeek-V3-Lite](https://github.com/atandra2000/DeepSeek-V3-Lite)
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

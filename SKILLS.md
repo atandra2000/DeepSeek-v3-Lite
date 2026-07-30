@@ -112,6 +112,18 @@ python3 data/prepare_data.py --stage pretrain --source <new-source-id>
 The mixture weights must sum to 1.0. To override per-project, pass
 `--mixture <path-to-yaml>` to the shim.
 
+## Doc routing
+
+| Question | Start here |
+|---|---|
+| Run smoke tests / first training | [documentation/getting_started.md](documentation/getting_started.md) |
+| Tune YAML | [documentation/configs.md](documentation/configs.md) |
+| MLA dimensions / absorption | [documentation/MLA.md](documentation/MLA.md) + `models/mla.py` |
+| MoE bias / routing | [documentation/moe.md](documentation/moe.md) + `models/moe.py` |
+| Checkpoints / VRAM | [documentation/utils.md](documentation/utils.md) |
+| Invariants / what tests prove | [documentation/testing.md](documentation/testing.md) |
+| Enable Triton | [documentation/triton_kernels.md](documentation/triton_kernels.md) + `ENABLE_TRITON_KERNELS=1` |
+
 ## Pitfalls (cross-cutting)
 - **NaN guard** is `nan_guard_max_consecutive=5` — after 5 consecutive NaN
   steps the run auto-rolls back to the last good checkpoint.

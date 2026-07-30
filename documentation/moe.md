@@ -6,6 +6,8 @@
 
 > **Covers**: DeepSeek-V2/V3 MoE design, auxiliary-loss-free load balancing (§2.3.3), fine-grained expert routing, shared experts, sorted-token dispatch, and the implementation in this repo (`models/moe.py`, `models/moe_triton.py`).
 
+> **Read this if** you're debugging expert collapse, routing histograms, or aux-loss-free bias updates. **Skip if** you only need YAML knobs → [configs.md](configs.md).
+
 ---
 
 ## Table of Contents
@@ -923,4 +925,4 @@ When modifying MoE code, verify:
 - `models/moe.py` — authoritative implementation
 - `models/moe_triton.py` — Triton kernel + PyTorch reference
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

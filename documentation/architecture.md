@@ -517,4 +517,4 @@ Full test mapping: [testing.md](testing.md).
 - Training loop: [training.md](training.md)
 - Learning path: [getting_started.md](getting_started.md)
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

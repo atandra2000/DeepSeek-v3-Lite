@@ -103,7 +103,9 @@ workspace umbrella; this project imports it via `sys.path` in
 `data/prepare_data.py` — it is not vendored here). Mixture: FineWeb-Edu
 0.5 / FineWeb 0.2 / the-stack-python 0.15 / OpenMathInstruct-2 0.10 / arxiv
 0.05. Tokenized with `deepseek-ai/deepseek-coder-v2-lite` tokenizer (vocab
-100,018). See `data/DATA_PIPELINE.md`.
+100,018). See `data/DATA_PIPELINE.md` (redirects to `documentation/data_pipeline.md`).
+
+**Doc routing:** implementation questions → `models/*.py` first; theory → `documentation/<component>.md`; invariants → `tests/` + `documentation/testing.md`. MLA deep-dive → `documentation/MLA.md`.
 
 **Configs:** `configs/pretrain_a100_422m.yaml` (canonical 422M A100 recipe).
 Two new optional config keys: `attn_impl` (default `"sdpa"`, set to
@@ -111,7 +113,7 @@ Two new optional config keys: `attn_impl` (default `"sdpa"`, set to
 `"triton_grouped"` to opt in). Master kill-switch env-var:
 `ENABLE_TRITON_KERNELS=0` (default, no Triton) or `=1` (allow per-config
 opt-in). Tests on CPU/Mac run with the env-var unset and the default
-`attn_impl` / `moe_dispatch` values, so the **184** pytest tests keep
+`attn_impl` / `moe_dispatch` values, so the **189** pytest tests keep
 passing without any CUDA dependency.
 
 **Hard rules:**
@@ -178,10 +180,10 @@ passing without any CUDA dependency.
 - Speculative decoding acceptance rate measured at ~0.8 on smoke tests.
 - **Triton kernels (MoE + MLA) are implemented but not default-on** — opt in via
   `attn_impl: "triton"` / `moe_dispatch: "triton_grouped"` in YAML plus
-  `ENABLE_TRITON_KERNELS=1`. A100 benchmark validation (≥1.5× MoE speedup,
-  ≥25% full-step reduction) is still open. `test_mla_triton.py` does not
-  exist yet; MoE coverage lives in `tests/test_moe_triton.py` and
-  `tests/test_force_back.py`. All **184** tests pass on the default
+  `ENABLE_TRITON_KERNELS=1`.   A100 benchmark validation (≥1.5× MoE speedup,
+  ≥25% full-step reduction) is still open. `tests/test_mla_triton.py` covers
+  MLA kernel reference + GPU numerics; full-model `test_sdpa_and_triton_agree`
+  is still TODO. All **189** tests pass on the default
   `attn_impl="sdpa"`, `moe_dispatch="stacked"` config without Triton.
 - Triton requires SM_80+ (A100, H100, RTX 4090, etc.) and Linux.
   macOS and Windows are unsupported for the Triton paths; the

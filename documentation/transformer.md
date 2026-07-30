@@ -6,6 +6,8 @@
 
 > **Covers**: `Transformer`, `TransformerBlock`, `SwiGLUFFN` in `models/transformer.py` — how the full DeepSeek-V3 stack is assembled and executed.
 
+> **Read this if** you need the end-to-end forward/generate wiring. **Read first** if new to the repo: [architecture.md](architecture.md) → [MLA.md](MLA.md) / [moe.md](moe.md).
+
 ---
 
 ## Table of Contents
@@ -617,4 +619,4 @@ def _build_causal_mask(self, seqlen, device):
 | Multi-GPU | New `training/pretrain_distributed.py` (out of scope) |
 | Different vocab | YAML `vocab_size` + re-tokenize data |
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

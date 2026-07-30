@@ -25,8 +25,16 @@ Educational technical references for every component of this project. Each doc f
 | 12. Advanced | [triton_kernels.md](triton_kernels.md) | Fused MoE + MLA kernels |
 ---
 
+## Documentation tiers
 
-## Foundations
+| Tier | Files | When to read |
+|---|---|---|
+| **Essential** | [getting_started.md](getting_started.md), [architecture.md](architecture.md), [configs.md](configs.md), [testing.md](testing.md) | First run, debugging, YAML tuning |
+| **Deep dives** | [MLA.md](MLA.md), [moe.md](moe.md), [mtp.md](mtp.md), [foundations.md](foundations.md) | Understanding V3 mechanisms in depth |
+| **Operations** | [training.md](training.md), [data_pipeline.md](data_pipeline.md), [inference.md](inference.md), [scripts.md](scripts.md), [utils.md](utils.md) | Full training run, data, checkpoints |
+| **Advanced** | [triton_kernels.md](triton_kernels.md), [transformer.md](transformer.md) | Kernel opt-in, wiring internals |
+
+---
 
 | File | Topics |
 |------|--------|
@@ -88,7 +96,6 @@ See [configs.md](configs.md) for every key.
 | Vocab 100,018 — embedding dim must match | [data_pipeline.md](data_pipeline.md) |
 | Weight tying — head.weight = embed.weight | [transformer.md](transformer.md) |
 | `ENABLE_TRITON_KERNELS=1` for Triton paths | [moe.md](moe.md), [triton_kernels.md](triton_kernels.md) |
-| `test_mla_triton.py` not yet added (MLA Triton gap) | [triton_kernels.md](triton_kernels.md), [testing.md](testing.md) |
 | `use_cache=False` during training | [training.md](training.md), [inference.md](inference.md) |
 
 ---
@@ -97,23 +104,24 @@ See [configs.md](configs.md) for every key.
 
 | Doc | ~Lines | Status |
 |---|---|---|
-| MLA.md | 1,428 | Comprehensive |
-| moe.md | 926 | Comprehensive |
-| training.md | 821 | Comprehensive |
-| foundations.md | 770 | Comprehensive |
-| triton_kernels.md | 770 | Comprehensive |
-| mtp.md | 652 | Comprehensive |
-| transformer.md | 620 | Comprehensive |
-| data_pipeline.md | 619 | Comprehensive |
-| utils.md | 577 | Comprehensive |
-| testing.md | 530 | Comprehensive |
+| MLA.md | 1,430 | Comprehensive |
+| moe.md | 928 | Comprehensive |
+| training.md | 823 | Comprehensive |
+| foundations.md | 772 | Comprehensive |
+| triton_kernels.md | 772 | Comprehensive |
+| mtp.md | 654 | Comprehensive |
+| transformer.md | 622 | Comprehensive |
+| data_pipeline.md | 621 | Comprehensive |
+| utils.md | 579 | Comprehensive |
+| testing.md | 542 | Comprehensive |
 | architecture.md | 520 | Comprehensive |
-| inference.md | 509 | Comprehensive |
+| inference.md | 512 | Comprehensive |
 | scripts.md | 493 | Comprehensive |
 | getting_started.md | 457 | Comprehensive |
-| configs.md | 432 | Comprehensive |
-| **Total** | **10,124** | |
+| configs.md | 434 | Comprehensive |
+| **Total** | **10,159** | |
 
 
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

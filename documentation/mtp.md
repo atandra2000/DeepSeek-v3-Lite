@@ -6,6 +6,8 @@
 
 > **Covers**: DeepSeek-V3 MTP auxiliary heads, training loss coupling, and MTP-based speculative decoding in this repo (`models/mtp.py`, `inference/speculative.py`).
 
+> **Read this if** you're working on MTP loss alignment or speculative decoding. **Skip if** you only need the standard train loop → [training.md](training.md).
+
 ---
 
 ## Table of Contents
@@ -649,4 +651,4 @@ Only `total_loss / grad_accum` is backpropped. `main_loss` and `mtp_loss` are de
 
 `ModuleList([MTPModule(config, d+1) for d in range(depth)])` supports stacking. Depth 2 would predict $t+3$ from depth-1 hidden. DeepSeek-V3 paper uses multiple depths; this repo sets `mtp_depth: 1` for simplicity.
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->

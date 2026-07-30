@@ -41,7 +41,7 @@ STALE_PATTERNS: list[tuple[str, str]] = [
     (r"\\r\\right", "corrupted \\right)"),
     (r"\\n\\nabla", "double nabla"),
     (r"643-line", "stale MLA line count"),
-    (r"\b28 tests?\b", "stale test count (use 184)"),
+    (r"\b28 tests?\b", "stale test count (use 189)"),
 ]
 
 SIZE_TABLE_START = "## Doc size reference"

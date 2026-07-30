@@ -7,6 +7,16 @@
 
 **MLA documentation:** [`documentation/MLA.md`](documentation/MLA.md) is the single canonical reference (theory + this-repo implementation). For routine MLA questions, derive answers from `models/mla.py` first; read the doc when the user wants the full deep-dive or absorption algebra.
 
+### Doc routing (agents)
+
+| Question type | Read first |
+|---|---|
+| How does this repo implement X? | `models/*.py` + matching component doc §Implementation |
+| MLA theory / absorption algebra | `documentation/MLA.md` |
+| YAML / hyperparameters | `documentation/configs.md` |
+| Train loop / NaN / checkpoints | `documentation/training.md` + `tests/test_training.py` |
+| What must not break? | `documentation/testing.md` load-bearing table |
+
 Everything in this file (`CONTEXT.md`) is derived from
 code/configs/tests, not from `documentation/MLA.md`.
 

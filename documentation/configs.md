@@ -1,6 +1,8 @@
 # Configuration Reference
 
 > **Purpose:** Textbook-style reference for every YAML key in `configs/`, with theory for *why* each hyperparameter exists and *where* code consumes it.
+
+> **Read this if** you're tuning hyperparameters or adding config keys. **Skip if** you're learning architecture theory → [architecture.md](architecture.md).
 ---
 
 ## Table of Contents
@@ -429,4 +431,4 @@ Before launching a 15-hour run:
 - [ ] If `attn_impl: triton` or `moe_dispatch: triton_grouped`, set `ENABLE_TRITON_KERNELS=1`
 - [ ] `moe_inter_dim > 256` with triton_grouped → expect stacked fallback at runtime
 
-<!-- docs:verified 2026-07-31 · 88cb863 -->
+<!-- docs:verified 2026-07-31 · 5a880d2 -->
