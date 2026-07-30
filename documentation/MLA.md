@@ -1,0 +1,1424 @@
+# Multi-Head Latent Attention (MLA)
+
+## A Comprehensive Technical Reference
+
+> **Covers**: DeepSeek-V2/V3 original formulation, the absorption trick, decoupled RoPE, and the implementation in this repo (`models/mla.py`).
+
+---
+
+## Table of Contents
+
+1. [Abstract](#abstract)
+2. [Motivation — The KV Cache Problem](#motivation-the-kv-cache-problem)
+3. [Core Innovation — Low-Rank KV Compression](#core-innovation-low-rank-kv-compression)
+4. [Mathematical Formulation (DeepSeek-V3 Paper)](#mathematical-formulation-deepseek-v3-paper)
+5. [The Absorption Trick](#the-absorption-trick)
+6. [Decoupled RoPE](#decoupled-rope)
+7. [Query-Side Compression](#query-side-compression)
+8. [Dimension Breakdown](#dimension-breakdown)
+9. [Implementation in This Repo](#implementation-in-this-repo)
+   - [Class Structure](#class-structure)
+   - [Forward Pass: SDPA Path](#forward-pass-sdpa-path)
+   - [Forward Pass: Manual Path (True Absorption)](#forward-pass-manual-path-true-absorption)
+   - [KV Cache Management](#kv-cache-management)
+   - [RoPE Helpers](#rope-helpers)
+10. [Comparison: MLA vs MHA vs GQA vs MQA](#comparison-mla-vs-mha-vs-gqa-vs-mqa)
+11. [Performance Characteristics](#performance-characteristics)
+12. [Appendix A — FlashAttention in 60 seconds](#appendix-a-flashattention-in-60-seconds)
+13. [Appendix B — A worked numerical example](#appendix-b-a-worked-numerical-example)
+14. [Appendix C — The Triton path](#appendix-c-the-triton-path)
+15. [Appendix D — Training vs. inference pathway](#appendix-d-training-vs-inference-pathway)
+16. [Appendix E — Why `wkv_b` has shape `(H, d_nope + d_v, R)`](#appendix-e-why-wkv_b-has-shape-h-d_nope-d_v-r)
+17. [Appendix F — KV-cache lifecycle (state diagram)](#appendix-f-kv-cache-lifecycle-state-diagram)
+18. [Appendix G — Gradient flow in MLA](#appendix-g-gradient-flow-in-mla)
+19. [Appendix H — Numerical stability notes](#appendix-h-numerical-stability-notes)
+20. [Appendix I — Glossary](#appendix-i-glossary)
+21. [Appendix J — Frequently Asked Questions](#appendix-j-frequently-asked-questions)
+22. [Implementation Checklist](#implementation-checklist)
+23. [References](#references)
+
+
+> **Prerequisites:** Read [foundations.md](foundations.md) §5 (attention), §6 (RoPE), and §11 (KV caching) before this chapter. This document assumes you understand standard multi-head attention and why KV-cache memory dominates inference.
+
+---
+
+## Abstract
+
+**Multi-Head Latent Attention (MLA)** is the attention mechanism introduced in DeepSeek-V2 (May 2024) and refined in DeepSeek-V3 (Dec 2024). Its central innovation is **low-rank joint compression of keys and values**: instead of caching full per-head K/V tensors during autoregressive generation (the standard "KV cache"), MLA compresses them into a small latent vector and reconstructs them on the fly. This yields a **~10× reduction in KV-cache memory** at no quality loss, making long-context inference dramatically more memory-efficient.
+
+MLA achieves this through four interlocking mechanisms:
+
+1. **Low-rank KV down-projection** — a learned matrix compresses the hidden state into a compact latent.
+2. **The absorption trick** — the key/value up-projection matrices are algebraically absorbed into the query and output projections, so full K/V are never materialised during inference.
+3. **Decoupled RoPE** — a separate, small positional embedding path (single shared K head) preserves RoPE compatibility without breaking the absorption algebra.
+4. **Optional query compression** — a parallel low-rank path reduces activation memory during training.
+
+---
+
+## Motivation — The KV Cache Problem
+
+During autoregressive decoding, every new token must attend to all preceding tokens. To avoid recomputing keys and values for every past position at each step, transformers store them in a **Key-Value (KV) cache**. The memory cost of this cache scales linearly with sequence length and quadratically with the number of attention heads.
+
+**KV cache size per sequence** (standard MHA, FP16):
+
+```
+Bytes = 2 × L × n_layers × n_heads × d_head × 2 (FP16)
+```
+
+For a 70B-class model at 128K context length:
+
+| Variant | KV cache per token per layer | Per sequence (128K, 61 layers) |
+|---|---|---|
+| MHA | 32,768 floats | 256 GB |
+| GQA (8 groups) | 2,048 floats | 16 GB |
+| MQA | 256 floats | 2 GB |
+| **MLA** | **576 floats** | **2.18 GB** |
+
+This isn't just about capacity — it's about **memory bandwidth**. During each decode step, the entire KV cache must be read from HBM into on-chip SRAM to compute attention scores. For MHA at 128K context, this means reading 256 GB per decode step. MLA reduces this to 2.18 GB — a **~120× reduction** in bandwidth demand.
+
+**The real bottleneck in LLM inference is not compute — it's memory bandwidth.** MLA directly attacks this bottleneck.
+
+### Historical placement
+
+| Year | Model | Attention mechanism | KV per token per layer (typical) |
+|---|---|---|---|
+| 2017 | Transformer | MHA | $2 \times n_h \times d_h$ |
+| 2019 | GShard / Switch | MHA + MoE | same |
+| 2023 | GQA (LLaMA-2) | Grouped-query | $2 \times n_g \times d_h$ |
+| 2024 | DeepSeek-V2/V3 | **MLA** | $R + d_{\text{rope}}$ (latent + rope slice) |
+
+MLA is not merely "another GQA variant" — it changes **what is stored** in the cache (a latent vector) and **when** full keys/values are materialised (absorbed into query projection at inference).
+
+
+---
+
+## Core Innovation — Low-Rank KV Compression
+
+Standard Multi-Head Attention (MHA) computes keys and values for token `t` as:
+
+```
+k_t = h_t W^K      (n_heads × d_head)
+v_t = h_t W^V      (n_heads × d_head)
+```
+
+MLA inserts a **down-projection** that compresses the hidden state into a low-dimensional latent **before** the per-head key/value projections:
+
+```
+c_t^KV = h_t W^{DKV}    c_t^KV ∈ ℝ^{d_c}
+```
+
+where `d_c` (the KV compression dimension) is much smaller than `n_heads × d_head` (e.g., 512 vs 4096 for DeepSeek-V3). **Only this latent is cached.**
+
+At attention time, the latent is up-projected back to the full head dimension:
+
+```
+k_t^C = c_t^KV W^{UK}     (n_heads × d_h)
+v_t^C = c_t^KV W^{UV}     (n_heads × d_h)
+```
+
+Critically, `W^{DKV}` is **shared across all heads** — a single compression matrix, one latent per token. This is what gives MLA its dramatic cache savings.
+
+---
+
+## Mathematical Formulation (DeepSeek-V3 Paper)
+
+The DeepSeek-V3 technical report (arXiv:2412.19437) specifies MLA as follows.
+
+Let `d` be the model dimension, `n_h` the number of attention heads, `d_h` the per-head dimension, and `h_t ∈ ℝ^d` the input to the attention layer at position `t`.
+
+### KV Compression
+
+```
+c_t^KV = W^{DKV} h_t                                          (1)
+k_t^C  = [k_{t,1}^C; k_{t,2}^C; ...; k_{t,n_h}^C] = W^{UK} c_t^KV   (2)
+k_t^R  = RoPE(W^{KR} h_t)                                     (3)
+k_{t,i} = [k_{t,i}^C; k_t^R]                                   (4)
+v_t^C  = [v_{t,1}^C; v_{t,2}^C; ...; v_{t,n_h}^C] = W^{UV} c_t^KV   (5)
+```
+
+Where:
+
+| Symbol | Shape | Purpose |
+|---|---|---|
+| `W^{DKV}` | `d_c × d` | KV down-projection (compression) |
+| `W^{UK}` | `n_h · d_h × d_c` | Key up-projection (recovery) |
+| `W^{UV}` | `n_h · d_h × d_c` | Value up-projection (recovery) |
+| `W^{KR}` | `d_h^R × d` | Decoupled RoPE key projection |
+| `c_t^KV` | `d_c` | **Cached latent** |
+| `k_t^R` | `d_h^R` | **Cached RoPE key** |
+
+**Only `c_t^KV` and `k_t^R` are cached** — the blue-boxed quantities in the paper's notation. Everything else is reconstructed on the fly.
+
+### Query Compression (Optional)
+
+```
+c_t^Q = W^{DQ} h_t                                            (6)
+q_t^C = [q_{t,1}^C; ...; q_{t,n_h}^C] = W^{UQ} c_t^Q        (7)
+q_t^R = RoPE(W^{QR} c_t^Q)                                    (8)
+q_{t,i} = [q_{t,i}^C; q_t^R]                                  (9)
+```
+
+### Attention Output
+
+The final attention output for head `i` at position `t`:
+
+```
+o_{t,i} = ∑_j softmax_j( q_{t,i}^T k_{j,i} / √(d_h) ) v_{j,i}
+u_t = W^O [o_{t,1}; o_{t,2}; ...; o_{t,n_h}]
+```
+
+---
+
+## The Absorption Trick
+
+The absorption trick is what makes MLA efficient at inference time. If you compute attention scores naively by reconstructing full K/V at every step, you lose the cache benefit. The trick: **fold the up-projections into the query and output projections.**
+
+### Score computation with absorption
+
+Standard score computation (what you'd write naively):
+
+```
+score = (c_q^Q W^{UQ})^T (c_k^{KV} W^{UK})
+```
+
+But matrix multiplication is associative — re-parenthesise:
+
+```
+score = c_q^{Q^T} (W^{UQ} W^{UK^T}) c_k^{KV}
+         _____/
+       precompute once
+```
+
+The product `W^{UQ} W^{UK^T}` is a **constant matrix** that can be computed once at model load time. At inference, you only multiply latent against latent — the 128-dimensional inner products never appear.
+
+### Tensor shapes — why the savings are real
+
+Let `R = kv_lora_rank` (192 in this repo) and `H = n_heads` (12), and
+let `d_nope = qk_nope_head_dim` (48). For one token, one query head, one
+key position:
+
+| Quantity                    | Shape              | Reads/writes |
+|-----------------------------|--------------------|--------------|
+| Latent `c^KV`               | `R`                | 192 floats   |
+| Full K (`c^KV · W^{UK}`)    | `H · d_nope = 576` | 576 floats   |
+
+So the **per-token, per-step memory traffic** for the content path drops
+from 576 floats to 192 floats — exactly a `d_nope : R = 48 : 192` ratio,
+which is `1/3`. The full picture (including the RoPE key of 24 floats)
+gives `576 → 216`, a **~2.67× drop** at this config; at DeepSeek-V3
+scale it is `d_nope × H + d_rope × H → d_c + d_rope = 16384+8192 → 576`,
+the headline **~30× number** in §2.
+
+### Value side absorption
+
+Similarly, the value up-projection `W^{UV}` is absorbed into the output projection `W^O`. The post-attention weighted sum of latents can be directly up-projected to the model dimension:
+
+```
+output = (attn_weights × C^{KV}) W^{UV} W^O
+```
+
+The product `W^{UV} W^O` is precomputed, so the value expansion never materialises.
+
+### Why this matters
+
+| Step | Without absorption | With absorption |
+|---|---|---|
+| Score computation | Expand latent to full K (n_h × d_h), then score | Latent-to-latent inner product (d_c) |
+| Value aggregation | Expand latent to full V (n_h × d_h), attend, project back | Attend directly in latent space, project once |
+| Memory reads per token | n_h × (d_h_k + d_h_v) ≈ 16K floats | d_c + d_h^R ≈ 576 floats |
+
+**The absorption trick transforms MLA from a computationally expensive curiosity into the most memory-efficient attention variant available.**
+
+---
+
+## Decoupled RoPE
+
+### A 90-second RoPE primer (read this first if RoPE is fuzzy)
+
+Rotary Position Embeddings encode position by rotating each query/key vector
+in 2D subspaces. For a vector `x ∈ ℝ^{2d}`, RoPE pairs coordinates
+`(x_{2i}, x_{2i+1})` and rotates the `i`-th pair by angle
+`θ_i · pos`, where the frequency schedule is:
+
+```
+θ_i = base^{-2i / d},   base = 10000 (the canonical rope_theta)
+```
+
+Concretely, for one pair at position `p`:
+
+```
+[x_{2i}]    [cos(θ_i p)  -sin(θ_i p)] [x_{2i}]
+[x_{2i+1}] → [sin(θ_i p)   cos(θ_i p)] [x_{2i+1}]
+```
+
+This is a 2×2 rotation per pair, hence the half-dim usage:
+`qk_rope_head_dim` real dims = `qk_rope_head_dim / 2` independent rotations.
+The code implements this with complex numbers (`view_as_complex`,
+`torch.polar(ones, freqs)`) for a clean Hadamard-style multiplication.
+
+**The crucial property** that makes RoPE useful for attention:
+
+```
+⟨ R(θ, pos_q) q,  R(θ, pos_k) k ⟩ = g(q, k, pos_q - pos_k)
+```
+
+i.e., the inner product of two RoPE-rotated vectors depends only on the
+*relative* position. This is what gives transformers length-generalisation
+and clean position-equivariance. **But it also makes RoPE non-linear in
+position**, which is the heart of the absorption problem below.
+
+### The problem
+
+RoPE is not a linear operation — the rotation depends on the token position.
+If you try to absorb `W^{UK}` into `W^{UQ}` as described above, the RoPE
+rotation ends up **between** the two matrices, breaking the associative
+reordering:
+
+```
+score = c_q^Q W^{UQ^T} R(θ, Δ) W^{UK} c_k^{KV}
+```
+
+`R(θ, Δ)` is position-dependent, so `W^{UQ^T} R(θ, Δ) W^{UK}` cannot be
+precomputed. (For every relative position `Δ`, you'd need a different
+`R`, so the savings vanish.)
+
+### The solution: decoupled RoPE
+
+DeepSeek's fix splits the head dimension into two parts:
+
+- **Content part** (`qk_nope_head_dim`): carries semantic content, NO RoPE. Goes through the latent compression as described. Supports absorption.
+- **Position part** (`qk_rope_head_dim`): carries positional information, uses RoPE. **Not compressed** — operates as Multi-Query Attention (single shared K head across all Q heads).
+
+This means:
+
+```
+k_t = [k_t^C ;  k_t^R]        (concat of content + positional keys)
+q_t = [q_t^C ;  q_t^R]        (concat of content + positional queries)
+
+score = q_t^C k_s^C^T + q_t^R k_s^R^T
+        _____________/   ___________/
+       content (absorbed)   position (MQA)
+```
+
+The content score uses the absorption trick (linear, precomputable). The position score uses standard RoPE but with a **single shared key head** — no different from MQA's positional cost.
+
+### Cache impact
+
+The decoupled RoPE key `k_t^R` (typically 64 dims for DeepSeek-V3, 16 dims in this repo) is the **second** cached quantity:
+
+```
+Cached per token per layer:  c_t^KV (d_c)  +  k_t^R (d_h^R)
+                           =  192          +  24         =  216  (this repo, 422M config)
+```
+
+---
+
+## Query-Side Compression
+
+DeepSeek-V3 also compresses the **query** using a parallel low-rank path. This doesn't affect the cache size (queries aren't cached) but reduces **activation memory** during training.
+
+When `q_lora_rank > 0`:
+
+```
+c_t^Q = h_t W^{DQ}           c_t^Q ∈ ℝ^{d'_c}
+q_t   = c_t^Q W^{UQ}         q_t   ∈ ℝ^{n_h × qk_head_dim}
+```
+
+This is a bottleneck: the hidden state is first compressed to `d'_c` (e.g., 1,536 for DeepSeek-V3), then expanded to the full head dimension.
+
+In this repo's 422M config, `q_lora_rank = 0` (no query compression) as a simplification at the smaller scale.
+
+---
+
+## Dimension Breakdown
+
+### DeepSeek-V3 (original, 671B total)
+
+| Parameter | Value | Description |
+|---|---|---|
+| `d_model` | 7,168 | Hidden dimension |
+| `n_heads` | 128 | Number of attention heads |
+| `d_head` | 128 | Per-head dimension |
+| `qk_nope_head_dim` | 128 | Content key/query dimension per head |
+| `qk_rope_head_dim` | 64 | Positional key/query dimension per head |
+| `qk_head_dim` | 192 | Total QK head dim (128 + 64) |
+| `v_head_dim` | 128 | Value head dimension |
+| `kv_lora_rank` | 512 | KV compression latent dimension |
+| `q_lora_rank` | 1,536 | Query compression latent dimension |
+| **KV cache per token** | **576** | 512 (latent) + 64 (RoPE key) |
+
+### DeepSeek-V3-Lite (this repo, 422M)
+
+| Parameter | Value | Description |
+|---|---|---|
+| `dim` | 768 | Hidden dimension |
+| `n_heads` | 12 | Number of attention heads |
+| `qk_nope_head_dim` | 48 | Content key/query dimension per head |
+| `qk_rope_head_dim` | 24 | Positional key/query dimension per head |
+| `qk_head_dim` | 72 | Total QK head dim (48 + 24) |
+| `v_head_dim` | 64 | Value head dimension |
+| `kv_lora_rank` | 192 | KV compression latent dimension |
+| `q_lora_rank` | 0 | No query compression (simplified) |
+| `n_layers` | 18 | 2 dense + 16 MoE |
+| `n_dense_layers` | 2 | First 2 layers use dense SwiGLU |
+| `max_seq_len` | 2048 | Training sequence length |
+| **KV cache per token** | **216** | 192 (latent) + 24 (RoPE key) |
+
+The 422M config is a 2.7×-scale-up of the 1650 smoke-test config
+(`dim=64, n_heads=4, kv_lora_rank=16, qk_rope_head_dim=16`). Compared
+to DeepSeek-V3's 671B it scales kv_lora_rank down by 2.7× and
+qk_rope_head_dim down by 2.7×, but preserves the compression ratio:
+MLA caches 216 floats per token vs MHA's 864 (= 12 heads × 72 head
+dim), a **~4× KV-cache reduction** at the 422M scale.
+
+---
+
+## Implementation in This Repo
+
+The MLA implementation lives in `models/mla.py`. Here's a walkthrough of every major component.
+
+### Class Structure
+
+```python
+class MultiHeadLatentAttention(nn.Module):
+```
+
+**Key class attributes (422M config in parentheses):**
+
+| Attribute | Source | Description |
+|---|---|---|
+| `dim` | `config["dim"]` | Model hidden size (768) |
+| `n_heads` | `config["n_heads"]` | Total attention heads (12) |
+| `kv_lora_rank` | `config["kv_lora_rank"]` | KV compression dim (192) |
+| `qk_nope_head_dim` | `config["qk_nope_head_dim"]` | Content-only QK dim per head (48) |
+| `qk_rope_head_dim` | `config["qk_rope_head_dim"]` | Positional QK dim per head (24) |
+| `qk_head_dim` | computed | `qk_nope_head_dim + qk_rope_head_dim` (72) |
+| `v_head_dim` | `config["v_head_dim"]` | Value head dimension (64) |
+| `max_seq_len` | `config["max_seq_len"]` | Maximum sequence length (2048) |
+
+### Learned Projections
+
+```
+                              KV Compression Path
+┌────────────────────────────────────────────────────────────────────────┐
+│  x (bsz, seqlen, 768)                                                  │
+│    │                                                                   │
+│    ▼                                                                   │
+│  wkv_a: Linear(768 → 192 + 24)  ←── joint projection                  │
+│    │                                                                   │
+│    ├── kv_latent (192): stored in cache                                │
+│    ├── k_pe_raw (24): RoPE'd and stored in pe_cache                    │
+│    │                                                                   │
+│    ▼                                                                   │
+│  kv_norm: RMSNorm(192)  ←── normalise latent before cache             │
+│                                                                        │
+│  wkv_b.weight reshaped → (n_heads=12, qk_nope+v_head=48+64, 192)       │
+│    ├── wkv_b_k[:48]  : key up-projection (12 heads × 48 → from 192)   │
+│    └── wkv_b_v[48:]  : value up-projection (12 heads × 64 → from 192) │
+└────────────────────────────────────────────────────────────────────────┘
+
+                              Query Path (no compression; q_lora_rank=0)
+┌────────────────────────────────────────────────────────────────────────┐
+│  x (bsz, seqlen, 768)                                                  │
+│    │                                                                   │
+│    ▼                                                                   │
+│  wq: Linear(768 → 12 × 72 = 864)  ←── no compression                  │
+│    │                                                                   │
+│    ▼                                                                   │
+│  reshape → (bsz, seqlen, 12, 72)                                       │
+│    │                                                                   │
+│    ├── q_nope (48): content, no RoPE                                   │
+│    └── q_pe (24): RoPE'd for positional scoring                        │
+└────────────────────────────────────────────────────────────────────────┘
+
+                              Output Projection
+┌────────────────────────────────────────────────────────────────────────┐
+│  wo: Linear(12 × 64 = 768 → 768)  ←── projects attended values back    │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Forward Pass: SDPA Path
+
+The `attn_impl == "sdpa"` path is the default and uses FlashAttention-2 via PyTorch's `F.scaled_dot_product_attention`. This is the path used for both training and inference.
+
+**Step-by-step:**
+
+1. **Query projection** (lines 317-324):
+   ```python
+   q = self.wq(x)                              # (bsz, seqlen, n_heads * qk_head_dim)
+   q = q.view(bsz, seqlen, n_heads, qk_head_dim)
+   q_nope, q_pe = q.split([48, 24], dim=-1)   # split content vs position
+   q_pe = self._apply_rope(q_pe, start_pos, seqlen)
+   ```
+
+2. **KV compression** (lines 328-334):
+   ```python
+   kv_a = self.wkv_a(x)                        # joint projection
+   kv_latent, k_pe_raw = kv_a.split([192, 24], dim=-1)
+   kv_normed = self.kv_norm(kv_latent)         # normalise latent
+   k_pe = self._apply_rope(k_pe_raw.unsqueeze(2), ...).squeeze(2)
+   ```
+
+3. **Cache write/read** (lines 336-348):
+   ```python
+   if use_cache:
+       self.kv_cache[:bsz, start_pos:end_pos] = kv_normed.detach()
+       self.pe_cache[:bsz, start_pos:end_pos] = k_pe.detach()
+       ctx_kv = self.kv_cache[:bsz, :end_pos]     # full context latents
+       ctx_pe = self.pe_cache[:bsz, :end_pos]      # full context rope keys
+   else:
+       ctx_kv = kv_normed                          # current sequence only
+       ctx_pe = k_pe
+   ```
+
+4. **Split wkv_b weights** (lines 354-361):
+   ```python
+   wkv_b_full = self.wkv_b.weight.view(n_heads, 48+64, 192)
+   wkv_b_k = wkv_b_full[:, :48]     # (h, 48, 192) — key up-projection
+   wkv_b_v = wkv_b_full[:, 48:]     # (h, 64, 192) — value up-projection
+   ```
+
+5. **Materialise K_nope and V from latents (the *unabsorbed* SDPA path):**
+
+   This is where the SDPA path differs from the manual path. Instead of computing scores in latent space, it **materialises full K_nope and V by multiplying the latent with wkv_b weights**, then runs a single `scaled_dot_product_attention` call:
+
+   ```python
+   # Fused: one bmm over ctx_kv produces K_nope and V together.
+   wkv_b_kv = torch.cat([wkv_b_k, wkv_b_v], dim=1)       # (H, d_nope+d_v, R)
+   KV_nope_h = torch.bmm(ctx_kv_bmm, wkv_b_kv.transpose(-1, -2))   # (H, B·S_k, d_nope+d_v)
+   K_nope_h, V_h = KV_nope_h.split([self.qk_nope_head_dim, self.v_head_dim], dim=-1)
+   ```
+
+   The cat is intentional: one bmm that produces both K and V in one
+   launch. After materialisation, K is `(B, H, S_k, d_nope)` and V is
+   `(B, H, S_k, d_v)`.
+
+   > **Note — important trade-off.** This materialises K and V for every
+   > step. The K tensor is `(B, H, S_k, 48)` floats — at `B=4, H=12,
+   > S_k=2048` that's `4·12·2048·48 ≈ 4.7M` floats ≈ 9.4 MB in BF16 per
+   > layer. For 18 layers that's ~170 MB — substantial but not blocking.
+   > On GPU with FlashAttention-2 the *attention matrix* `QK^T` is never
+   > materialised (that's the SDPA win), so the SDPA path trades a small
+   > K materialisation for the elimination of the full `(S_q × S_k)`
+   > attention matrix in HBM. This is not the "true" absorption trick —
+   > that's in the manual path. The SDPA path is *fast, but cache-blind*;
+   > the manual path is *cache-aware, but slow*. The Triton path (§C) is
+   > the best of both.
+
+6. **Concatenate RoPE keys** (lines 414-416):
+   ```python
+   Q_full = torch.cat([Q_nope, Q_rope], dim=-1)    # (bsz, h, seqlen_q, 72)
+   K_full = torch.cat([K_nope, K_rope], dim=-1)    # (bsz, h, seqlen_k, 72)
+   ```
+
+   Here K_rope is the **shared** RoPE key `ctx_pe` expanded to all heads:
+   ```python
+   K_rope = ctx_pe.unsqueeze(1).expand(-1, h, -1, -1)
+   ```
+
+7. **FlashAttention call** (lines 422-427):
+   ```python
+   attn = F.scaled_dot_product_attention(
+       Q_full, K_full, V,
+       attn_mask=attn_mask,
+       scale=self.softmax_scale,
+   )
+   ```
+
+8. **Output** (line 428):
+   ```python
+   return self.wo(attn.transpose(1, 2).contiguous().flatten(2))
+   ```
+
+### Forward Pass: Manual Path (True Absorption)
+
+The `attn_impl == "manual"` path implements the **true absorption trick**. It keeps everything in latent space and only recovers V at the very end.
+
+**Step-by-step (lines ~178-190):**
+
+1. **Project queries into latent space (the absorption step):**
+
+   ```python
+   q_nope_h = q_nope.permute(2, 0, 1, 3).reshape(h, bsz * seqlen_q, d)  # (H, B·S_q, d_nope)
+   q_nope_proj_h = torch.bmm(q_nope_h, wkv_b_k)                          # (H, B·S_q, R)
+   q_nope_proj = q_nope_proj_h.reshape(h, bsz, seqlen_q, R).permute(1, 2, 0, 3).contiguous()
+   ```
+
+   `q_nope` is `(B, S_q, H, d_nope) = (B, S_q, H, 48)`. Multiplying by
+   `wkv_b_k` (shape `(H, d_nope, R) = (H, 48, 192)`) per head projects
+   each query from per-head content space (48 dims) into shared latent
+   space (192 dims). **The result `q_nope_proj` is `q · W^{UK}`, the
+   pre-absorbed query** — i.e., if we ever materialised K we could
+   skip the up-projection entirely. After this step, `q_nope_proj` is
+   exactly the LHS of `score = q_nope_proj · c_kv`.
+
+2. **Content scores in latent space (true absorption — no full K):**
+
+   ```python
+   scores_content = self._per_batch_bmm(q_nope_proj, ctx_kv)  # (B, H, S_q, S_k)
+   ```
+
+   `_per_batch_bmm` is implemented as
+   `q.transpose(1,2) @ k.unsqueeze(1).transpose(2,3)`, producing
+   `(B, H, S_q, S_k)`. **Notice: the inner product is over `R=192`
+   dims, not `d_nope=48`.** This is 4× more FLOPs per inner product than
+   standard attention (192/48 = 4). It's the cost we pay for never
+   materialising K — the up-projection is fused into the matmul.
+
+3. **Position scores via MQA (shared RoPE key):**
+
+   ```python
+   scores_rope = self._per_batch_bmm(q_pe, ctx_pe)            # (B, H, S_q, S_k)
+   ```
+
+   `q_pe` is `(B, S_q, H, d_rope=24)`. `ctx_pe` is `(B, S_k, d_rope=24)`
+   with no head dim — single shared RoPE key. The unsqueeze in
+   `_per_batch_bmm` broadcasts this shared key against all `H` heads.
+   This is exactly MQA's positional cost (one K head for many Q heads).
+
+4. **Combine, scale, mask, softmax:**
+
+   ```python
+   scores = (scores_content + scores_rope) * self.softmax_scale
+   if mask is not None:
+       scores = scores + mask.expand(bsz, h, seqlen_q, -1)
+   attn = scores.softmax(dim=-1, dtype=torch.float32).to(x.dtype)
+   ```
+
+   The `softmax(dtype=torch.float32)` is **a numerical-stability
+   choice**: softmax involves `exp()`, which overflows easily in BF16
+   for scores `> ~10`. Up-casting to FP32 for the softmax and casting
+   back is standard practice.
+
+5. **Weighted sum in latent space:**
+
+   ```python
+   out_latent = torch.empty(bsz, h, seqlen_q, R, dtype=x.dtype, device=x.device)
+   for b in range(bsz):                                       # ← Python loop!
+       out_latent[b] = torch.bmm(attn[b], ctx_kv[b].unsqueeze(0).expand(h, -1, -1))
+   ```
+
+   Attends over `ctx_kv` in latent space, producing per-head latent
+   representations. **This Python `for b in range(bsz)` loop is the
+   reason the manual path is slow on GPU** — each iteration launches
+   a small CUDA kernel with overhead. PyTorch's SDPA path avoids this
+   by materialising K (step 5 in §9.2) and then calling a single fused
+   `scaled_dot_product_attention` kernel that does softmax+matmul as
+   one FlashAttention-style operation.
+
+6. **Recover V via `wkv_b_v` (one bmm per head, no Python loop):**
+
+   ```python
+   out_h = out_latent.permute(1, 0, 2, 3).reshape(h, bsz*seqlen_q, R)   # (H, B·S_q, R)
+   out_v = torch.bmm(out_h, wkv_b_v.transpose(-1, -2))                  # (H, B·S_q, d_v)
+   ```
+
+   Now — and only now — we materialise values in `(B, S_q, H, d_v=64)` space.
+
+7. **Output projection:**
+
+   ```python
+   return self.wo(out.flatten(2))   # out: (B, S_q, H*d_v) → (B, S_q, dim)
+   ```
+
+This path is slower than SDPA for typical GPU hardware due to the per-batch bmm loops, but it demonstrates the true absorption mechanism and serves as the reference implementation that the Triton path emulates in a fused kernel.
+
+**Why two paths exist at all.** The SDPA path is what we run in production —
+fast, hardware-fused, no materialisation of the attention matrix.
+The manual path exists for two reasons:
+
+1. **Correctness reference.** It's the literal implementation of the
+   absorption algebra. If the SDPA path disagrees with the manual path
+   in unit tests, something is wrong.
+2. **CPU / portability.** On CPU/Mac or under Triton-kernel-kill,
+   the manual path is the fallback that keeps the test suite green
+   without requiring a fused kernel.
+
+In real production on A100/H100, neither runs alone — the Triton
+path (§C) fuses both and matches the manual path's algebra while
+approaching SDPA's speed.
+
+### KV Cache Management
+
+The KV cache stores two things per layer:
+
+```python
+self.kv_cache  # (batch, max_seq_len, kv_lora_rank=192) — compressed latents
+self.pe_cache  # (batch, max_seq_len, qk_rope_head_dim=24) — RoPE keys
+```
+
+**Allocation** (`_ensure_cache`):
+- Lazily allocated on first forward call
+- Grown in doubling steps (min 16) to amortise reallocation
+- Handles device/dtype changes
+
+**Write** (`forward` lines 128-129):
+```python
+self.kv_cache[:bsz, start_pos:end_pos] = kv_normed.detach()
+self.pe_cache[:bsz, start_pos:end_pos] = k_pe.detach()
+```
+
+**Why `.detach()` is non-negotiable.** PyTorch's autograd builds a DAG
+where every tensor remembers the operations that produced it. If we
+stored `kv_normed` (not its detached copy) into the cache, the cache
+would carry *edges* back to the forward pass that produced it. On the
+next forward, the cache's slice re-enters autograd as input — and the
+DAG gains a back-edge from step `t+1` to step `t`. Three bad consequences:
+
+1. **Memory leak across forwards.** The DAG from step `t` is pinned
+   alive by step `t+1`'s reference. After 1000 decode steps you'd be
+   holding 1000× the per-step graph.
+2. **Gradient backflow.** Gradients would flow *through the cache* into
+   a previous forward's parameters, breaking the assumption that each
+   step's loss only depends on the current step.
+3. **Triton / CUDA-graph incompatibility.** Cached tensors with live
+   autograd state can't be safely treated as plain storage.
+
+`.detach()` returns a view with `requires_grad=False` and no grad-fn —
+a plain `Tensor` that behaves like a constant buffer. The math result
+is identical (same storage); the autograd metadata is severed.
+
+**Read** (lines 130-131):
+```python
+ctx_kv = self.kv_cache[:bsz, :end_pos]   # full prefix up to current pos
+ctx_pe = self.pe_cache[:bsz, :end_pos]
+```
+
+**Reset** (`reset_cache`):
+```python
+def reset_cache(self):
+    self.kv_cache = None
+    self.pe_cache = None
+    self._cache_batch = 0
+```
+
+**Prefix caching** (`prefill_cache`):
+Allows writing pre-computed KV latents at an arbitrary offset — useful for shared prompt prefixes.
+
+### RoPE Helpers
+
+**`_extend_rope(seq_len, device)`** (line ~75):
+- Lazily grows the precomputed RoPE frequency table up to `max_seq_len`
+- Grows by 2x to amortise during autoregressive generation
+- Supports YaRN scaling via `rope_factor`
+
+The precomputed `freqs_cis` tensor is **shape `(max_seq_len, qk_rope_head_dim // 2)`** of `complex64`.
+For each position `p`, the `i`-th complex entry is `cos(θ_i p) + i·sin(θ_i p)`,
+which encodes the rotation vector for one RoPE pair. This is **computed
+once** and reused on every forward.
+
+**`_apply_rope(x, start_pos, seqlen)`** (line ~82):
+- Reshapes `x` from `(..., qk_rope_head_dim)` real → `(..., qk_rope_head_dim//2)` complex
+- Multiplies by the matching slice of `freqs_cis`
+- Reshapes back to real
+
+The key line is:
+
+```python
+freqs = self.freqs_cis[start_pos: start_pos + seqlen].view(1, seqlen, 1, -1)
+```
+
+That view shape `(1, S, 1, d/2)` is what allows the same `freqs_cis`
+table to broadcast against Q shaped `(B, S, H, d/2)` (or in the
+KV-side path, `(B, S, 1, d/2)` because we add a head dim of 1 — the
+shared-key trick from §6).
+
+### YaRN Softmax Scaling
+
+For extended context lengths, the softmax scale is adjusted:
+
+```python
+self.softmax_scale = self.qk_head_dim ** -0.5
+if self.max_seq_len > 4096 and self.mscale != 1.0:
+    self.softmax_scale *= self.mscale ** 2
+```
+
+With `mscale` computed as:
+```python
+self.mscale = 0.1 * mscale_raw * math.log(rope_factor) + 1.0
+```
+
+This prevents attention score underflow when the model is used beyond its original max sequence length.
+
+---
+
+## Comparison: MLA vs MHA vs GQA vs MQA
+
+| Property | MHA | GQA (8 groups) | MQA | **MLA** |
+|---|---|---|---|---|
+| KV heads | `n_heads` | `n_groups` | 1 | 1 latent + 1 RoPE key |
+| KV cache per token | `2 × n_h × d_h` | `2 × g × d_h` | `2 × d_h` | `d_c + d_h^R` |
+| Cache ratio (vs MHA) | 1× | `1/n_groups` × | `1/n_h` × | **~0.02×** |
+| Quality vs MHA | baseline | slight drop | measurable drop | **matches MHA** |
+| Compute at decode | lowest | low | low | **~4× MHA** |
+| Memory bandwidth | highest | medium | low | **lowest** |
+| RoPE compatibility | native | native | native | requires decoupled |
+| Training compatibility | native | native | native | native |
+
+**Key insight**: MLA trades FLOPs for memory bandwidth. The attention computation is ~4× more expensive than MHA, but memory reads are ~30× cheaper. Since decode is overwhelmingly memory-bandwidth-bound at long contexts, MLA wins on throughput.
+
+### Ablation results (from DeepSeek-V2 paper)
+
+| Variant | PPL | KV cache |
+|---|---|---|
+| MHA baseline | 100% | 32,768 floats |
+| GQA (8 groups) | +0.5 PPL | 2,048 |
+| MQA | +1.5 PPL | 256 |
+| **MLA** | **≤0.0 PPL** | **576** |
+
+MLA matches MHA perplexity while GQA and MQA incur measurable degradation.
+
+---
+
+## Performance Characteristics
+
+### When MLA wins
+
+| Workload | Benefit |
+|---|---|
+| Long-context serving (32K–128K) | KV cache no longer dominates HBM |
+| High-batch decode | More sequences fit per GPU; throughput up 3–5× |
+| Edge / single-GPU, long context | Becomes feasible at small batch |
+| MoE serving (DeepSeek-V3) | Frees HBM for expert weights |
+
+### When MLA is not optimal
+
+| Workload | Reason |
+|---|---|
+| Short-context (≤2K) | KV cache is small anyway; MLA's extra projections add latency |
+| Pure compute-bound scenarios | The 4× extra compute hurts without bandwidth relief |
+| Greenfield non-attention architectures | Linear attention or SSMs compress further |
+| Existing pretrained models | Cannot retrofit MLA without retraining from scratch |
+
+### Hardware implications
+
+- **Without FlashAttention**: The materialised K/V in the SDPA path creates large intermediate tensors — the batch × heads × seqlen × d_head attention matrix must be written to HBM and read back
+- **With FlashAttention-2/3**: The fused kernel never materialises the full attention matrix, making the SDPA path highly efficient
+- **CUDA Graph compatibility**: The dynamic cache allocation complicates static CUDA graphs; use `prefill_cache` for prompt prefixes to amortise this
+- **`torch.compile`**: Supported out of the box; the critical paths (bmm, split, concat, SDPA) are inductor-friendly
+
+---
+
+## Appendix A — FlashAttention in 60 seconds
+
+This doc repeatedly references "FlashAttention-2 / SDPA fused kernel."
+If that phrase is opaque, read this.
+
+**Standard attention** materialises a full `(S_q × S_k)` attention
+matrix in HBM:
+
+```
+scores = (Q @ K^T) * scale          # (B, H, S_q, S_k) — written to HBM
+weights = softmax(scores)            # another HBM roundtrip
+out = weights @ V                    # yet another
+```
+
+For `S_q = S_k = 8192` and `H = 12`, that matrix is `12 × 8192 × 8192`
+floats = ~770 MB **per layer, per forward**. The full attention
+matrix is never read back as a tensor — it's just an intermediate.
+
+**FlashAttention** tiles the computation along the `S_k` axis. For
+each query block `(B_q rows)` and key block `(B_k rows)`:
+
+1. Load Q block into SRAM.
+2. For each K block: load K block, compute partial scores in SRAM,
+   update running `(m_i, ℓ_i, o_i)` for online softmax (FlashAttention's
+   trick for stable softmax across tiles).
+3. Final `o_i` is the attention output for that query block.
+
+The `(S_q × S_k)` matrix is never written to HBM — only the output
+`(S_q × d_v)` block is. **Memory traffic drops from O(S²) to O(S).**
+
+`torch.nn.functional.scaled_dot_product_attention` (a.k.a. SDPA) is
+PyTorch's wrapper; on CUDA it picks FlashAttention-2 if available, falls
+back to a memory-efficient or math kernel otherwise. On Mac it picks
+the Metal-equivalent kernel.
+
+**Why this matters for MLA.** The manual path *does* materialise the
+attention matrix (`attn = scores.softmax(...)`). For long contexts
+this is the killer. The SDPA path *avoids* that materialisation by
+calling `F.scaled_dot_product_attention` with materialised K and V —
+still the expensive K materialisation, but no attention matrix in HBM.
+The Triton path (§C) goes one step further: it never materialises K
+either, fusing the latent→K up-projection into the FlashAttention tile.
+
+---
+
+## Appendix B — A worked numerical example
+
+Let's trace a single MLA forward pass on a deliberately tiny model:
+`dim=8, n_heads=2, qk_nope_head_dim=2, qk_rope_head_dim=2, v_head_dim=2,
+kv_lora_rank=3, max_seq_len=4, batch=1, seqlen=3`.
+
+### Inputs
+
+```
+x = [[[1, 2, 3, 4, 5, 6, 7, 8],        # token 0
+      [8, 7, 6, 5, 4, 3, 2, 1],        # token 1
+      [1, 1, 1, 1, 1, 1, 1, 1]]]      # token 2
+# shape: (1, 3, 8)
+```
+
+### Step 1 — Query projection
+
+```
+wq.weight shape: (2 * (2+2), 8) = (8, 8)
+q = x @ wq.weight.T   # shape (1, 3, 8) — 2 heads × 4 dim each
+q reshape to (1, 3, 2, 4)
+q_nope = q[..., :2]   # (1, 3, 2, 2)  — content part
+q_pe   = q[..., 2:]   # (1, 3, 2, 2)  — RoPE part
+```
+
+### Step 2 — KV compression
+
+```
+wkv_a.weight shape: (3 + 2, 8) = (5, 8)   # joint compression + RoPE key proj
+kv_a = x @ wkv_a.weight.T   # shape (1, 3, 5)
+kv_latent = kv_a[..., :3]   # (1, 3, 3) — latent, will be cached
+k_pe_raw  = kv_a[..., 3:]   # (1, 3, 2) — RoPE key, will be cached
+
+kv_normed = rmsnorm(kv_latent)        # (1, 3, 3), normalise per row
+k_pe      = apply_rope(k_pe_raw)      # (1, 3, 2), rotated by position
+```
+
+**Cache write** (assuming `use_cache=True, start_pos=0`):
+
+```
+self.kv_cache[0, 0:3] = kv_normed.detach()   # (3, 3)  =  9 floats
+self.pe_cache[0, 0:3] = k_pe.detach()         # (3, 2)  =  6 floats
+```
+
+Per token per layer: 3 + 2 = **5 floats** (the latent + RoPE key).
+Compare to MHA at this scale: 2 heads × 4 head_dim = 8 floats per token
+for K, plus another 8 for V = **16 floats**. So even at this tiny
+scale MLA caches 5/16 ≈ **31% of MHA**, a 3.2× reduction.
+
+### Step 3 — Materialise K_nope, V (SDPA path)
+
+```
+wkv_b.weight shape: (n_heads * (qk_nope+v), kv_lora) = (2*4, 3) = (8, 3)
+wkv_b reshape → (n_heads=2, qk_nope+v=4, kv_lora=3) = (2, 4, 3)
+wkv_b_k = wkv_b[:, :2]   # (2, 2, 3)  — per-head key up-projection
+wkv_b_v = wkv_b[:, 2:]   # (2, 2, 3)  — per-head value up-projection
+
+For each cached latent (1, 3) — apply per-head up-projection:
+   K_nope[h, t] = cached_latent[t] @ wkv_b_k[h].T    # (2,)
+   V    [h, t] = cached_latent[t] @ wkv_b_v[h].T    # (2,)
+```
+
+So `K_nope.shape = (2, 3, 2)`, `V.shape = (2, 3, 2)`. After batch and
+head dim promotion for SDPA: `(B=1, H=2, S_k=3, d=2)` each.
+
+### Step 4 — Material scores and softmax
+
+```
+Q_nope = q_nope.transpose(1, 2)             # (1, 2, 3, 2)
+Q_rope = apply_rope(q_pe).transpose(1, 2)   # (1, 2, 3, 2)
+K_rope = ctx_pe.unsqueeze(1).expand(...)    # (1, 2, 3, 2) — broadcast from (1, 3, 2)
+
+Q_full = concat([Q_nope, Q_rope], dim=-1)   # (1, 2, 3, 4)
+K_full = concat([K_nope, K_rope], dim=-1)   # (1, 2, 3, 4)
+
+softmax_scale = qk_head_dim ** -0.5 = 4 ** -0.5 = 0.5
+
+attn = sdpa(Q_full, K_full, V, scale=0.5)   # (1, 2, 3, 2)
+```
+
+For the manual path, the equivalent is `q_nope_proj = q_nope @ wkv_b_k`
+(per head) which puts the dot product in `R=3`-dim space instead of
+`d_nope=2`. The two paths agree mathematically (one is just a
+re-parenthesisation), but the manual path does ~50% more inner-product
+FLOPs (3 vs 2 dims).
+
+### Step 5 — Output
+
+```
+attn reshaped → (1, 3, 4)          # concat H, d_v
+output = attn @ wo.weight.T        # wo: (8, 4) → (1, 3, 8)
+```
+
+This `(1, 3, 8)` is the MLA output for the layer. Residue added, onto
+the next layer, the next block, etc.
+
+**Take-away:** every operation has clear shapes, the cache stores a
+5-float summary per token, and the materialisation step is the only
+place where MHA-style sizes appear — and that's the cost we're paying
+to make the SDPA kernel happy.
+
+---
+
+## Appendix C — The Triton path
+
+`models/mla_triton.py` ships a fused kernel that **never materialises
+K at all** — it computes the up-projection `c^KV · W^{UK}` inside the
+attention tile, online. This is the production path on A100/H100 when
+`attn_impl="triton"` and `ENABLE_TRITON_KERNELS=1`.
+
+### Why a custom kernel
+
+The SDPA path materialises K to call `F.scaled_dot_product_attention`,
+which is good for compute (FA-2 tiling) but wastes memory bandwidth
+(K materialisation is `(B, H, S, d_nope)` per step). The manual path
+stays in latent space but uses a Python `for b in range(bsz)` loop,
+which is bad for GPU launch overhead. **The Triton path merges both
+strengths**:
+
+- Up-projection happens *inside* the FlashAttention tile (per K-block,
+  in SRAM), so K is never written to HBM.
+- No Python loop — the kernel is one launch covering all batches and
+  heads.
+
+### Kernel contract
+
+Inputs (per the wrapper in `mla.py:_forward_triton`):
+
+| Arg        | Shape                          | Description                       |
+|------------|--------------------------------|-----------------------------------|
+| `q_nope`   | `(B, H, S_q, d_nope)`          | Q content, post-RoPE-free         |
+| `q_pe`     | `(B, H, S_q, d_rope)`          | Q position, **already RoPE-rotated** |
+| `ctx_kv`   | `(B, S_kv, R)`                 | Cached KV latent                  |
+| `ctx_pe`   | `(B, S_kv, d_rope)`            | Cached RoPE key                   |
+| `wkv_b_k`  | `(H, d_nope, R)`               | Per-head K up-projection          |
+| `wkv_b_v`  | `(H, d_v, R)`                  | Per-head V up-projection          |
+| `softmax_scale` | scalar                     | `1/sqrt(d)` (or `* mscale²`)      |
+| `is_causal`| bool                           | True if `S_q == S_kv` (prefill)   |
+
+Output: `(B, S_q, H, d_v)` — the per-head attended values.
+
+### Algorithm (per tile)
+
+For each query block of size `BLOCK_T`:
+
+```
+Load Q_nope tile (BLOCK_T, d_nope), Q_pe tile (BLOCK_T, d_rope) into SRAM.
+For each K/V block of size BLOCK_I along S_kv:
+    Load ctx_kv tile (BLOCK_I, R) into SRAM.
+    # Up-project tile-local — never write K to HBM
+    K_nope_tile[h] = ctx_kv_tile @ wkv_b_k[h].T    # (BLOCK_I, d_nope), in SRAM
+    V_tile    [h] = ctx_kv_tile @ wkv_b_v[h].T    # (BLOCK_I, d_v),    in SRAM
+    K_full = concat([K_nope_tile, ctx_pe_tile], dim=-1)   # RoPE key from cache
+    scores = (Q_nope · K_nope^T  +  Q_pe · ctx_pe^T) * scale   # in SRAM
+    Update online-softmax state (m, ℓ, o) for this tile (FA-2 trick).
+After all K/V tiles: write o / ℓ → final attention output.
+```
+
+This is essentially the FlashAttention-2 forward kernel with two
+augmentations:
+
+1. **Online K materialisation:** the first matmul `ctx_kv · wkv_b_k[h].T`
+   happens per tile, in SRAM.
+2. **Two Q vectors per query block** (`q_nope`, `q_pe`) summed into a
+   single score via two separate dot products — one against the
+   tile-materialised K_nope, one against the cached RoPE key.
+
+### Backward
+
+Like FlashAttention-2, the backward pass **recomputes** the tile-local
+K_nope from the cached latent (which is held in HBM, gradient-free).
+This trades HBM-bandwidth-for-recompute: instead of stashing the
+materialised K in HBM for the backward, we recompute it. Net effect:
+lower peak memory, slightly more compute. The autograd `Function`
+exposes `forward` (saves `(q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v)`)
+and `backward` (re-materialises K_nope and V on the fly).
+
+### Triton-only constraints
+
+The kernel is gated by two env-level decisions:
+
+- `HAS_TRITON` (set at import time, never raises) — controls whether
+  the kernel module even loads.
+- `ENABLE_TRITON_KERNELS` env-var — must be `1` to opt in. The default
+  (`0`) keeps raw-PyTorch paths so that CPU/Mac test suites stay green.
+- `attn_impl="triton"` in the config — required to dispatch into the
+  fused kernel.
+
+When all three are set, you get the full path. If `triton` import fails
+or the kernel reports an unrecoverable `ValueError`, the wrapper in
+`mla.py` prints a one-time warning and falls back to SDPA for that model
+(see `mla.py` lines ~152-159). The fallback is **silent per forward**
+after the first warning — so production logs won't spam.
+
+---
+
+## Appendix D — Training vs. inference pathway
+
+| Aspect                | Training                                | Inference (autoregressive decode) |
+|-----------------------|-----------------------------------------|------------------------------------|
+| `use_cache`           | `False` (in the trainer)                | `True` (one token per step)        |
+| `start_pos`           | 0 (full sequence in one call)           | `t` (cumulative position)          |
+| Cache writes          | none (latents live in this call only)   | writes `t:t+1` slice each step     |
+| Gradient flow         | through every up-projection             | not needed (no autograd)           |
+| `attn_impl` choice    | `sdpa` (manual path is correctness ref) | `triton` for long contexts, else `sdpa` |
+| `mask` shape          | causal `(S, S)` additive, expanded      | `None` (no future masking)         |
+| Memory savings        | none on KV (no caching), but `qk_nope`  | full MLA benefit (cache)           |
+|                      | up-projection is gradient-cheap in BF16 |                                    |
+
+**Why the SDPA path dominates training even though it's "cache-blind":**
+training doesn't use a KV cache (full sequence is re-processed every
+step with proper gradients), so materialising K for one forward is
+cheap relative to all the matmuls upstream and downstream. The savings
+of the manual path — never materialising K — only pay off if you can
+reuse the latent across forwards, which only happens with a cache.
+
+**Why `use_cache=False` matters in training.** When the trainer calls
+`forward(x)`, it sets `use_cache=False`. The code then takes the
+`else` branch (lines ~132-134) and never touches `self.kv_cache` —
+`ctx_kv` and `ctx_pe` are simply the *current step's* latents. This
+guarantees:
+
+- `requires_grad=True` flows through `kv_normed` and `k_pe` into
+  `wkv_a`, `kv_norm`, and the RoPE helpers.
+- No stale autograd graph pinned in the cache (which would also be
+  a leak during the multi-step backward).
+- `kv_cache` and `pe_cache` stay `None` (memory-zero) for that
+  training step.
+
+**Why the manual path is the unit-test reference.** Tests can't easily
+distinguish "SDPA math is wrong" from "kernel is fast but slightly
+imprecise" if they only test SDPA. The manual path is the literal
+absorption algebra, so a `test_mla_parity.py` style test compares both
+and forces agreement within `atol=1e-3` in FP32.
+
+---
+
+## Appendix E — Why `wkv_b` has shape `(H, d_nope + d_v, R)`
+
+This is a subtle design choice. Naively, K and V have separate
+up-projection matrices:
+
+```
+W^{UK} : (H · d_nope, R)
+W^{UV} : (H · d_v,   R)
+```
+
+This repo combines them into a single `wkv_b.weight` of shape
+`(H · (d_nope + d_v), R)` and *views* it as `(H, d_nope + d_v, R)` to
+split per head. Why?
+
+1. **Single nn.Linear registration.** PyTorch's `nn.Linear` stores
+   weights as a 2D matrix `(out, in)`. Two separate `nn.Linear`s would
+   create two parameters, two optimiser entries, and two separate
+   kernels for forward/backward. One fused `Linear` is faster.
+
+2. **Fused K/V materialisation.** The SDPA path can compute
+   `K_nope, V = split(ctx_kv @ wkv_b_kv.T)` in a single bmm. The
+   Triton path exploits the same layout (per-tile up-projection with
+   both K and V slices).
+
+3. **No quality difference.** Concatenating two unrelated projection
+   matrices along the output dim is algebraically identical to
+   applying them separately. There's no "cross-talk" because the K and
+   V columns are sliced at the boundary, not mixed.
+
+The trade-off: the K and V up-projections share a *weight initialisation
+distribution* but learn independently. This is fine — they're
+independent parameters anyway.
+
+---
+
+## Appendix F — KV-cache lifecycle (state diagram)
+
+```
+┌──────────────────┐
+│  Layer.__init__  │
+│  cache=None,     │
+│  _cache_batch=0  │
+└────────┬─────────┘
+         │ first forward(use_cache=True)
+         ▼
+┌──────────────────────────────────────────────┐
+│  _ensure_cache(bsz, device, dtype)           │
+│   - alloc kv_cache (B, max_seq_len, R)       │
+│   - alloc pe_cache (B, max_seq_len, d_rope)  │
+│   - B = max(bsz, prev*2, 16)                 │
+└────────┬─────────────────────────────────────┘
+         │ every forward with use_cache=True
+         ▼
+┌──────────────────────────────────────────────┐
+│  self.kv_cache[:bsz, start_pos:end_pos] =    │
+│       kv_normed.detach()                     │
+│  self.pe_cache[:bsz, start_pos:end_pos] =    │
+│       k_pe.detach()                          │
+│                                              │
+│  ctx_kv = self.kv_cache[:bsz, :end_pos]      │
+│  ctx_pe = self.pe_cache[:bsz, :end_pos]      │
+└────────┬─────────────────────────────────────┘
+         │ end of generation (or new request)
+         ▼
+┌──────────────────┐
+│  reset_cache()   │ ──► cache=None, _cache_batch=0
+└──────────────────┘
+
+   ┌──────────────────────────┐
+   │ prefill_cache(latents,   │  (optional, for shared prefixes)
+   │  start_pos)              │  writes pre-computed latents into
+   └──────────────────────────┘  the cache at an offset
+```
+
+**Common pitfalls:**
+
+- Forgetting `reset_cache()` between requests in a serving loop → next
+  request reads garbage from the previous request's positions.
+- Forgetting `use_cache=False` during training → cache fills with
+  detached latents that have no grad and no replay, silently making
+  the model "single-step" only.
+- Allocating cache with `max_seq_len=2048` and then trying to
+  decode past 2048 → `RuntimeError: end_pos exceeds max_seq_len`.
+- Multi-GPU: cache lives on each device, no cross-process sharing.
+  For tensor-parallel, each rank holds its own cache shard (the
+  caching is naturally partitioned along the head dim).
+
+---
+
+## Appendix G — Gradient flow in MLA
+
+Three "modes" of gradient flow, depending on which path runs:
+
+### Mode 1 — Training, SDPA path (`use_cache=False, attn_impl="sdpa"`)
+
+```
+loss
+ ↑ dL/d_output
+wo            ← dL/dwo from loss.backward() (standard Linear backward)
+ ↑
+attn          ← SDPA backward (FA-2 recompute if applicable)
+ ↑   ↑   ↑
+Q_full, K_full, V
+ ↑   ↑   ↑
+wo   cat[K_nope, K_rope]  ← cat backward splits into Q_nope/Q_rope/K_nope/K_rope
+wkv_b    ← dL/dwkv_b from bmm
+wkv_a    ← dL/dwkv_a from kv_a = wkv_a(x)
+kv_norm  ← dL/dkv_norm from kv_normed = kv_norm(kv_latent)
+```
+
+All parameters receive gradients; the autograd graph is one connected
+component from `loss` to `wkv_a.weight`. The cache is `None` so no
+back-edge through it.
+
+### Mode 2 — Training, manual path
+
+Same overall graph, but:
+
+- `q_nope_proj = q_nope @ wkv_b_k` (per head) gives an extra bmm
+  backward step that produces gradients w.r.t. `wkv_b` *twice* (once
+  here, once in `out_v = ... @ wkv_b_v.T`).
+- The Python `for b in range(bsz)` loop in `out_latent` accumulation
+  produces a sequence of bmm backwards, each with its own kernel
+  launch — slow but correct.
+
+### Mode 3 — Inference (`use_cache=True`)
+
+No autograd (`torch.no_grad()` context in `generate.py`). Gradients
+are zero for every parameter, including `wkv_a` and `wkv_b`. The
+cache `detach()` calls are belt-and-suspenders: even if a user
+forgets to wrap generation in `no_grad`, the cache won't accumulate
+graph edges.
+
+**Why this matters for `torch.compile`.** The SDPA path's gradient
+graph is essentially one big matmul stack with one `cat` and one SDPA
+node — inductor-friendly. The manual path's `for b in range(bsz)` loop
+**breaks inductor's tracing**, because Python control flow inside a
+compiled region forces graph breaks. In practice, the manual path is
+used only as a correctness reference and CPU fallback; production
+training uses SDPA.
+
+---
+
+## Appendix H — Numerical stability notes
+
+| Concern                       | Mitigation in this repo                                  |
+|-------------------------------|----------------------------------------------------------|
+| Softmax overflow in BF16      | `softmax(dtype=torch.float32)` then cast back            |
+| `kv_latent` scale drift       | `RMSNorm(kv_lora_rank)` between compression and cache    |
+| RoPE frequency extreme values | `inv_freq = base^{-2i/d}` naturally bounded in [1/base, 1] |
+| Long-context attention underflow | `softmax_scale *= mscale^2` when `max_seq_len > 4096`  |
+| BMM accumulation in BF16      | PyTorch's bmm accumulates in FP32 by default on Ampere+  |
+| `torch.compile` numerics      | `torch.float32` softmax-dtype guard prevents re-compile drift |
+
+### `mscale` math
+
+```
+mscale = 0.1 · mscale_raw · log(rope_factor) + 1.0
+```
+
+If `rope_factor = 1.0` (no YaRN extrapolation), `log(1) = 0`, so
+`mscale = 1.0` and `softmax_scale = 1/sqrt(d)` as usual. If `rope_factor > 1.0`
+(e.g., 4.0 for 4× context extension), `mscale > 1`, so `softmax_scale * mscale^2`
+compensates for the increased attention-score magnitude that comes
+from shorter-rotated vectors.
+
+**At this repo's 422M config, `rope_factor = 1.0`**, so the YaRN path
+is dormant. The mscale machinery exists for future long-context
+fine-tuning and serves as the on-ramp if someone wants to extend the
+model to 8K or 16K context.
+
+### Dtype policy
+
+- **Linear weights:** BF16 (matches input).
+- **Activations:** BF16 throughout, with explicit `.float()` upcasts
+  before `softmax` and `.to(x.dtype)` downcasts after.
+- **KV cache:** same dtype as input (BF16 in production). Storing FP32
+  cache would double memory cost and force a dtype-aware SDPA call.
+- **Gradients:** FP32 master weights in AdamW (outside MLA's scope).
+
+---
+
+## Appendix I — Glossary
+
+| Symbol            | Meaning                                                    |
+|-------------------|------------------------------------------------------------|
+| `c_t^KV`          | Compressed KV latent for token t (cached)                  |
+| `k_t^R`           | Decoupled RoPE key for token t (cached)                    |
+| `k_t^C`           | Reconstructed content key (NOT cached — derived)           |
+| `v_t^C`           | Reconstructed value (NOT cached — derived)                 |
+| `q_t^C`           | Query content part                                         |
+| `q_t^R`           | Query position part (RoPE-rotated)                         |
+| `W^{DKV}`         | KV down-projection (compression matrix)                    |
+| `W^{UK}`          | Key up-projection (per-head content recovery)              |
+| `W^{UV}`          | Value up-projection (per-head value recovery)              |
+| `W^{KR}`          | Decoupled RoPE key projection (shared K head)              |
+| `W^{DQ}`, `W^{UQ}`| Query-side LoRA-style compression                          |
+| `R` / `kv_lora_rank` | Latent dimension (192 in 422M, 512 in V3-671B)           |
+| `d_nope`          | Per-head content dimension (48 in 422M, 128 in V3)         |
+| `d_rope`          | Per-head RoPE dimension (24 in 422M, 64 in V3)             |
+| `qk_head_dim`     | `d_nope + d_rope` per head (72 in 422M, 192 in V3)         |
+| `v_head_dim`      | Per-head value dim (64 in 422M, 128 in V3)                 |
+| `H` / `n_heads`   | Number of attention heads (12 in 422M, 128 in V3)          |
+| `mscale`          | YaRN attention-temperature multiplier                      |
+| `rope_factor`     | Position-frequency scale; 1.0 = standard, >1 = YaRN       |
+| `use_cache`       | Whether to read/write the KV cache during this forward     |
+| `start_pos`       | Position of the first token in the current call            |
+| `end_pos`         | `start_pos + seqlen` — end of the slice being written      |
+| `ctx_kv`          | Slice of the KV cache covering positions `[0, end_pos)`    |
+| `ctx_pe`          | Slice of the RoPE cache covering positions `[0, end_pos)`  |
+| `wkv_b`           | Combined `(W^{UK}, W^{UV})` parameter                       |
+| `q_lora_rank`     | Query-side compression dim (0 = no compression)            |
+
+---
+
+## Appendix J — Frequently Asked Questions
+
+### Q1. Why doesn't MLA also compress Q by default?
+
+It can — `q_lora_rank > 0` enables the Q compression path
+(`wq_a → q_norm → wq_b`, see `mla.py` lines ~62-65). At DeepSeek-V3
+scale, `q_lora_rank = 1536`. The 422M config uses `q_lora_rank = 0`
+because the smaller model has too little capacity for an extra
+bottleneck to pay off. This is a deliberate simplification, not a
+deficiency.
+
+### Q2. Can I retrofit MHA → MLA on a pretrained model?
+
+No. The latent dimension, the up-projection matrices, the decoupled
+RoPE path, and the `wkv_b` split are all learned during pretraining.
+You can *initialise* an MLA layer to mimic MHA (`R = n_heads × d_head`,
+`W^{UK} = identity`, `W^{UV} = identity`-like), but the resulting
+quality is far below what MHA achieves with the same param count.
+The architecture choice is binding at pretraining time.
+
+### Q3. What's the actual compute overhead of MLA vs MHA?
+
+Per token per layer, per query-key inner product:
+
+- MHA: `d_h` (e.g., 64) FLOPs.
+- MLA manual path: `R` (e.g., 192) FLOPs → ~3× more.
+- MLA SDPA path: `d_nope` (e.g., 48) FLOPs (same as MHA per inner
+  product) + the cost of materialising K first.
+
+So MLA's manual path is ~3-4× more compute than MHA at the inner
+product, but its KV bandwidth is `~30×` less at long context. Net:
+MLA wins at long context (memory-bound), loses at short context
+(compute-bound and KV-cache small).
+
+### Q4. Why is the RoPE key shared (single head) and not per-head?
+
+Because of the absorption algebra. If each head had its own RoPE key,
+the absorption trick would break — you'd need a different
+`W^{UQ} R(θ, Δ) W^{UK}` per head, and the precomputation savings
+disappear. Sharing the RoPE key across all heads is the *only* way to
+keep the up-projection matrix constant in `Δ`. This is the "decoupled"
+in decoupled RoPE.
+
+### Q5. What happens if `rope_factor = 1.0`?
+
+YaRN is dormant. `mscale = 1.0`, `softmax_scale = 1/sqrt(qk_head_dim)`,
+no attention-temperature adjustment. This is the canonical training
+configuration in this repo.
+
+### Q6. Why does `wo` (output projection) take input of shape `(B, S_q, H * d_v)`?
+
+Because after attention, the per-head value outputs are concatenated
+along the head dimension. PyTorch's `nn.Linear` operates on the last
+dim, so the output projection sees a single tensor of shape
+`(B, S_q, H * d_v)` and projects to `(B, S_q, dim)`. There's no
+"per-head output projection" — heads are mixed at this step.
+
+### Q7. What if `max_seq_len` is exceeded mid-decode?
+
+`_extend_rope` returns silently if `seq_len ≤ self._rope_seq_len`. The
+`forward` method has an explicit `RuntimeError` for `end_pos >
+self.max_seq_len`. The KV cache allocation is `max_seq_len`-bounded,
+so exceeding it is a hard error, not a silent overflow.
+
+### Q8. Why is `kv_norm` an `RMSNorm` rather than `LayerNorm`?
+
+RMSNorm is parameter-free (no bias, no learned scale) — cheaper and
+empirically equivalent for this use case. Both apply a
+normalisation before the cached latent is stored, keeping its scale
+consistent across tokens.
+
+### Q9. Can the manual path run on the same batch size as SDPA?
+
+Yes — the only constraint is GPU memory for the latent-space attention
+matrix `(B, H, S_q, S_k)`. For 422M at `B=4, H=12, S=2048`, that's
+`4·12·2048·2048 ≈ 200M` floats ≈ 400 MB in FP32 — substantial but
+fits on a 24 GB GPU. Smaller-batch use is fine on CPU.
+
+### Q10. Does MLA support sliding-window or sparse attention?
+
+Not natively. The MLA layer is dense: every query attends to every
+key (within causal mask). Sparse patterns require either custom Triton
+kernels or post-hoc sparsification, neither of which is in this repo.
+
+---
+
+## Implementation Checklist
+
+To verify a correct MLA implementation, check these invariants:
+
+1. **Cache size**: `kv_lora_rank + qk_rope_head_dim` floats per token per layer. Never `n_heads * v_head_dim`.
+2. **Content-position split**: `qk_nope_head_dim + qk_rope_head_dim == qk_head_dim`. No overlap, no gap.
+3. **Shared RoPE key**: `k_pe` is produced once per layer (not per head) and expanded to all query heads.
+4. **Cache detach**: Latents written to cache always carry `.detach()` to prevent cross-forward autograd leaks.
+5. **Weight absorption in inference**: The SDPA path should be functionally equivalent to the manual path at inference (test by comparing outputs).
+6. **Gradient flows through cache**: During training (`use_cache=False`), gradients flow through the latent and up-projection paths correctly without caching.
+
+---
+
+## References
+
+1. **DeepSeek-V2** (May 2024) — *DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model*.
+   [arXiv:2405.04434](https://arxiv.org/abs/2405.04434)
+   — Original introduction of MLA.
+
+2. **DeepSeek-V3** (Dec 2024) — *DeepSeek-V3 Technical Report*.
+   [arXiv:2412.19437](https://arxiv.org/abs/2412.19437)
+   — Refined MLA with auxiliary-loss-free MoE and MTP.
+
+3. **Chris McCormick** (Apr 2025) — *The Inner Workings of Multihead Latent Attention (MLA)*.
+   [mccormickml.com](http://mccormickml.com/2025/04/26/inner-workings-of-mla/)
+   — Excellent deep-dive on the algebra and interpretability of MLA.
+
+4. **tutorialQ / Mahi Mullapudi** (Apr 2026) — *Multi-Head Latent Attention (MLA) — KV-Cache Compression*.
+   [tutorialq.com](https://tutorialq.com/ai/dl-foundations/multi-head-latent-attention)
+   — Practical overview with code sketch and cache-size calculator.
+
+5. **Hardware-Centric Analysis of DeepSeek's MLA** (2025) — *Hardware-Centric Analysis of DeepSeek's Multi-Head Latent Attention*.
+   [arXiv:2506.02523](https://arxiv.org/abs/2506.02523)
+   — Detailed analysis of MLA computation orders and hardware efficiency.
+
+6. **PyTorch torchtitan** — Reference implementation in PyTorch's distributed training framework.
+   [github.com/pytorch/torchtitan](https://github.com/pytorch/torchtitan)
+
+7. **DeepSeek-V3-Lite** — This repo. 422M faithful reimplementation.
+   [github.com/atandra2000/DeepSeek-V3-Lite](https://github.com/atandra2000/DeepSeek-V3-Lite)
