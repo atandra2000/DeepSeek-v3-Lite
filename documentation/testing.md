@@ -67,7 +67,21 @@ python -m pytest tests/ -k "MoE or MTP or bias"
 python -m pytest tests/ --cov=models --cov=training
 ```
 
-Expected: all tests pass on a fresh clone with `torch` installed.
+Expected: all **184** tests pass on a fresh clone with `torch` installed (~1–3 min on CPU).
+
+### Suite overview (2026-07-30)
+
+| File | Tests | Primary coverage |
+|---|---|---|
+| `test_models.py` | 81 | MLA, MoE, MTP, transformer shapes & invariants |
+| `test_training.py` | 40 | Pretrain loop, μP, NaN guard, checkpoints |
+| `test_utils.py` | 26 | Checkpoint I/O, memory estimates, logging |
+| `test_moe_triton.py` | 16 | MoE Triton vs PyTorch reference (`@pytest.mark.gpu` for kernel) |
+| `test_inference.py` | 13 | Generate, speculative decode |
+| `test_force_back.py` | 8 | `ENABLE_TRITON_KERNELS` force-back guard |
+| **Total** | **184** | |
+
+**Gap:** `test_mla_triton.py` is planned but not yet in the tree — MLA Triton is wired in `models/mla_triton.py` without a dedicated test module. Track in [triton_kernels.md](triton_kernels.md#status-2026-07-30).
 
 ---
 

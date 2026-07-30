@@ -1,14 +1,42 @@
 # Triton Kernel Optimization Plan — DeepSeek-v3-Lite
 
-> **Status:** Design proposal, not yet implemented.
 > **Audience:** Atandra (review), future-self (implementation).
 > **Companion docs:** `documentation/MLA.md`, `moe.md`, `mtp.md`, `AGENTS.md §Hard rules`.
+
+## Status (2026-07-30)
+
+### Implemented
+
+| Item | Location | Notes |
+|---|---|---|
+| MoE grouped-GEMM + SwiGLU kernel | `models/moe_triton.py` | `moe_dispatch: triton_grouped` |
+| MLA fused attention kernel | `models/mla_triton.py` | `attn_impl: triton` |
+| Master env-var guard | `models/_triton_dispatch.py` | `ENABLE_TRITON_KERNELS=1` required |
+| MoE Triton tests | `tests/test_moe_triton.py` | CPU reference + `@pytest.mark.gpu` |
+| Force-back tests | `tests/test_force_back.py` | Env-var + config rewrite |
+| Default-off PyTorch path | `models/mla.py`, `models/moe.py` | SDPA / stacked remain defaults |
+
+### Not implemented (deferred)
+
+| Item | Planned phase | Notes |
+|---|---|---|
+| `norm_triton`, `swiglu_triton`, `moe_gate_triton` | Phase A | Low-risk fused pointwise kernels |
+| `training/loss_triton.py` (chunked CE) | Phase C | |
+| MTP Triton attention | Phase C | MTP still uses `nn.MultiheadAttention` |
+| `test_mla_triton.py` | Phase B | MLA kernel lacks dedicated test file (gap) |
+| A100 benchmark validation | Phase B/C | 25–40% step-time target not yet measured |
+
+### Resolved decisions
+
+- **Master switch:** `ENABLE_TRITON_KERNELS` env-var (per-kernel keys stay in YAML).
+- **MoE backward:** re-compute pattern (FA2-style).
+- **Test baseline:** **184** pytest tests pass with Triton disabled (default config).
 
 ---
 
 ## 0. Why this plan exists
 
-The 422M DeepSeek-v3-Lite reimplementation is currently **pure PyTorch + `torch.compile(max-autotune)` + FA2-SDPA**. HyMo already ships a custom Triton kernel (`gdn_triton.py`) for its Gated Delta Net recurrence. The rest of the portfolio (LLaMA-3-Lite, Mamba-3-Lite, GPT-OSS-Lite) and **DeepSeek** still rely on vendor kernels only.
+The 422M DeepSeek-v3-Lite reimplementation ships **pure PyTorch + `torch.compile(max-autotune)` + FA2-SDPA** by default, with **opt-in Triton kernels** for MoE dispatch and MLA attention. HyMo already ships a custom Triton kernel (`gdn_triton.py`) for its Gated Delta Net recurrence. Other portfolio LLMs (LLaMA-3-Lite, Mamba-3-Lite, GPT-OSS-Lite) still rely on vendor kernels only.
 
 This plan identifies the **highest-ROI custom Triton kernels for DeepSeek-v3-Lite training**, ordered by expected speedup, implementation cost, and risk to numerical fidelity. It follows the HyMo integration pattern (optional import, pure-PyTorch fallback, autograd `Function` wrapper) so that the existing test suite and `torch.compile` path keep working.
 
@@ -595,6 +623,8 @@ Activation memory: 3.2 GB → **~32 MB** (only one row of the logits in flight a
 
 ## 10. Implementation roadmap (sequenced)
 
+> **Roadmap note (2026-07-30):** Phase B items B1–B3 and B5–B7 are **shipped** (see [Status](#status-2026-07-30)). B4/B8 A100 benchmarks, all of Phase A, and Phase C remain open.
+
 Two-week plan with two implementation phases. All GPU work happens on the A100 box; CPU/Mac is for code authoring + unit tests.
 
 ### Phase A — Foundations + low-risk wins (5-7 days)
@@ -606,7 +636,7 @@ Two-week plan with two implementation phases. All GPU work happens on the A100 b
 | A3 | Implement `models/swiglu_triton.py` (dense + shared-expert path). | `test_swiglu_triton.py` passes on CPU. |
 | A4 | Implement `models/moe_gate_triton.py` (fused sigmoid+bias+topk). | `test_moe_gate_triton.py` passes on CPU. |
 | A5 | A100 validation of A2-A4: per-kernel benchmark vs PyTorch, plus full `microbench_a100.py` with each enabled individually. | Each saves the predicted %; nothing regresses. |
-| A6 | Wire `ENABLE_TRITON_KERNELS=1` env-var gate in `training/pretrain.py`; document in `SKILLS.md` and `AGENTS.md` (note added in changelog, not in the hard-rules list). | Default path (env=0) identical to current behaviour, including the existing 28-test suite. |
+| A6 | Wire `ENABLE_TRITON_KERNELS=1` env-var gate in `training/pretrain.py`; document in `SKILLS.md` and `AGENTS.md` (note added in changelog, not in the hard-rules list). | Default path (env=0) identical to current behaviour, including the **184-test** suite. **Done** (`models/_triton_dispatch.py`). |
 
 **Phase A expected cumulative win: 4-8% step time, zero regressions.**
 
@@ -614,14 +644,14 @@ Two-week plan with two implementation phases. All GPU work happens on the A100 b
 
 | Day | Task | Verifies |
 |---|---|---|
-| B1 | Implement `models/moe_triton.py` (grouped GEMM + SwiGLU). | `test_moe_triton.py` passes on CPU; MoE path matches `stacked` reference within `atol=1e-2` on A100. |
-| B2 | Implement backward for MoE kernel (or use re-compute pattern). | `torch.autograd.gradcheck` passes on float32 tiny config. |
-| B3 | Wire into `DeepSeekMoE.forward` behind `moe_dispatch: "triton_grouped"`. End-to-end: full-model forward+backward produces identical loss to `stacked` within bf16 tolerance. | `tests/test_models.py` still passes; new `test_moe_full_path_agrees` passes. |
-| B4 | A100 benchmark: 50-step forward+backward median, MoE only vs full model. | Speedup ≥ 1.5× on MoE path; ≥ 1.2× overall. |
-| B5 | Implement `models/mla_triton.py` (FA2-style fused kernel with on-the-fly K_nope/V materialisation). | `test_mla_triton.py` passes. |
-| B6 | Implement MLA forward + backward (autograd Function). | Gradient check on float32 tiny. |
-| B7 | Wire into `MultiHeadLatentAttention` behind `attn_impl: "triton"`. End-to-end loss agreement test. | `test_sdpa_and_triton_agree` passes within `atol=1e-2`. |
-| B8 | A100 benchmark: full `microbench_a100.py` with all kernels on. | Total step-time reduction ≥ 25% vs baseline. |
+| B1 | Implement `models/moe_triton.py` (grouped GEMM + SwiGLU). | `test_moe_triton.py` passes on CPU; MoE path matches `stacked` reference within `atol=1e-2` on A100. **Done.** |
+| B2 | Implement backward for MoE kernel (or use re-compute pattern). | `torch.autograd.gradcheck` passes on float32 tiny config. **Done** (re-compute). |
+| B3 | Wire into `DeepSeekMoE.forward` behind `moe_dispatch: "triton_grouped"`. End-to-end: full-model forward+backward produces identical loss to `stacked` within bf16 tolerance. | `tests/test_models.py` still passes; new `test_moe_full_path_agrees` passes. **Done.** |
+| B4 | A100 benchmark: 50-step forward+backward median, MoE only vs full model. | Speedup ≥ 1.5× on MoE path; ≥ 1.2× overall. **Open.** |
+| B5 | Implement `models/mla_triton.py` (FA2-style fused kernel with on-the-fly K_nope/V materialisation). | `test_mla_triton.py` passes. **Kernel done; dedicated test file still TODO.** |
+| B6 | Implement MLA forward + backward (autograd Function). | Gradient check on float32 tiny. **Done** (re-compute). |
+| B7 | Wire into `MultiHeadLatentAttention` behind `attn_impl: "triton"`. End-to-end loss agreement test. | `test_sdpa_and_triton_agree` passes within `atol=1e-2`. **Open** (no `test_mla_triton.py` yet). |
+| B8 | A100 benchmark: full `microbench_a100.py` with all kernels on. | Total step-time reduction ≥ 25% vs baseline. **Open.** |
 
 **Phase B expected cumulative win: 25-40% step time on top of Phase A.**
 
@@ -650,7 +680,7 @@ Two-week plan with two implementation phases. All GPU work happens on the A100 b
 
 ### 11.2 Will not break
 
-- The 28 existing tests in `tests/` keep passing with `ENABLE_TRITON_KERNELS=0` (the default).
+- The **184** tests in `tests/` keep passing with `ENABLE_TRITON_KERNELS=0` (the default).
 - The MLA SDPA path and the manual path stay in the file.
 - The MoE `stacked` and `grouped` paths stay in the file.
 - `torch.compile(max-autotune)` continues to wrap the model; triton kernels are opaque to it.
@@ -704,7 +734,7 @@ per-layer module reads the rewritten value.
 2. **MLA kernel scope**: prefill-only (S=2048) or also flash-decoding (S=1, growing)? *Default: prefill only first; decode as a follow-up if profile shows decode-bound.*
 3. **Loss-fusion scope**: do we also need a fused `cross_entropy` for the **MTP** predictions? The MTP heads call `F.cross_entropy` in a Python loop. *Default: yes, fuse both in one kernel that handles a list of (logits, targets) pairs.*
 4. **Backward strategy for MoE kernel**: re-compute (FA2-style, low HBM, ~30% more compute) vs save intermediates (high HBM, simpler code). *Default: re-compute, since MoE already activates only ~20% of experts per token and HBM is the constraint at our 422M scale.*
-5. **Master switch location**: env-var (`ENABLE_TRITON_KERNELS=1`) or config key (`model.triton_kernels: true`)? *Default: env-var, because the per-kernel switches are config keys and we want a single kill-switch for "ship without any triton".*
+5. **Master switch location**: env-var (`ENABLE_TRITON_KERNELS=1`) or config key (`model.triton_kernels: true`)? **Resolved:** env-var — per-kernel switches stay in YAML; single kill-switch for shipping without Triton.
 
 ---
 
@@ -719,7 +749,7 @@ The plan is successful when, after Phase B, on the canonical 422M config and a 2
 | Tokens/sec | ~16k | **≥ 23k** | ≥ 27k |
 | MFU | 35-40% | **≥ 50%** | ≥ 60% |
 | Loss curve over 1k steps | (baseline) | within ±2% | within ±1% |
-| Test pass count | 28 | **28 + new (28+) = 56+** | 60+ |
+| Test pass count | 184 (default config) | **184 + `test_mla_triton.py`** | 200+ |
 
 The 50% MFU target is the headline number: it's the gap between "the model works" and "the model runs at a competitive fraction of the GPU's peak".
 

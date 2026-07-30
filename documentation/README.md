@@ -88,6 +88,7 @@ See [configs.md](configs.md) for every key.
 | Vocab 100,018 — embedding dim must match | [data_pipeline.md](data_pipeline.md) |
 | Weight tying — head.weight = embed.weight | [transformer.md](transformer.md) |
 | `ENABLE_TRITON_KERNELS=1` for Triton paths | [moe.md](moe.md), [triton_kernels.md](triton_kernels.md) |
+| `test_mla_triton.py` not yet added (MLA Triton gap) | [triton_kernels.md](triton_kernels.md), [testing.md](testing.md) |
 | `use_cache=False` during training | [training.md](training.md), [inference.md](inference.md) |
 
 ---

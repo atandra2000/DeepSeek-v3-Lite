@@ -111,7 +111,7 @@ Two new optional config keys: `attn_impl` (default `"sdpa"`, set to
 `"triton_grouped"` to opt in). Master kill-switch env-var:
 `ENABLE_TRITON_KERNELS=0` (default, no Triton) or `=1` (allow per-config
 opt-in). Tests on CPU/Mac run with the env-var unset and the default
-`attn_impl` / `moe_dispatch` values, so the existing 28 tests keep
+`attn_impl` / `moe_dispatch` values, so the **184** pytest tests keep
 passing without any CUDA dependency.
 
 **Hard rules:**
@@ -176,10 +176,13 @@ passing without any CUDA dependency.
 **Known issues:**
 - Full 8.4B-token run not yet started.
 - Speculative decoding acceptance rate measured at ~0.8 on smoke tests.
-- **Triton kernel implementation is in progress** (Phase B of
-  `documentation/triton_kernels.md`); the 28 existing tests still
-  pass on the default `attn_impl="sdpa"`, `moe_dispatch="stacked"`
-  config without any Triton dependency.
+- **Triton kernels (MoE + MLA) are implemented but not default-on** — opt in via
+  `attn_impl: "triton"` / `moe_dispatch: "triton_grouped"` in YAML plus
+  `ENABLE_TRITON_KERNELS=1`. A100 benchmark validation (≥1.5× MoE speedup,
+  ≥25% full-step reduction) is still open. `test_mla_triton.py` does not
+  exist yet; MoE coverage lives in `tests/test_moe_triton.py` and
+  `tests/test_force_back.py`. All **184** tests pass on the default
+  `attn_impl="sdpa"`, `moe_dispatch="stacked"` config without Triton.
 - Triton requires SM_80+ (A100, H100, RTX 4090, etc.) and Linux.
   macOS and Windows are unsupported for the Triton paths; the
   `HAS_TRITON = False` fallback keeps the codebase importable and
