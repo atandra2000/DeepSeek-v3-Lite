@@ -71,16 +71,9 @@ See [configs.md](configs.md) for every key.
 
 ---
 
-## Authoritative MLA reference
+## MLA reference
 
-There are **two** MLA docs in this repo:
-
-| File | Role |
-|---|---|
-| [`../MLA.md`](../MLA.md) | Top-level theory reference (if present in your checkout) |
-| [`MLA.md`](MLA.md) | Project-specific implementation walkthrough |
-
-When in doubt, `models/mla.py` is the source of truth.
+**[MLA.md](MLA.md)** is the single canonical MLA doc: paper-grounded theory, absorption algebra, SDPA / manual / Triton paths, and a `models/mla.py` walkthrough. If prose and code disagree, **`models/mla.py` wins**.
 
 ---
 
@@ -105,17 +98,17 @@ When in doubt, `models/mla.py` is the source of truth.
 |---|---|---|
 | MLA.md | 1,424 | Comprehensive |
 | moe.md | 924 | Comprehensive |
-| training.md | 825 | Comprehensive |
-| foundations.md | 774 | Comprehensive |
+| training.md | 819 | Comprehensive |
+| foundations.md | 768 | Comprehensive |
 | triton_kernels.md | 738 | Comprehensive |
 | mtp.md | 650 | Comprehensive |
-| data_pipeline.md | 620 | Comprehensive |
 | transformer.md | 618 | Comprehensive |
-| utils.md | 576 | Comprehensive |
+| data_pipeline.md | 617 | Comprehensive |
+| utils.md | 575 | Comprehensive |
 | architecture.md | 565 | Comprehensive |
 | testing.md | 514 | Comprehensive |
 | inference.md | 507 | Comprehensive |
 | scripts.md | 476 | Comprehensive |
 | getting_started.md | 455 | Comprehensive |
 | configs.md | 430 | Comprehensive |
-| **Total** | **10,096** | |
+| **Total** | **10,201** | |

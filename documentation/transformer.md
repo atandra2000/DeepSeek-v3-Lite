@@ -535,7 +535,7 @@ output logits: (1, 1, 100018)
 
 ## References
 
-- [transformer.md](transformer.md) → [mla.md](MLA.md), [moe.md](moe.md)
+- [transformer.md](transformer.md) → [MLA.md](MLA.md), [moe.md](moe.md)
 - `models/transformer.py` — authoritative source
 - [architecture.md](architecture.md) — system-level overview
 

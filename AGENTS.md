@@ -36,7 +36,7 @@ split-K) and can reason about HBM bandwidth vs compute trade-offs.
   trick, YaRN scaling (gated by `rope_factor > 1.0`; canonical config uses
   `rope_factor=1.0` so YaRN is dormant), KV cache. **`attn_impl` supports
   `"sdpa"`, `"manual"`, and `"triton"`** (the Triton path delegates to
-  `models/mla_triton.py`). **643-line technical deep-dive in `MLA.md`.**
+  `models/mla_triton.py`). **Technical deep-dive in `documentation/MLA.md`.**
 - `models/mla_triton.py` — fused FA2-style MLA attention: on-the-fly
   K_nope / V materialisation from the latent + `wkv_b`, RoPE applied
   inside the kernel, online softmax. Backward via re-compute (FA2
@@ -132,8 +132,8 @@ passing without any CUDA dependency.
    `update_bias` runs out-of-band in Python every `bias_update_every`
    steps; the Triton MoE kernel only fuses the forward. Do not move
    the bias into the kernel.
-4. **Always** read `MLA.md` before answering MLA questions — it is the
-   643-line authoritative reference. The Triton MLA kernel re-expresses
+4. **Always** read `documentation/MLA.md` before answering MLA questions — it is the
+   authoritative reference for theory and this-repo implementation. The Triton MLA kernel re-expresses
    the same math; the doc still describes the algebra.
 5. **Always** verify the embedding dim matches `vocab_size` (100,018)
    — the tokenizer has unusual `byte_fallback` tokens.

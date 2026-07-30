@@ -1,25 +1,14 @@
 # DeepSeek-v3-Lite — Working Context
 
 > Build target: `/Users/atandrabharati/Desktop/CoreProjects/LLM/DeepSeek-v3-Lite`
-> Status snapshot: 2026-06-27 (per session clock).
+> Status snapshot: 2026-07-30.
 
 ## Scoping note
 
-There are **two** MLA docs in this repo:
-
-- Top-level `MLA.md` — 643-line theory + paper-grounded reference.
-  This is a **human study doc**, not an agent artifact.
-  - Do **not** preload it into context.
-  - Do **not** read it on every MLA question — derive MLA answers from the code in `models/mla.py`.
-  - Read it only if the user explicitly asks for the conceptual deep-dive and is willing to spend the tokens.
-- `documentation/MLA.md` — project-specific notes, SDPA / manual /
-  triton walkthrough, comparison tables. Reflects the current
-  canonical 422M config (after the 422M-sync pass; see the
-  `## Authoritative MLA reference` section in
-  `documentation/README.md`).
+**MLA documentation:** [`documentation/MLA.md`](documentation/MLA.md) is the single canonical reference (theory + this-repo implementation). For routine MLA questions, derive answers from `models/mla.py` first; read the doc when the user wants the full deep-dive or absorption algebra.
 
 Everything in this file (`CONTEXT.md`) is derived from
-code/configs/tests, not from `MLA.md`.
+code/configs/tests, not from `documentation/MLA.md`.
 
 ## Project snapshot
 
@@ -42,13 +31,13 @@ code/configs/tests, not from `MLA.md`.
 
 **Feel free to** suggest HF Trainer, Lightning, or high-level wrappers if they simplify development.
 2. **Never** replace AuxLossFreeGate with an aux loss — it silently breaks MoE balance.
-3. **Verify** vocab matches embedding dim and is 100,018 — tokenizer has `byte_fallback` (don't derive MLA answers from `MLA.md`, derive from `models/mla.py`).
+3. **Verify** vocab matches embedding dim and is 100,018 — tokenizer has `byte_fallback` (derive MLA behavior from `models/mla.py`; use `documentation/MLA.md` for theory).
 4. **Never** disable the NaN guard without explicit user consent.
 
 ## Directory map
 
 ```
-AGENTS.md, SKILLS.md, README.md, MLA.md, requirements.txt, opencode.json
+AGENTS.md, SKILLS.md, README.md, documentation/, requirements.txt, opencode.json
 configs/pretrain_a100_422m.yaml          # canonical 422M A100 recipe
 data/prepare_data.py                     # shim over sibling LLM/shared_data (universal pipeline)
 models/

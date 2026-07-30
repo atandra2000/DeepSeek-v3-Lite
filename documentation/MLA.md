@@ -1,5 +1,7 @@
 # Multi-Head Latent Attention (MLA)
 
+> **Canonical MLA reference for this repo.** Theory (DeepSeek-V2/V3), the absorption trick, decoupled RoPE, and the implementation in `models/mla.py` / `models/mla_triton.py`. If prose and code disagree, `models/mla.py` wins.
+
 ## A Comprehensive Technical Reference
 
 > **Covers**: DeepSeek-V2/V3 original formulation, the absorption trick, decoupled RoPE, and the implementation in this repo (`models/mla.py`).

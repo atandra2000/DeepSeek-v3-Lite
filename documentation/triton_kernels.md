@@ -2,7 +2,7 @@
 
 > **Status:** Design proposal, not yet implemented.
 > **Audience:** Atandra (review), future-self (implementation).
-> **Companion docs:** `MLA.md`, `moe.md`, `mtp.md`, `AGENTS.md §Hard rules`.
+> **Companion docs:** `documentation/MLA.md`, `moe.md`, `mtp.md`, `AGENTS.md §Hard rules`.
 
 ---
 

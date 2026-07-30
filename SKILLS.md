@@ -32,6 +32,8 @@ A working forward + a non-NaN loss is the minimum.
 
 ## Skill 2: Add a new MLA hyperparameter
 
+See [`documentation/MLA.md`](documentation/MLA.md) for dimension breakdown and absorption algebra.
+
 `kv_lora_rank` (default 192), `qk_nope_head_dim` (48), `qk_rope_head_dim` (24),
 `v_head_dim` (64), `q_lora_rank` (0 in 422M). Changes:
 
