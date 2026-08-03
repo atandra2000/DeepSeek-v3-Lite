@@ -1,10 +1,8 @@
 # Inference — Generation and Speculative Decoding
 
-## A Comprehensive Technical Reference
+> **Read this if** you're debugging generation, KV cache, or speculative decode. **Skip if** you're training only → [[Docs/08_Training_Pipeline|Training]].
 
-> **Covers**: `inference/generate.py`, `inference/speculative.py`, and `Transformer.generate()` — from checkpoint to tokens.
-
-> **Read this if** you're debugging generation, KV cache, or speculative decode. **Skip if** you're training only → [training.md](training.md).
+**Depends on:** [[Docs/02_Model_Architecture|Model Architecture]], [[Docs/03_Multi_Head_Latent_Attention|MLA]], [[Docs/05_Multi_Token_Prediction|MTP]] · **Read next:** (end of learning path)
 
 ---
 
@@ -53,7 +51,7 @@ $$
 
 **Without KV cache:** $O(T^2)$ per sequence. **With MLA cache:** amortised $O(T)$ per generated token after prefill.
 
-**Prerequisites:** [foundations.md](foundations.md) §11, [MLA.md](MLA.md) §KV Cache Management.
+**Prerequisites:** [[Docs/01_Foundations|foundations]] §11, [[Docs/03_Multi_Head_Latent_Attention|MLA]] §KV Cache Management.
 
 ---
 
@@ -459,10 +457,10 @@ Step 1: main→t5, draft→t6, accept → emit [t5, t6] in one logical step
 
 - `inference/generate.py`, `inference/speculative.py`
 - `models/transformer.py` — `generate()`, `_sample()`
-- [mtp.md](mtp.md) — MTP theory
-- [transformer.md](transformer.md) — wiring
-- [MLA.md](MLA.md) — KV cache internals
-- [utils.md](utils.md) — checkpoint format
+- [[Docs/05_Multi_Token_Prediction|mtp]] — MTP theory
+- [[Docs/02_Model_Architecture|transformer]] — wiring
+- [[Docs/03_Multi_Head_Latent_Attention|MLA]] — KV cache internals
+- [[Docs/11_Operations_and_Testing|utils]] — checkpoint format
 
 ## Worked Example — Prefill + 3 Decode Steps
 
@@ -509,4 +507,125 @@ The template inserts role tokens (`user`, `assistant`) per DeepSeek-Coder format
 
 Multi-turn: each turn appends to `messages`; KV cache grows with full history unless you call `model.reset_cache()`.
 
-<!-- docs:verified 2026-07-31 · 5a880d2 -->
+<!-- docs:verified 2026-08-01 · e8553c4 -->
+
+## Appendix D — Extended Inference & Sampling Walkthroughs
+
+### Generate Method Walkthrough
+
+`Transformer.generate()` in `models/transformer.py` implements the full prefill + decode loop:
+
+```python
+@torch.inference_mode()
+def generate(self, input_ids, max_new_tokens=512, temperature=1.0,
+             top_p=0.9, top_k=0, eos_token_id=None):
+    self.reset_cache()
+    self.eval()
+
+    # 1. Prefill: process entire prompt in one forward pass
+    prefill_logits = self.forward(output, start_pos=0, use_cache=True)
+    next_logits = prefill_logits[:, -1, :]
+
+    # 2. Decode: one token at a time using KV cache
+    for step in range(max_new_tokens):
+        next_token = self._sample(next_logits, temperature, top_p, top_k)
+        output = torch.cat([output, next_token], dim=1)
+
+        if eos_token_id is not None and (next_token == eos_token_id).any():
+            break
+        if output.size(1) >= self.max_seq_len:
+            break
+
+        # Process only the new token (using cached K/V from previous steps)
+        decode_logits = self.forward(next_token, start_pos=prompt_len + step, use_cache=True)
+        next_logits = decode_logits[:, -1, :]
+
+    return output
+```
+
+**`reset_cache()`** clears MLA caches (kv_cache and pe_cache) across all 18 layers — essential for independent generations.
+
+**Prefill phase:** The full prompt (T tokens) is processed in one forward pass with parallel attention across all positions 0..T-1. The KV cache is populated with all prompt tokens. Only the logits at the last position are used for sampling.
+
+**Decode phase:** Each step processes exactly 1 new token. The `start_pos` parameter tells MLA where in the cache to write the new K/V — after a prefill of length `prompt_len`, decode step `step` writes at position `prompt_len + step`. Off-by-one here causes cache corruption and gibberish output.
+
+**Termination:** Generation stops on EOS token, when output reaches `max_seq_len` (prevents cache overflow — MLA caches are pre-allocated to `max_seq_len`), or after `max_new_tokens` iterations.
+
+### Top-p/Top-k Sampling
+
+`Transformer._sample(logits, temperature, top_p, top_k)` implements three sampling modes with a fixed execution order:
+
+**1. Temperature scaling:**
+
+$$
+p_i = \frac{\exp(z_i / \tau)}{\sum_j \exp(z_j / \tau)}
+$$
+
+- $\tau \to 0$: greedy argmax (deterministic)
+- $\tau = 1.0$: native model distribution
+- $\tau > 1$: flatter, higher entropy
+
+**2. Top-k masking:**
+
+Keep only the $k$ largest logits; mask all others to $-\infty$ before softmax. This hard-cutoff prevents sampling from low-probability tails. `top_k=0` disables.
+
+```python
+if top_k > 0:
+    kth_vals = logits.topk(min(top_k, logits.size(-1)), dim=-1)[0][:, -1:]
+    logits = logits.masked_fill(logits < kth_vals, float("-inf"))
+```
+
+**3. Top-p (nucleus) filtering:**
+
+(Holtzman et al., 2020) Sort probabilities descending, find the smallest cumulative set whose probability exceeds `top_p`, then zero out everything else and renormalize:
+
+```python
+if top_p < 1.0:
+    sorted_probs, sorted_idx = torch.sort(probs, dim=-1, descending=True)
+    cumulative = sorted_probs.cumsum(dim=-1)
+    remove = (cumulative - sorted_probs) > top_p
+    sorted_probs = sorted_probs.masked_fill(remove, 0.0)
+    sorted_probs = sorted_probs / sorted_probs.sum(dim=-1, keepdim=True).clamp(min=1e-10)
+    next_token = sorted_idx.gather(-1, torch.multinomial(sorted_probs, num_samples=1))
+```
+
+**Execution order:** temperature → top-k → softmax → top-p → multinomial. Top-k is applied first (hard cutoff), then top-p adapts within the remaining set.
+
+**Combined top-k + top-p rationale:** Top-k alone uses a fixed cutoff that may include irrelevant tokens if the distribution is flat. Top-p alone can produce a very large nucleus when many tokens have similar probability. Combined: top-k limits maximum candidates, top-p adapts within that set — best of both worlds.
+
+### MLA KV Cache During Decode
+
+During autoregressive decode (seqlen=1), MLA reads and writes compressed latent vectors — not full K/V heads:
+
+**What's cached per layer:**
+
+```python
+# Write (one token):
+self.kv_cache[:bsz, start_pos:end_pos] = kv_normed.detach()  # (B, 1, 192) — compressed latent
+self.pe_cache[:bsz, start_pos:end_pos] = k_pe.detach()        # (B, 1, 24)  — RoPE key
+
+# Read (full context):
+ctx_kv = self.kv_cache[:bsz, :end_pos]  # (B, end_pos, 192) — all latents
+ctx_pe = self.pe_cache[:bsz, :end_pos]  # (B, end_pos, 24)  — all RoPE keys
+```
+
+**Per-step memory read:**
+
+At each decode step, MLA reads:
+- `end_pos × 192` floats (latents)
+- `end_pos × 24` floats (RoPE keys)
+- Total: `end_pos × 216` floats per layer
+
+For 128K context: $131072 \times 216 \times 2 = 56.6$ MB per layer per decode step.
+
+Compare to standard MHA: $131072 \times 1536 \times 2 = 402.7$ MB per layer per decode step. **MLA reads 7.1× less data per decode step.**
+
+**SDPA path materialization trade-off:**
+
+During decode, the SDPA path:
+1. Reads all cached latents (`ctx_kv`)
+2. Materializes $K_{\text{nope}}$ and $V$ via BMM (expand latent → full K/V per head)
+3. Concatenates with RoPE key
+4. Runs `F.scaled_dot_product_attention` with Q (1 token) vs all cached K/V
+
+This materialization happens **every decode step** on the SDPA path — it's the trade-off: the SDPA path uses a fused GPU kernel (faster) but doesn't use the true absorption trick. The manual path keeps everything in latent space (no materialization) but is slower due to Python loops. At 422M scale, the SDPA path is faster overall.

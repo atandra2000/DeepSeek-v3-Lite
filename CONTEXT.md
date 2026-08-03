@@ -5,20 +5,20 @@
 
 ## Scoping note
 
-**MLA documentation:** [`documentation/MLA.md`](documentation/MLA.md) is the single canonical reference (theory + this-repo implementation). For routine MLA questions, derive answers from `models/mla.py` first; read the doc when the user wants the full deep-dive or absorption algebra.
+**MLA documentation:** [`docs/03_Multi_Head_Latent_Attention.md`](docs/03_Multi_Head_Latent_Attention.md) is the single canonical reference (theory + this-repo implementation). For routine MLA questions, derive answers from `models/mla.py` first; read the doc when the user wants the full deep-dive or absorption algebra.
 
 ### Doc routing (agents)
 
 | Question type | Read first |
 |---|---|
 | How does this repo implement X? | `models/*.py` + matching component doc §Implementation |
-| MLA theory / absorption algebra | `documentation/MLA.md` |
-| YAML / hyperparameters | `documentation/configs.md` |
-| Train loop / NaN / checkpoints | `documentation/training.md` + `tests/test_training.py` |
-| What must not break? | `documentation/testing.md` load-bearing table |
+| MLA theory / absorption algebra | `docs/03_Multi_Head_Latent_Attention.md` |
+| YAML / hyperparameters | `docs/08_Training_Pipeline.md` |
+| Train loop / NaN / checkpoints | `docs/08_Training_Pipeline.md` + `tests/test_training.py` |
+| What must not break? | `docs/11_Operations_and_Testing.md` load-bearing table |
 
 Everything in this file (`CONTEXT.md`) is derived from
-code/configs/tests, not from `documentation/MLA.md`.
+code/configs/tests, not from `docs/03_Multi_Head_Latent_Attention.md`.
 
 ## Project snapshot
 
@@ -41,13 +41,13 @@ code/configs/tests, not from `documentation/MLA.md`.
 
 **Feel free to** suggest HF Trainer, Lightning, or high-level wrappers if they simplify development.
 2. **Never** replace AuxLossFreeGate with an aux loss — it silently breaks MoE balance.
-3. **Verify** vocab matches embedding dim and is 100,018 — tokenizer has `byte_fallback` (derive MLA behavior from `models/mla.py`; use `documentation/MLA.md` for theory).
+3. **Verify** vocab matches embedding dim and is 100,018 — tokenizer has `byte_fallback` (derive MLA behavior from `models/mla.py`; use `docs/03_Multi_Head_Latent_Attention.md` for theory).
 4. **Never** disable the NaN guard without explicit user consent.
 
 ## Directory map
 
 ```
-AGENTS.md, SKILLS.md, README.md, documentation/, requirements.txt, opencode.json
+AGENTS.md, SKILLS.md, README.md, docs/, requirements.txt, opencode.json
 configs/pretrain_a100_422m.yaml          # canonical 422M A100 recipe
 data/prepare_data.py                     # shim over sibling LLM/shared_data (universal pipeline)
 models/

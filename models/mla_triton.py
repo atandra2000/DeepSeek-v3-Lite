@@ -2,7 +2,7 @@
 
 Fuses K_nope/V materialisation, RoPE, and SDPA into a single
 FlashAttention-2-style kernel. Replaces models/mla.py:127-143.
-See `documentation/triton_kernels.md` §4 for the design.
+See `docs/12_Triton_Kernels.md` §4 for the design.
 """
 
 from __future__ import annotations
@@ -269,7 +269,7 @@ if HAS_TRITON:
         ) -> Tuple[torch.Tensor, ...]:
             # v1 stub: re-run the reference forward and use PyTorch
             # autograd. Correct but not yet the optimal re-compute
-            # backward. See `documentation/triton_kernels.md` §4.
+            # backward. See `docs/12_Triton_Kernels.md` §4.
             dout = grad_outputs[0]
             if dout is None:
                 return (None,) * 7

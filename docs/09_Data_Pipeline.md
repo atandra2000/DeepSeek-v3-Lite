@@ -1,10 +1,8 @@
 # Data Pipeline — Tokenization, Sharding, and Loading
 
-## A Comprehensive Technical Reference
+> **Read this if** you're preparing or validating training data. **Skip if** shards already exist → [[Docs/08_Training_Pipeline|Training]].
 
-> **Covers**: How DeepSeek-V3-Lite obtains its 8.4B-token training corpus, from raw HuggingFace datasets to packed `uint32` shards consumed by `PretrainDataset`.
-
-> **Read this if** you're preparing or validating training data. **Skip if** shards already exist → [getting_started.md](getting_started.md) §8.
+**Depends on:** [[Docs/08_Training_Pipeline|Training]] · **Read next:** [[Docs/10_Inference_and_Serving|Inference]]
 
 ---
 
@@ -204,7 +202,7 @@ python3 data/prepare_data.py --stage pretrain \
 
 ## PretrainDataset Consumption
 
-See [training.md](training.md) for full details.
+See [[Docs/08_Training_Pipeline|training]] for full details.
 
 | Layout | Detection | Sample count |
 |---|---|---|
@@ -241,7 +239,7 @@ See [training.md](training.md) for full details.
 
 **Q: Can I use GPT-2 tokenizer?** Only for the 1650 smoke config (`vocab_size=50257`). The 422M config requires DeepSeek tokenizer.
 
-**Q: Where is DATA_PIPELINE.md?** This repo ships `data/DATA_PIPELINE.md` (redirect) and the full guide at [data_pipeline.md](data_pipeline.md). The universal pipeline README is at `LLM/shared_data/README.md`.
+**Q: Where is DATA_PIPELINE.md?** This repo ships `data/DATA_PIPELINE.md` (redirect) and the full guide at [[Docs/09_Data_Pipeline|data pipeline]]. The universal pipeline README is at `LLM/shared_data/README.md`.
 
 **Q: How long does full prep take?** Hours to days depending on bandwidth and CPU cores. Use `--skip-*` flags for incremental reruns.
 
@@ -492,7 +490,7 @@ Only token IDs differ per project (tokenizer); raw text is shared via `shared_da
 - `data/prepare_data.py` — project shim
 - `LLM/shared_data/README.md` — universal pipeline
 - `LLM/shared_data/config/mixture.yaml` — canonical mixture
-- [training.md](training.md) — `PretrainDataset` loader
+- [[Docs/08_Training_Pipeline|training]] — `PretrainDataset` loader
 
 ## Tokenizer Contract — Special Tokens
 
@@ -618,4 +616,4 @@ DeepSeek-v3-Lite/data/prepare_data.py
 14. **Mixture ablation:** Train 1000 steps on single-source data; compare loss to full mixture.
 15. **Manifest audit:** Verify SHA-256 in `manifest.json` matches on-disk shards.
 
-<!-- docs:verified 2026-07-31 · 5a880d2 -->
+<!-- docs:verified 2026-08-01 · e8553c4 -->

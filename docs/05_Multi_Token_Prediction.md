@@ -1,12 +1,10 @@
 # Multi-Token Prediction (MTP) + Speculative Decoding
 
-## A Comprehensive Technical Reference
+> **Prerequisites:** [[Docs/02_Model_Architecture|Model Architecture]], [[Docs/03_Multi_Head_Latent_Attention|MLA]].
 
-> **Prerequisites:** [foundations.md](foundations.md) §9, [transformer.md](transformer.md).
+> **Read this if** you're working on MTP loss alignment or speculative decoding. **Skip if** you only need the standard train loop → [[Docs/08_Training_Pipeline|Training]].
 
-> **Covers**: DeepSeek-V3 MTP auxiliary heads, training loss coupling, and MTP-based speculative decoding in this repo (`models/mtp.py`, `inference/speculative.py`).
-
-> **Read this if** you're working on MTP loss alignment or speculative decoding. **Skip if** you only need the standard train loop → [training.md](training.md).
+**Depends on:** [[Docs/02_Model_Architecture|Model Architecture]], [[Docs/03_Multi_Head_Latent_Attention|MLA]] · **Read next:** [[Docs/10_Inference_and_Serving|Inference]]
 
 ---
 
@@ -651,4 +649,153 @@ Only `total_loss / grad_accum` is backpropped. `main_loss` and `mtp_loss` are de
 
 `ModuleList([MTPModule(config, d+1) for d in range(depth)])` supports stacking. Depth 2 would predict $t+3$ from depth-1 hidden. DeepSeek-V3 paper uses multiple depths; this repo sets `mtp_depth: 1` for simplicity.
 
-<!-- docs:verified 2026-07-31 · 5a880d2 -->
+---
+
+### MTP Block Architecture — Fusion Step
+
+The MTPBlock merges the trunk hidden state with the target token embedding through a fusion step:
+
+```python
+# Fusion: concatenate [norm_h(h), norm_e(emb)] → project to dim
+fused = self.proj(torch.cat([self.norm_h(prev_hidden), self.norm_e(target_emb)], dim=-1))
+```
+
+$$
+\text{fused} = W_{\text{proj}} \cdot [\text{RMSNorm}(h_n) \| \text{RMSNorm}(\text{emb}(t_{n+1}))]
+$$
+
+This gives the MTP block access to both:
+- **The main model's understanding** of the context (via $h_n$)
+- **The actual next token** (via $\text{emb}(t_{n+1})$ — ground truth during training)
+
+**Why standard MHA instead of MLA?** The MTP block uses `nn.MultiheadAttention`, not MLA, because:
+1. MTP is a **lightweight auxiliary module** — it doesn't need MLA's cache compression.
+2. MTP doesn't use a KV cache during training — it processes the full sequence in one forward.
+3. Standard MHA is simpler and sufficient for the auxiliary prediction task. Draft head runs on single-token slices at inference — KV cache complexity of MLA buys nothing.
+
+```python
+# Full MTPBlock forward:
+h_normed = self.norm_h(prev_hidden)
+e_normed = self.norm_e(target_emb)
+fused = self.proj(torch.cat([h_normed, e_normed], dim=-1))
+
+attn_in = self.norm_attn(fused)
+attn_out, _ = self.attn(attn_in, attn_in, attn_in, attn_mask=causal_mask, is_causal=False)
+fused = fused + attn_out  # residual
+
+ffn_in = self.norm_ffn(fused)
+return fused + self.w2(F.silu(self.w1(ffn_in)) * self.w3(ffn_in))  # SwiGLU
+```
+
+**Why independent norms?** The trunk hidden and token embedding live in different semantic spaces (post-17-layers vs lookup table). Separate RMSNorm before fusion prevents scale mismatch.
+
+---
+
+### Training Loss Formula
+
+The MTP loss function:
+
+```python
+def compute_loss(self, main_logits, targets, mtp_pairs=None):
+    main_loss = F.cross_entropy(main_logits.reshape(-1, V), targets.reshape(-1), ignore_index=-100)
+    
+    if not mtp_pairs:
+        return main_loss, main_loss, main_loss.new_zeros(())
+    
+    depth_losses = []
+    for logits, tgt in mtp_pairs:
+        depth_losses.append(F.cross_entropy(logits.reshape(-1, V), tgt.reshape(-1), ignore_index=-100))
+    
+    mtp_loss = torch.stack(depth_losses).mean()
+    return main_loss + self.mtp_weight * mtp_loss, main_loss, mtp_loss
+```
+
+$$
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{main}} + 0.3 \times \mathcal{L}_{\text{MTP}}
+$$
+
+Where:
+- $\mathcal{L}_{\text{main}}$ = cross-entropy on predicting $t_{n+1}$ (standard LM loss)
+- $\mathcal{L}_{\text{MTP}}$ = cross-entropy on predicting $t_{n+2}$ (MTP auxiliary loss)
+- Weight = 0.3 — MTP is a regularizer, not the primary objective
+
+**Target alignment** (depth $d=1$, usable length $U = S - 2$):
+
+| Tensor | Slice | Role |
+|---|---|---|
+| `hidden[:, :U]` | trunk states | Predict $t+2$ from position $t$ |
+| `tokens[:, d+1:d+1+U]` | $t+1$ tokens | Embedded as conditioning |
+| `tokens[:, d+2:d+2+U]` | $t+2$ tokens | CE labels |
+
+**MTP as regularizer:** The shared head and shared embedding mean MTP training **also improves the main head** — the auxiliary loss is not isolated. Gradients from $\mathcal{L}_{\text{MTP}}$ flow through the shared `head.weight` and back into the trunk, forcing the trunk hidden state to encode enough information to predict two tokens ahead, not just one.
+
+---
+
+### Speculative Decoding Acceptance Test
+
+The acceptance ratio compares the main model's probability of the draft token vs the draft model's probability:
+
+$$
+\text{ratio} = \min\left(1.0, \frac{P_{\text{main}}(\text{draft\_token})}{P_{\text{draft}}(\text{draft\_token})}\right)
+$$
+
+- If $P_{\text{main}} \geq P_{\text{draft}}$: ratio = 1.0 (always accept — main model agrees)
+- If $P_{\text{main}} < P_{\text{draft}}$: ratio < 1.0 (main model is less confident)
+
+With `acceptance_threshold=0.8`, we accept if ratio ≥ 0.8 — meaning the main model's probability of the draft token is at least 80% of the draft model's probability.
+
+**Generate loop:**
+
+```python
+def generate(self, input_ids, max_new_tokens=512, ...):
+    output = input_ids.clone()
+    n_generated = 0
+    self.main_model.reset_cache()
+    _ = self.main_model(output, start_pos=0, use_cache=True)  # prefill
+    
+    while n_generated < max_new_tokens:
+        token_main, token_draft, was_accepted = self.generate_step(last_token, start_pos)
+        
+        output = torch.cat([output, token_main.unsqueeze(0)], dim=1)
+        n_generated += 1
+        
+        if was_accepted and n_generated < max_new_tokens:
+            output = torch.cat([output, token_draft.unsqueeze(0)], dim=1)
+            n_generated += 1  # got 2 tokens this step!
+    
+    return output
+```
+
+**Expected throughput** at acceptance rate ~0.8:
+
+$$
+\text{tokens per step} = 1 + P(\text{accept}) = 1 + 0.8 = 1.8
+$$
+
+This gives ~1.8× throughput vs standard decoding, approaching the theoretical 2× limit. This is a simplified greedy verifier — full rejection sampling with distribution correction ($P_{\text{adjusted}} = \max(0, P_{\text{main}} - P_{\text{draft}})$) would be needed for production use.
+
+---
+
+### MTP Checkpoint Management
+
+MTP weights are saved with `mtp.` prefix in the same safetensors file as the main model:
+
+```python
+# Saving (in Pretrainer.save_checkpoint):
+if self.mtp_wrapper is not None:
+    mtp_state = {f"mtp.{k}": v for k, v in orig.state_dict().items() 
+                 if k.startswith("mtp_modules.")}
+    state.update(mtp_state)
+```
+
+```python
+# Loading (on resume):
+mtp_state = {k.removeprefix("mtp."): v for k, v in state.items() if k.startswith("mtp.")}
+mtp_orig.load_state_dict(mtp_state, strict=False)
+```
+
+The `mtp.` prefix is stripped and the MTP module's state is loaded separately. The main model and MTP are loaded from the same file. Optimizer state for MTP is **not** saved separately — MTP params are included in the main optimizer state dict via `MultiTokenPrediction.parameters()`.
+
+> **See also:** [[Docs/10_Inference_and_Serving|Inference]] and [[Docs/08_Training_Pipeline|Training]] for generation and training pipeline integration.
+
+<!-- docs:verified 2026-08-01 · e8553c4 -->

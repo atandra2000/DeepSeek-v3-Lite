@@ -12,7 +12,7 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC_DIR = ROOT / "documentation"
+DOC_DIR = ROOT / "docs"
 README = DOC_DIR / "README.md"
 FOOTER_RE = re.compile(r"\n<!-- docs:verified .+ -->\s*$")
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
@@ -112,7 +112,7 @@ def resolve_link(source: Path, target: str) -> Path | None:
 
 def is_doc_link(target: str) -> bool:
     path_part = target.strip().partition("#")[0]
-    return path_part.endswith(".md") or path_part.startswith("documentation/")
+    return path_part.endswith(".md") or path_part.startswith("docs/")
 
 
 def check_markdown_links(path: Path, text: str) -> list[Issue]:
@@ -194,7 +194,7 @@ def update_size_table() -> bool:
         r"## Doc size reference\n\n\| Doc \| ~Lines \| Status \|\n\|---\|---\|---\|\n(?:\|[^\n]+\n)+",
     )
     if not pattern.search(text):
-        print("check_docs: could not find doc size table in documentation/README.md", file=sys.stderr)
+        print("check_docs: could not find doc size table in docs/README.md", file=sys.stderr)
         return False
     updated = pattern.sub(new_block + "\n", text, count=1)
     if updated == text:
@@ -227,7 +227,7 @@ def main() -> int:
     parser.add_argument(
         "--update-sizes",
         action="store_true",
-        help="Regenerate the doc size table in documentation/README.md",
+        help="Regenerate the doc size table in docs/README.md",
     )
     parser.add_argument(
         "--stamp-footers",
@@ -238,7 +238,7 @@ def main() -> int:
 
     if args.update_sizes:
         if update_size_table():
-            print("Updated documentation/README.md doc size table")
+            print("Updated docs/README.md doc size table")
         else:
             print("Doc size table already up to date")
 

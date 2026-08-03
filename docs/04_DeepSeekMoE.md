@@ -1,12 +1,10 @@
 # Mixture-of-Experts (MoE) — AuxLossFreeGate + DeepSeekMoE
 
-## A Comprehensive Technical Reference
+> **Prerequisites:** [[Docs/02_Model_Architecture|Model Architecture]].
 
-> **Prerequisites:** [foundations.md](foundations.md) §8, [transformer.md](transformer.md).
+> **Read this if** you're debugging expert collapse, routing histograms, or aux-loss-free bias updates. **Skip if** you only need YAML knobs → [[Docs/08_Training_Pipeline|Training]].
 
-> **Covers**: DeepSeek-V2/V3 MoE design, auxiliary-loss-free load balancing (§2.3.3), fine-grained expert routing, shared experts, sorted-token dispatch, and the implementation in this repo (`models/moe.py`, `models/moe_triton.py`).
-
-> **Read this if** you're debugging expert collapse, routing histograms, or aux-loss-free bias updates. **Skip if** you only need YAML knobs → [configs.md](configs.md).
+**Depends on:** [[Docs/02_Model_Architecture|Model Architecture]] · **Read next:** [[Docs/05_Multi_Token_Prediction|MTP]], [[Docs/08_Training_Pipeline|Training]]
 
 ---
 
@@ -925,4 +923,90 @@ When modifying MoE code, verify:
 - `models/moe.py` — authoritative implementation
 - `models/moe_triton.py` — Triton kernel + PyTorch reference
 
-<!-- docs:verified 2026-07-31 · 5a880d2 -->
+---
+
+### Sigmoid vs Softmax Rationale
+
+DeepSeek uses **sigmoid** gating instead of softmax for three reasons:
+
+1. **Independent activation, not competition** — Softmax forces experts to compete for probability mass (zero-sum). Sigmoid treats each expert independently — a token can strongly activate multiple experts without suppressing others.
+2. **Bias update meaningfulness** — Increasing `bias[e]` directly increases expert $e$'s chance of being selected, without decreasing other experts' chances. With softmax, boosting one expert necessarily suppresses all others.
+3. **Natural top-k pairing** — The top-k mechanism picks the highest-scored experts; sigmoid probabilities shift ranking without changing the fundamental independent scores. No redistribution of probability mass occurs.
+
+Standard MoE (Switch Transformer) uses softmax because the auxiliary loss derivation assumes probabilities summing to 1. DeepSeek's aux-loss-free design breaks this assumption — sigmoid scores are independent $(0,1)$ values, not a simplex distribution.
+
+---
+
+### Bias Update Mechanism — Deadband Rule
+
+The bias update implements a **deadband controller** — a classic control-systems pattern where intervention only fires when the signal exceeds a tolerance band around the target:
+
+```python
+@torch.no_grad()
+def update_bias(self, counts, speed=0.001):
+    counts = counts.float()
+    avg = counts.mean()
+    self.bias[counts > avg * (1.0 + self.bias_upper)] -= speed  # over-utilized: demote
+    self.bias[counts < avg * (1.0 - self.bias_lower)] += speed  # under-utilized: promote
+```
+
+| Situation | Expert receives | Bias change | Effect |
+|---|---|---|---|
+| Over-utilized | > 110% of average | `bias[e] -= 0.001` | Less likely to be selected next time |
+| Under-utilized | < 90% of average | `bias[e] += 0.001` | More likely to be selected next time |
+| Balanced (deadband) | 90–110% of average | No change | No intervention |
+
+**Why it's aux-loss-free:**
+
+1. **No gradient on bias** — The bias is a buffer, not a parameter. It doesn't receive gradients. The task loss is pure.
+2. **No aux loss term** — There's no $\mathcal{L}_{\text{aux}}$ in the loss function. The total loss is just the task loss (+ optional MTP loss).
+3. **Out-of-band updates** — The bias is updated periodically (every `bias_update_every` steps) based on observed token counts. This is a **control system**, not an optimization objective.
+
+**Integration with training loop:**
+
+```python
+# In Pretrainer.train_step (every optimizer step):
+if self._opt_steps % self.config.bias_update_every == 0:
+    self._update_moe_bias()  # update bias for all MoE layers
+
+def _update_moe_bias(self):
+    for moe in self.raw_model.moe_layers():
+        moe.update_gate_bias(speed=self.config.bias_update_speed)
+```
+
+With `bias_update_every=1` (canonical), the bias is updated after every optimizer step, keeping it responsive to changing routing patterns.
+
+---
+
+### Original Scores for Weights
+
+The routing **decision** uses `biased` scores (bias affects which experts are selected). But the routing **weights** use the original `scores` (without bias):
+
+```python
+biased = scores + self.bias          # used ONLY for topk selection
+indices = biased.topk(self.topk)[1]
+weights = scores.gather(1, indices)  # raw sigmoid, no bias
+```
+
+**Why this matters:** If weights came from `biased`, the bias would also scale the expert's output magnitude — which is not desired. The bias should affect *selection* only, not *contribution magnitude*. Using raw `scores` for weights ensures the bias is a pure routing knob that doesn't enter the autograd graph through the weighted expert sum. If it did, the optimizer would fight the out-of-band bias updates.
+
+---
+
+### MoE Comparison Table — DeepSeek vs GPT-OSS-Lite
+
+| Property | DeepSeek-V3-Lite | GPT-OSS-Lite |
+|---|---|---|
+| Routed experts | 20 | 8 |
+| Active experts | 4 (top-4) | 2 (top-2) |
+| Shared experts | 1 | 1 |
+| Gate activation | Sigmoid | Softmax |
+| Load balancing | Aux-loss-free bias | Standard aux loss ($\alpha = 0.01$) |
+| Bias/aux gradient | None (buffer) | Gradient through aux loss |
+| Expert `inter_dim` | 384 | 1536 |
+| Dispatch | Stacked bmm (same) | Stacked `F.linear` (same) |
+
+Both use stacked dispatch and SwiGLU experts, but the routing philosophy is completely different. DeepSeek uses finer-grained experts (20 vs 8) with sigmoid routing and no aux loss. GPT-OSS uses coarser experts with softmax routing and standard aux loss. The aux-loss-free approach keeps the task gradient pure — the optimizer never receives a load-balancing signal, only task performance feedback.
+
+> **See also:** [[Docs/02_Model_Architecture|Model Architecture]] and [[Docs/13_Portfolio_Comparison|Portfolio Comparison]] for overall MoE topology and cross-project comparisons.
+
+<!-- docs:verified 2026-08-01 · e8553c4 -->

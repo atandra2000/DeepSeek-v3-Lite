@@ -32,7 +32,7 @@ A working forward + a non-NaN loss is the minimum.
 
 ## Skill 2: Add a new MLA hyperparameter
 
-See [`documentation/MLA.md`](documentation/MLA.md) for dimension breakdown and absorption algebra.
+See [`docs/03_Multi_Head_Latent_Attention.md`](docs/03_Multi_Head_Latent_Attention.md) for dimension breakdown and absorption algebra.
 
 `kv_lora_rank` (default 192), `qk_nope_head_dim` (48), `qk_rope_head_dim` (24),
 `v_head_dim` (64), `q_lora_rank` (0 in 422M). Changes:
@@ -116,13 +116,13 @@ The mixture weights must sum to 1.0. To override per-project, pass
 
 | Question | Start here |
 |---|---|
-| Run smoke tests / first training | [documentation/getting_started.md](documentation/getting_started.md) |
-| Tune YAML | [documentation/configs.md](documentation/configs.md) |
-| MLA dimensions / absorption | [documentation/MLA.md](documentation/MLA.md) + `models/mla.py` |
-| MoE bias / routing | [documentation/moe.md](documentation/moe.md) + `models/moe.py` |
-| Checkpoints / VRAM | [documentation/utils.md](documentation/utils.md) |
-| Invariants / what tests prove | [documentation/testing.md](documentation/testing.md) |
-| Enable Triton | [documentation/triton_kernels.md](documentation/triton_kernels.md) + `ENABLE_TRITON_KERNELS=1` |
+| Run smoke tests / first training | [docs/00_Getting_Started.md](docs/02_Model_Architecture.md) |
+| Tune YAML | [docs/11_Operations_and_Testing.md](docs/08_Training_Pipeline.md) |
+| MLA dimensions / absorption | [docs/03_Multi_Head_Latent_Attention.md](docs/03_Multi_Head_Latent_Attention.md) + `models/mla.py` |
+| MoE bias / routing | [docs/04_DeepSeekMoE.md](docs/04_DeepSeekMoE.md) + `models/moe.py` |
+| Checkpoints / VRAM | [docs/11_Operations_and_Testing.md](docs/08_Training_Pipeline.md) |
+| Invariants / what tests prove | [docs/11_Operations_and_Testing.md](docs/08_Training_Pipeline.md) |
+| Enable Triton | [docs/12_Triton_Kernels.md](docs/08_Training_Pipeline.md) + `ENABLE_TRITON_KERNELS=1` |
 
 ## Pitfalls (cross-cutting)
 - **NaN guard** is `nan_guard_max_consecutive=5` — after 5 consecutive NaN

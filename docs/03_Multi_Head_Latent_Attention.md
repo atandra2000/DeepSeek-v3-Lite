@@ -2,7 +2,9 @@
 
 > **Canonical MLA reference for this repo.** Theory (DeepSeek-V2/V3), the absorption trick, decoupled RoPE, and the implementation in `models/mla.py` / `models/mla_triton.py`. If prose and code disagree, `models/mla.py` wins.
 
-> **Read this if** you're debugging attention, KV-cache layout, or the absorption trick. **Skip if** you only need YAML knobs → [configs.md](configs.md).
+> **Read this if** you're debugging attention, KV-cache layout, or the absorption trick. **Skip if** you only need YAML knobs → [[Docs/08_Training_Pipeline|Training]].
+
+**Depends on:** [[Docs/02_Model_Architecture|Model Architecture]] · **Read next:** [[Docs/04_DeepSeekMoE|MoE]]
 
 ## A Comprehensive Technical Reference
 
@@ -28,21 +30,22 @@
    - [RoPE Helpers](#rope-helpers)
 10. [Comparison: MLA vs MHA vs GQA vs MQA](#comparison-mla-vs-mha-vs-gqa-vs-mqa)
 11. [Performance Characteristics](#performance-characteristics)
-12. [Appendix A — FlashAttention in 60 seconds](#appendix-a-flashattention-in-60-seconds)
-13. [Appendix B — A worked numerical example](#appendix-b-a-worked-numerical-example)
-14. [Appendix C — The Triton path](#appendix-c-the-triton-path)
-15. [Appendix D — Training vs. inference pathway](#appendix-d-training-vs-inference-pathway)
-16. [Appendix E — Why `wkv_b` has shape `(H, d_nope + d_v, R)`](#appendix-e-why-wkv_b-has-shape-h-d_nope-d_v-r)
-17. [Appendix F — KV-cache lifecycle (state diagram)](#appendix-f-kv-cache-lifecycle-state-diagram)
-18. [Appendix G — Gradient flow in MLA](#appendix-g-gradient-flow-in-mla)
-19. [Appendix H — Numerical stability notes](#appendix-h-numerical-stability-notes)
-20. [Appendix I — Glossary](#appendix-i-glossary)
-21. [Appendix J — Frequently Asked Questions](#appendix-j-frequently-asked-questions)
-22. [Implementation Checklist](#implementation-checklist)
-23. [References](#references)
+12. [V3-Lite Architecture Deep Dives](#v3-lite-architecture-deep-dives)
+13. [Appendix A — FlashAttention in 60 seconds](#appendix-a-flashattention-in-60-seconds)
+14. [Appendix B — A worked numerical example](#appendix-b-a-worked-numerical-example)
+15. [Appendix C — The Triton path](#appendix-c-the-triton-path)
+16. [Appendix D — Training vs. inference pathway](#appendix-d-training-vs-inference-pathway)
+17. [Appendix E — Why `wkv_b` has shape `(H, d_nope + d_v, R)`](#appendix-e-why-wkv_b-has-shape-h-d_nope-d_v-r)
+18. [Appendix F — KV-cache lifecycle (state diagram)](#appendix-f-kv-cache-lifecycle-state-diagram)
+19. [Appendix G — Gradient flow in MLA](#appendix-g-gradient-flow-in-mla)
+20. [Appendix H — Numerical stability notes](#appendix-h-numerical-stability-notes)
+21. [Appendix I — Glossary](#appendix-i-glossary)
+22. [Appendix J — Frequently Asked Questions](#appendix-j-frequently-asked-questions)
+23. [Implementation Checklist](#implementation-checklist)
+24. [References](#references)
 
 
-> **Prerequisites:** Read [foundations.md](foundations.md) §5 (attention), §6 (RoPE), and §11 (KV caching) before this chapter. This document assumes you understand standard multi-head attention and why KV-cache memory dominates inference.
+> **Prerequisites:** Read [[Docs/01_Foundations|foundations]] §5 (attention), §6 (RoPE), and §11 (KV caching) before this chapter. This document assumes you understand standard multi-head attention and why KV-cache memory dominates inference.
 
 ---
 
@@ -447,7 +450,7 @@ The `attn_impl == "sdpa"` path is the default and uses FlashAttention-2 via PyTo
 
 **Step-by-step:**
 
-1. **Query projection** (lines 317-324):
+1. **Query projection** (lines 114-120):
    ```python
    q = self.wq(x)                              # (bsz, seqlen, n_heads * qk_head_dim)
    q = q.view(bsz, seqlen, n_heads, qk_head_dim)
@@ -455,7 +458,7 @@ The `attn_impl == "sdpa"` path is the default and uses FlashAttention-2 via PyTo
    q_pe = self._apply_rope(q_pe, start_pos, seqlen)
    ```
 
-2. **KV compression** (lines 328-334):
+2. **KV compression** (lines 122-126):
    ```python
    kv_a = self.wkv_a(x)                        # joint projection
    kv_latent, k_pe_raw = kv_a.split([192, 24], dim=-1)
@@ -463,7 +466,7 @@ The `attn_impl == "sdpa"` path is the default and uses FlashAttention-2 via PyTo
    k_pe = self._apply_rope(k_pe_raw.unsqueeze(2), ...).squeeze(2)
    ```
 
-3. **Cache write/read** (lines 336-348):
+3. **Cache write/read** (lines 127-134):
    ```python
    if use_cache:
        self.kv_cache[:bsz, start_pos:end_pos] = kv_normed.detach()
@@ -475,7 +478,7 @@ The `attn_impl == "sdpa"` path is the default and uses FlashAttention-2 via PyTo
        ctx_pe = k_pe
    ```
 
-4. **Split wkv_b weights** (lines 354-361):
+4. **Split wkv_b weights** (lines 136-138):
    ```python
    wkv_b_full = self.wkv_b.weight.view(n_heads, 48+64, 192)
    wkv_b_k = wkv_b_full[:, :48]     # (h, 48, 192) — key up-projection
@@ -509,7 +512,7 @@ The `attn_impl == "sdpa"` path is the default and uses FlashAttention-2 via PyTo
    > the manual path is *cache-aware, but slow*. The Triton path (§C) is
    > the best of both.
 
-6. **Concatenate RoPE keys** (lines 414-416):
+6. **Concatenate RoPE keys** (lines 170-173):
    ```python
    Q_full = torch.cat([Q_nope, Q_rope], dim=-1)    # (bsz, h, seqlen_q, 72)
    K_full = torch.cat([K_nope, K_rope], dim=-1)    # (bsz, h, seqlen_k, 72)
@@ -520,7 +523,7 @@ The `attn_impl == "sdpa"` path is the default and uses FlashAttention-2 via PyTo
    K_rope = ctx_pe.unsqueeze(1).expand(-1, h, -1, -1)
    ```
 
-7. **FlashAttention call** (lines 422-427):
+7. **FlashAttention call** (lines 174-175):
    ```python
    attn = F.scaled_dot_product_attention(
        Q_full, K_full, V,
@@ -529,7 +532,7 @@ The `attn_impl == "sdpa"` path is the default and uses FlashAttention-2 via PyTo
    )
    ```
 
-8. **Output** (line 428):
+8. **Output** (line 176):
    ```python
    return self.wo(attn.transpose(1, 2).contiguous().flatten(2))
    ```
@@ -800,6 +803,157 @@ MLA matches MHA perplexity while GQA and MQA incur measurable degradation.
 - **With FlashAttention-2/3**: The fused kernel never materialises the full attention matrix, making the SDPA path highly efficient
 - **CUDA Graph compatibility**: The dynamic cache allocation complicates static CUDA graphs; use `prefill_cache` for prompt prefixes to amortise this
 - **`torch.compile`**: Supported out of the box; the critical paths (bmm, split, concat, SDPA) are inductor-friendly
+
+---
+
+## V3-Lite Architecture Deep Dives
+
+The following sections provide concrete numerical analysis and step-by-step derivations specific to the DeepSeek-V3-Lite (422M) configuration. They complement the conceptual sections above with worked calculations.
+
+### KV Cache Problem Analysis
+
+During autoregressive decoding, every new token must attend to all preceding tokens. To avoid recomputing keys and values for every past position at each step, transformers store them in a **KV cache**.
+
+**Standard MHA KV cache per token per layer:**
+
+$$
+\text{KV cache per token per layer} = 2 \times n_{\text{heads}} \times d_{\text{head}}
+$$
+
+For V3-Lite with 12 heads × 64 head_dim:
+
+$$
+2 \times 12 \times 64 = 1536 \text{ floats per token per layer}
+$$
+
+At 18 layers and 128K context:
+
+$$
+18 \times 131072 \times 1536 \times 2 \text{ bytes (BF16)} = 7.3 \text{ GB}
+$$
+
+**The real bottleneck is memory bandwidth.** During each decode step, the entire KV cache must be read from HBM into on-chip SRAM to compute attention scores. At 128K context, this means reading 7.3 GB per decode step — and this read dominates decode latency. MLA directly attacks this by reducing what's cached from 1,536 to 216 floats per token.
+
+### Absorption Trick Derivation
+
+The absorption trick is what makes MLA efficient at inference. Without it, reconstructing full K and V at every decode step would negate the cache savings.
+
+**The key insight: matrix associativity.** The attention score between query $q$ and key $k$ is:
+
+$$
+\text{score} = q^T k = q^T (W^{UK} c^{KV})
+$$
+
+Since matrix multiplication is associative, we can re-parenthesize:
+
+$$
+\text{score} = (q^T W^{UK}) c^{KV} = q'^T c^{KV}
+$$
+
+where $q' = W^{UK\,T} q$ is the query projected into latent space.
+
+**Score computation — naive vs absorbed:**
+
+Naive (without absorption):
+```
+score = (c_q · W^{UQ})^T · (c_k^{KV} · W^{UK})
+         ↑ expand Q         ↑ expand K from latent
+```
+
+With absorption:
+```
+score = c_q^T · (W^{UQ} · W^{UK^T}) · c_k^{KV}
+         \_________________________/
+             precompute once → W_absorbed
+```
+
+At inference: (1) precompute $W_{\text{absorbed}} = W^{UQ} \cdot W^{UK\,T}$ once at model load; (2) project the query $q' = W_{\text{absorbed}} \cdot c_q$; (3) compute score as $\text{score} = q'^T \cdot c_k^{KV}$ — a dot product in 192-dim latent space. **The full K (12 × 48 = 576 floats) is never materialized.**
+
+**Value-side absorption** works identically — $W^{UV}$ is absorbed into the output projection $W^O$:
+
+```
+output = attn_weights · c^{KV} · (W^{UV} · W^O)
+                          \________________/
+                          precompute once → W_absorbed_v
+```
+
+**Impact table:**
+
+| Step | Without absorption | With absorption |
+|---|---|---|
+| Score computation | Expand latent → full K (576 floats), then score | Latent-to-latent inner product (192 floats) |
+| Value aggregation | Expand latent → full V (768 floats), attend, project back | Attend directly in latent space, project once |
+| Memory reads per token | 1,536 floats (K + V) | 216 floats (latent + RoPE key) |
+
+The absorption trick transforms MLA from a computationally expensive curiosity into the **most memory-efficient attention variant available**.
+
+### Decoupled RoPE Rationale
+
+RoPE encodes position by rotating query/key vectors in 2D subspaces. The crucial property: the inner product of two RoPE-rotated vectors depends only on the *relative* position. But this is also the problem — RoPE is **not a linear operation**, and it breaks the absorption algebra.
+
+**Why RoPE breaks absorption:**
+
+$$
+\text{score} = q^T R(\theta, \Delta_{\text{pos}}) k
+$$
+
+If we try to absorb $W^{UK}$ into the query when RoPE is present:
+
+$$
+\text{score} = q^T W^{UK\,T} R(\theta, \Delta_{\text{pos}}) W^{UK} c^{KV}
+$$
+
+The rotation $R(\theta, \Delta_{\text{pos}})$ sits **between** $W^{UK\,T}$ and $W^{UK}$. Since $R$ depends on position, the product $W^{UK\,T} R W^{UK}$ **cannot be precomputed** — it changes for every query-key pair.
+
+**The split-head solution:**
+
+| Part | Dimension | RoPE? | Compressed? | Role |
+|---|---|---|---|---|
+| Content (`qk_nope_head_dim`) | 48 | No | Yes (via latent) | Semantic information |
+| Position (`qk_rope_head_dim`) | 24 | Yes | No (separate path) | Positional information |
+
+Total query/key head dim = 48 + 24 = 72. The content part goes through latent compression + absorption (no RoPE, so absorption works). The position part uses standard RoPE but operates as Multi-Query Attention (a single shared key head).
+
+**The split score:**
+
+$$
+\text{score} = \underbrace{q_{\text{content}}^T \cdot k_{\text{content}}}_{\text{content (absorbed)}} + \underbrace{q_{\text{rope}}^T \cdot k_{\text{rope}}}_{\text{position (MQA)}}
+$$
+
+The two scores are simply added. This preserves RoPE compatibility without breaking the absorption algebra.
+
+**Cache impact:** The decoupled RoPE key is shared across all heads (MQA-style), so only 24 extra floats per token are cached — not $12 \times 24 = 288$. The total cache is $192 + 24 = 216$ floats per token.
+
+### MLA vs MHA vs GQA Comparison (V3-Lite Numbers)
+
+| Property | MHA | GQA (4 groups) | MQA | **MLA** |
+|---|---|---|---|---|
+| KV cache per token | 1,536 | 512 | 128 | **216** |
+| Cache ratio (vs MHA) | 1× | 3.3× reduction | 12× reduction | **7.1× reduction** |
+| Quality vs MHA | baseline | slight drop | measurable drop | **matches MHA** |
+| Compute at decode | lowest | low | low | ~4× MHA |
+| Memory bandwidth | highest | medium | low | **lowest** |
+| RoPE compatibility | native | native | native | requires decoupled |
+
+MLA is the only mechanism that matches MHA quality while reducing cache. GQA and MQA both degrade quality — the more aggressive the compression, the worse the degradation. MLA's low-rank compression preserves full expressiveness because the up-projection $W^{UK}$ is learned, not a fixed sharing pattern.
+
+### Dimension Summary (V3-Lite Complete Reference)
+
+| Symbol | Value | Description |
+|---|---|---|
+| `dim` | 768 | Model hidden size |
+| `n_heads` | 12 | Number of attention heads |
+| `qk_nope_head_dim` | 48 | Content key/query dim per head (no RoPE) |
+| `qk_rope_head_dim` | 24 | Positional key/query dim per head (with RoPE) |
+| `qk_head_dim` | 72 | Total QK head dim (48 + 24) |
+| `v_head_dim` | 64 | Value head dim |
+| `kv_lora_rank` | 192 | KV compression latent dim |
+| `q_lora_rank` | 0 | Query compression (disabled at this scale) |
+| **KV cache per token** | **216** | 192 (latent) + 24 (RoPE key) |
+| **MHA equivalent** | 1,536 | 2 × 12 × 64 (K + V) |
+| **Reduction** | **7.1×** | vs MHA |
+
+> **See also:** [[Docs/02_Model_Architecture|Model Architecture]] for overall model topology and system design.
 
 ---
 
@@ -1427,4 +1581,4 @@ To verify a correct MLA implementation, check these invariants:
 7. **DeepSeek-V3-Lite** — This repo. 422M faithful reimplementation.
    [github.com/atandra2000/DeepSeek-V3-Lite](https://github.com/atandra2000/DeepSeek-V3-Lite)
 
-<!-- docs:verified 2026-07-31 · 5a880d2 -->
+<!-- docs:verified 2026-08-01 · e8553c4 -->

@@ -2,7 +2,7 @@
 
 Replaces the `for e in range(E): ...` Python loop in DeepSeekMoE.forward
 with one Triton launch over a sorted-token layout. See
-`documentation/triton_kernels.md` §3 for the design.
+`docs/12_Triton_Kernels.md` §3 for the design.
 """
 
 from __future__ import annotations

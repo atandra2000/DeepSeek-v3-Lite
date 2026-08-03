@@ -7,14 +7,14 @@
 
 > **Status:** Architecture, training pipeline, and inference paths are implemented and smoke-tested; the Chinchilla-optimal 8.4B-token pretraining run has not yet started.
 
-> Conceptual notes extracted from the source tree live in [`documentation/`](documentation/README.md); the authoritative MLA deep-dive is [`documentation/MLA.md`](documentation/MLA.md).
+> Conceptual notes extracted from the source tree live in [`docs/`](docs/README.md); the authoritative MLA deep-dive is [`docs/03_Multi_Head_Latent_Attention.md`](docs/03_Multi_Head_Latent_Attention.md).
 
 A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, designed for Chinchilla-optimal training on a single **A100 80GB SXM** (projected **~13-15 hours** wall time).
 
 | Config | Parameters | Tokens | GPU | Wall time | Peak VRAM | Status |
 |---|---|---|---|---|---|---|
 | `configs/pretrain_a100_422m.yaml` | ~422M | 8.4B | A100 80GB SXM | ~13-15 h | ~35 GB | Code complete |
-| `configs/pretrain_1650_2m.yaml` | ~2M | 50K vocab (GPT-2) | GTX 1650 4GB | minutes | <1 GB | Smoke-test config — see [documentation/README.md](documentation/README.md#configs) |
+| `configs/pretrain_1650_2m.yaml` | ~2M | 50K vocab (GPT-2) | GTX 1650 4GB | minutes | <1 GB | Smoke-test config — see [docs/README.md](docs/README.md#configs) |
 
 Two configurations ship in `configs/`:
 
@@ -215,7 +215,7 @@ pip install -r requirements.txt
 
 ### Launch Sequence (A100 80GB)
 
-See **[documentation/getting_started.md](documentation/getting_started.md)** §8–9 for the full workflow: CPU tests → GPU microbench → data prep → `launch_a100.sh`.
+See **[docs/00_Getting_Started.md](docs/02_Model_Architecture.md)** §8–9 for the full workflow: CPU tests → GPU microbench → data prep → `launch_a100.sh`.
 
 ```bash
 python -m pytest tests/ -q                    # CPU correctness
