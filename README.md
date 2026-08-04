@@ -1,13 +1,13 @@
-# DeepSeek-V3-Lite
+# DeepSeek-v3-Lite — Project Overview
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.x](https://img.shields.io/badge/PyTorch-2.x-ee4c2c?logo=pytorch)](https://pytorch.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![GPU: A100 80GB](https://img.shields.io/badge/GPU-A100%2080GB-76b900)](https://www.nvidia.com/en-us/data-center/a100/)
 
-> **Status:** Architecture, training pipeline, and inference paths are implemented and smoke-tested; the Chinchilla-optimal 8.4B-token pretraining run has not yet started.
+> **Status:** Architecture (MLA, DeepSeekMoE, MTP, aux-loss-free balancing, μP LR scaling, atomic safetensors checkpointing) is **implemented and CPU smoke-tested**. A full single-GPU pre-training run has **not yet been executed** (`checkpoints/` is empty). **FP8 mixed precision and DualPipe pipeline parallelism are paper-spec only — no FP8/DualPipe code is in this repo**; training runs in **BF16 on a single GPU**.
 
-> Conceptual notes extracted from the source tree live in [`docs/`](docs/README.md); the authoritative MLA deep-dive is [`docs/03_Multi_Head_Latent_Attention.md`](docs/03_Multi_Head_Latent_Attention.md). Symbol-anchored API references live in [`docs/reference/`](docs/reference/R1_config_schema.md) and operational guides in [`docs/guides/`](docs/guides/G1_debugging_playbook.md); every code-symbol citation (path + class/method) is machine-verified by `tests/test_doc_refs.py`.
+> Conceptual notes extracted from the source tree live in [`docs/`](docs/README.md); the authoritative MLA deep-dive is [`docs/concepts/attention-and-precision.md`](docs/concepts/attention-and-precision.md). Symbol-anchored API references live in [`docs/references/`](docs/references/R1_config_schema.md) and operational guides in [`docs/guides/`](docs/guides/G1_debugging_playbook.md); every code-symbol citation (path + class/method) is machine-verified by `tests/test_doc_refs.py`.
 
 A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, designed for Chinchilla-optimal training on a single **A100 80GB SXM** (projected **~30-45 hours** wall time — unverified estimate).
 
@@ -215,7 +215,7 @@ pip install -r requirements.txt
 
 ### Launch Sequence (A100 80GB)
 
-See **[docs/00_Getting_Started.md](docs/00_Getting_Started.md)** §4 for quickstart and **[docs/11_Operations_and_Testing.md](docs/11_Operations_and_Testing.md)** §4 for the launch sequence: CPU tests → GPU microbench → data prep → `launch_a100.sh`.
+See **[Getting Started](docs/guides/getting-started.md)** for quickstart and **[Operations, Testing & Triton Kernels](docs/concepts/kernels-and-ops.md)** for the launch sequence: CPU tests → GPU microbench → data prep → `launch_a100.sh`.
 
 ```bash
 python -m pytest tests/ -q                    # CPU correctness
@@ -223,6 +223,26 @@ python scripts/microbench_a100.py             # VRAM headroom (CUDA)
 python3 data/prepare_data.py --stage pretrain # once
 bash scripts/launch_a100.sh                   # ~30–45 h on A100 80GB (estimated)
 ```
+
+---
+
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| [docs/README.md](docs/README.md) | Navigation map + quick reference |
+| [Getting Started](docs/guides/getting-started.md) | Installation, smoke tests, first run |
+| [Foundations & Architecture](docs/concepts/foundations.md) | DeepSeek lineage, primitives, full topology, parameter budget, portfolio comparison |
+| [MLA & Mixed Precision](docs/concepts/attention-and-precision.md) | Low-rank KV compression, absorption, decoupled RoPE; FP8 (paper-spec) |
+| [DeepSeekMoE & MTP](docs/concepts/moe-mtp.md) | Aux-loss-free routing, shared experts; multi-token prediction, speculative decoding |
+| [DualPipe Parallelism](docs/concepts/parallelism.md) | Bidirectional pipeline parallelism — paper-spec, not implemented |
+| [Data Pipeline](docs/concepts/data-pipeline.md) | Shared 8.0B-token pipeline, tokenizer, shard format |
+| [Operations, Testing & Triton Kernels](docs/concepts/kernels-and-ops.md) | Test suite, checkpoints, VRAM budget; fused MLA/MoE kernels |
+| [Training Pipeline](docs/training.md) | Loop, AdamW, μP LR, NaN guard, checkpointing, YAML reference |
+| [Inference & Serving](docs/inference.md) | Sampling, KV cache, speculative decoding |
+| [References R1–R9](docs/references/R1_config_schema.md) | Symbol-anchored API reference for config, model, training, utils, inference |
+| [Guides G1–G5](docs/guides/G1_debugging_playbook.md) | Debugging, μP/LR tuning, Triton development, benchmarking, checkpoint ops |
+| [Contributing](docs/guides/contributing.md) | Doc contract, gates, test & code conventions |
 
 ---
 

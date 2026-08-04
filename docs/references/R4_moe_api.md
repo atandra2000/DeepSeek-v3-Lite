@@ -1,4 +1,4 @@
-# R4 — MoE API Reference (`models/moe.py`)
+# DeepSeek-v3-Lite — R4 MoE API Reference
 
 The sparse Mixture-of-Experts module: an auxiliary-loss-free routing gate
 (`AuxLossFreeGate`), a SwiGLU expert FFN (`Expert`), and the composite
@@ -7,7 +7,7 @@ shared-expert output, and reports the load-balance metric + bias-update state.
 It implements DeepSeek-V3's per-token sigmoid-gated top-k routing (V3 §2.3.3),
 single-GPU, BF16-first. Two dispatch modes exist — a pure-PyTorch per-expert
 loop (`stacked`) and a Triton grouped-GEMM path (`triton_grouped`) with an
-automatic one-shot fallback. See `../04_DeepSeekMoE.md` for the tutorial
+automatic one-shot fallback. See [DeepSeekMoE & MTP](../concepts/moe-mtp.md) for the tutorial
 treatment; this file is the API contract.
 
 ## Module map
@@ -75,7 +75,7 @@ State contract:
 
 | Attribute | Type | Role |
 |---|---|---|
-| `weight` | `nn.Parameter` `(E, dim)`, init `Normal(0, 0.006)` | Learned routing logits — gets gradients. Same init std as the rest of the model (see `../01_Foundations.md`). |
+| `weight` | `nn.Parameter` `(E, dim)`, init `Normal(0, 0.006)` | Learned routing logits — gets gradients. Same init std as the rest of the model (see [Foundations & Architecture](../concepts/foundations.md)). |
 | `bias` | `register_buffer` `(E,)` **fp32** | Load-balancing bias. NOT a `Parameter`: excluded from `named_parameters()`, the optimizer, and `nn.utils.clip_grad_norm_`; updated in place under `torch.no_grad()` only. Lives in `state_dict` (buffers are serialized), so it round-trips checkpoints. |
 
 The fp32 dtype is deliberate: the bias is updated by tiny `±speed` (0.001)
@@ -306,7 +306,7 @@ y_routed.index_add_(0, sorted_token_ids, y_sorted)
   `triton_grouped` **cannot run** the canonical config — it always raises
   `ValueError` and lands on the stacked fallback with the one-time warning.
   The kernel is only valid at smoke-config dims (`dim=256`, `moe_inter_dim=32`).
-  See `./R6_triton_api.md` and `../12_Triton_Kernels.md` for the register budget
+  See [R6 — Triton API](./R6_triton_api.md) and [Kernels & Ops](../concepts/kernels-and-ops.md) for the register budget
   and the latent `dh`-accumulation constraint in the `bwd_dw` kernel.
 
 ### `_shared_forward(self, flat: torch.Tensor) -> torch.Tensor`
@@ -348,7 +348,7 @@ return (f * P).sum() * self.n_routed_experts
   `None`), returns `torch.tensor(0.0, device=self.gate.weight.device)`.
 - **Metric only** — computed from `detach()`ed tensors, never added to the
   training loss (the aux-loss-free design replaces the auxiliary loss with the
-  bias update; see `../04_DeepSeekMoE.md` §load-balancing).
+  bias update; see [DeepSeekMoE & MTP](../concepts/moe-mtp.md) §load-balancing).
 
 Who calls it: `training/pretrain.py:Pretrainer._moe_balance_metric` — sums over
 all `moe_layers()`; `training/pretrain.py:Pretrainer.train_step` records it as
@@ -440,10 +440,9 @@ value of `moe_dispatch` also runs stacked (the `else` branch).
    dispatch paths re-sort by expert and scatter with `index_add`/`index_add_`
    (in-place for Triton), which is what makes token overlap correct.
 
-## 8. Cross-links
-
-- Tutorial: `../04_DeepSeekMoE.md` (gate math, balance derivation, Triton design),
-  `../12_Triton_Kernels.md` (kernel walkthrough), `../08_Training_Pipeline.md`
+## References
+- Tutorial: [DeepSeekMoE & MTP](../concepts/moe-mtp.md) (gate math, balance derivation, Triton design),
+  [Kernels & Ops](../concepts/kernels-and-ops.md) (kernel walkthrough), [Training Pipeline](../training.md)
   (bias-update timing in `train_step`).
 - Sibling references: `./R2_transformer_api.md` (`TransformerBlock`, `SwiGLUFFN`,
   `Transformer.moe_layers`), `./R6_triton_api.md` (both kernels + dispatch
@@ -452,4 +451,3 @@ value of `moe_dispatch` also runs stacked (the `else` branch).
 - Guides: `./../guides/G1_debugging_playbook.md` (shape errors, Triton fallback),
   `./../guides/G3_triton_development.md` (register budget), `./../guides/G4_benchmarking.md`.
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->

@@ -1,6 +1,6 @@
-# R9 — Inference API Reference
+# DeepSeek-v3-Lite — R9 Inference API Reference
 
-> Reference spine R1–R9 · module `inference/` · cross-refs: [[Docs/10_Inference_and_Serving|Inference & Serving]], [[Docs/05_Multi_Token_Prediction|MTP]], [[Docs/12_Triton_Kernels|Triton Kernels]], [[Docs/02_Model_Architecture|Model Architecture]].
+> Module `inference/` · cross-refs: [Inference & Serving](../inference.md), [MTP](../concepts/moe-mtp.md), [Triton Kernels](../concepts/kernels-and-ops.md), [Model Architecture](../concepts/foundations.md).
 
 **60-second summary.** This file is the API contract for everything that runs a trained model: the two entry points in `inference/generate.py` (a pure config loader, an interactive REPL, and the CLI `main`) and the MTP draft decoder in `inference/speculative.py`. It also pins the on-model `Transformer.generate` usage pattern and the shared sampling parameter space (temperature / top-p / top-k) that all three paths funnel through `models/transformer.py:Transformer._sample`. All numbers here are API facts from source; any latency or acceptance figures are estimates — no GPU run has been executed in this repo.
 
@@ -124,7 +124,7 @@ class SpeculativeDecoder:
     """MTP-based speculative decoder: main model predicts T1, draft predicts T2; verify and accept or fall back."""
 ```
 
-One-line purpose: depth-1 MTP speculative decoding — one draft token proposed per main-model step, accepted by a deterministic threshold rule (a deliberate simplification of Metropolis–Hastings; see [[Docs/05_Multi_Token_Prediction|MTP]] §11).
+One-line purpose: depth-1 MTP speculative decoding — one draft token proposed per main-model step, accepted by a deterministic threshold rule (a deliberate simplification of Metropolis–Hastings; see [MTP](../concepts/moe-mtp.md) §11).
 
 ### 3.1 `inference/speculative.py:SpeculativeDecoder.__init__`
 
@@ -151,7 +151,7 @@ One-line purpose: one speculative step — sample the main token, propose a gree
 
 1. `main_logits = self.main_model(last_token, start_pos=start_pos, use_cache=True)` — trunk forward #1; writes position `start_pos` to the KV cache.
 2. `token_main = Transformer._sample(main_logits[:, -1, :], temperature, top_p=1.0, top_k=0).squeeze(0)` — main token sampled with the caller's temperature; **nucleus and top-k are forced off**. `temperature=0` degenerates to argmax (greedy main).
-3. `_, hidden = self.main_model.forward_with_hidden(token_main.unsqueeze(0), start_pos=t1_pos, use_cache=True)` with `t1_pos = start_pos + 1` — trunk forward #2 (via `models/transformer.py:Transformer.forward_with_hidden`), needed because the draft conditions on the hidden state of `token_main` (the MTP contract $x_{t+2} \leftarrow (h_{t+1}, e_{t+1})$). This is why the main model runs **twice per step**; the cache write at `t1_pos` duplicates the next step's prefill write (see [[Docs/05_Multi_Token_Prediction|MTP]] §13 for the double-write analysis).
+3. `_, hidden = self.main_model.forward_with_hidden(token_main.unsqueeze(0), start_pos=t1_pos, use_cache=True)` with `t1_pos = start_pos + 1` — trunk forward #2 (via `models/transformer.py:Transformer.forward_with_hidden`), needed because the draft conditions on the hidden state of `token_main` (the MTP contract $x_{t+2} \leftarrow (h_{t+1}, e_{t+1})$). This is why the main model runs **twice per step**; the cache write at `t1_pos` duplicates the next step's prefill write (see [MTP](../concepts/moe-mtp.md) §13 for the double-write analysis).
 4. `token_main_emb = self.main_model.embed(token_main.unsqueeze(-1))` — shared embedding, so the draft conditions on the same token representation the main model committed.
 5. `draft_logits, _ = self.mtp(hidden_last, token_main_emb)` — one `models/mtp.py:MTPModule.forward` pass; `token_draft = draft_probs.argmax(dim=-1)` — **the draft is always greedy**, regardless of `temperature`.
 6. **Acceptance rule** — compares raw (temperature-1, unscaled) probabilities of the draft token:
@@ -202,7 +202,7 @@ def generate(self, input_ids: torch.Tensor, max_new_tokens: int = 512, temperatu
              top_p: float = 0.9, top_k: int = 0, eos_token_id: Optional[int] = None) -> torch.Tensor
 ```
 
-One-line purpose: the standard (non-speculative) KV-cached decode loop; full API contract in [[Docs/../reference/R2_transformer_api|R2]]. Usage pattern as exercised here:
+One-line purpose: the standard (non-speculative) KV-cached decode loop; full API contract in [R2](../references/R2_transformer_api.md). Usage pattern as exercised here:
 
 - **Guards:** `temperature < 0.0` → `ValueError` (the only negative-temperature guard in the repo).
 - **Cache + mode lifecycle:** `self.reset_cache()`; save `was_training`; `self.eval()`; restore `self.train()` on exit — safe to call on a training-mode model. KV-cache isolation between consecutive `generate` calls is guaranteed by the unconditional `reset_cache` (see `tests/test_models.py` `test_generate_kv_cache_isolation`).
@@ -216,7 +216,7 @@ One-line purpose: the standard (non-speculative) KV-cached decode loop; full API
 
 ## 5. Supporting API used by the entry points
 
-### 5.1 `MTPModule` attach contract (`models/mtp.py`, full API in [[Docs/../reference/R5_mtp_api|R5]])
+### 5.1 `MTPModule` attach contract (`models/mtp.py`, full API in [R5](../references/R5_mtp_api.md))
 
 ```python
 def __init__(self, config: dict, depth: int = 1)          # models/mtp.py:MTPModule.__init__
@@ -229,7 +229,7 @@ def forward(self, prev_hidden: torch.Tensor, target_emb: torch.Tensor) -> Tuple[
 - Shapes: `prev_hidden`, `target_emb` both `(bsz, seq, dim)`; returns `(draft_logits, hidden)` with `draft_logits` of shape `(bsz, seq, vocab_size)`; `SpeculativeDecoder` uses only `[:, -1, :]` of the logits and discards the hidden.
 - Callers: `inference/generate.py:main` (attach), `models/mtp.py:MultiTokenPrediction.__init__` (shared-head wiring), tests.
 
-### 5.2 `CheckpointManager` (`utils/checkpoint.py`, full API in [[Docs/../reference/R8_utils_api|R8]])
+### 5.2 `CheckpointManager` (`utils/checkpoint.py`, full API in [R8](../references/R8_utils_api.md))
 
 ```python
 def load(self, model: torch.nn.Module, step: int, device: str = "cuda",
@@ -250,22 +250,20 @@ def latest_step(self) -> Optional[int]
 - **Speculative mode ignores `--top_p`.** The CLI's `0.9` default applies only to the standard path; the decoder hardcodes `top_p=1.0, top_k=0`.
 - **`output_head not set`.** Any `MTPModule` used for drafting must have `set_output_head(model.head)` first; the error surfaces on the first draft forward, not at construction.
 - **`[warn] No MTP weights in checkpoint` is a warning, not an error.** The draft head proposes near-random tokens, acceptance collapses, and speculative decode silently degenerates to one token per trunk-forward — check the warning if speculative mode seems slower than standard decode. (With an untrained MTP head this repo *always* warns — there is no trained checkpoint yet, and every acceptance figure is an estimate.)
-- **Two trunk forwards per speculative step.** The win requires acceptance to clear roughly 50% — otherwise the doubled per-step cost dominates; see [[Docs/05_Multi_Token_Prediction|MTP]] §11.5 for the break-even math.
-- **Cache hygiene is caller-owned outside `generate`.** `Transformer.generate` and `SpeculativeDecoder.generate` both reset the cache; a bare `model(tokens, use_cache=True)` in a notebook does not — stale prefixes leak between prompts (see [[Docs/10_Inference_and_Serving|Inference & Serving]] "stale context" pitfall).
+- **Two trunk forwards per speculative step.** The win requires acceptance to clear roughly 50% — otherwise the doubled per-step cost dominates; see [MTP](../concepts/moe-mtp.md) §11.5 for the break-even math.
+- **Cache hygiene is caller-owned outside `generate`.** `Transformer.generate` and `SpeculativeDecoder.generate` both reset the cache; a bare `model(tokens, use_cache=True)` in a notebook does not — stale prefixes leak between prompts (see [Inference & Serving](../inference.md) "stale context" pitfall).
 - **`uint32` tokens are accepted only through `Transformer.forward`** (and `forward_with_hidden`), which casts to `long` at the boundary; `SpeculativeDecoder.generate` passes them straight to `nn.Embedding` and will fail on a non-Long dtype.
 - **Device mismatch fails inside the embedding**, not at the API surface: `input_ids` and the model must share a device; the CLI's `--device` moves the model and the tokenizer tensors to the same target.
 - **Weight tying means `head.weight` is absent from checkpoints** — the expected `strict=False` load path in `main()`; a strict load fails on the missing key.
 
 ---
 
-## 7. Cross-links
+## References
+- [Inference & Serving](../inference.md) — sampling theory, KV-cache decode lifecycle, speculative decode walkthrough, the same `generate_step` trace with shapes.
+- [MTP](../concepts/moe-mtp.md) — MTP loss/target algebra, acceptance math, the position-by-position cache-consistency trace (§13), threshold-rule bias analysis (§11.4–11.5).
+- [Model Architecture](../concepts/foundations.md) — the trunk these entry points drive.
+- [R2 — Transformer API](../references/R2_transformer_api.md) — `Transformer`, `TransformerBlock`, `forward`/`forward_with_hidden`/`reset_cache` contracts.
+- [R5 — MTP API](../references/R5_mtp_api.md) — `MTPModule` / `MultiTokenPrediction` full contracts.
+- [R8 — Utils API](../references/R8_utils_api.md) — `CheckpointManager` save/load/resume/atomicity.
+- [Triton Kernels](../concepts/kernels-and-ops.md) — fused MLA/MoE kernels behind the SDPA/stacked inference paths; canonical config falls back to `moe_dispatch="stacked"` (register cap at `moe_inter_dim=384`).
 
-- [[Docs/10_Inference_and_Serving|Inference & Serving]] — sampling theory, KV-cache decode lifecycle, speculative decode walkthrough, the same `generate_step` trace with shapes.
-- [[Docs/05_Multi_Token_Prediction|MTP]] — MTP loss/target algebra, acceptance math, the position-by-position cache-consistency trace (§13), threshold-rule bias analysis (§11.4–11.5).
-- [[Docs/02_Model_Architecture|Model Architecture]] — the trunk these entry points drive.
-- [[Docs/../reference/R2_transformer_api|R2 — Transformer API]] — `Transformer`, `TransformerBlock`, `forward`/`forward_with_hidden`/`reset_cache` contracts.
-- [[Docs/../reference/R5_mtp_api|R5 — MTP API]] — `MTPModule` / `MultiTokenPrediction` full contracts.
-- [[Docs/../reference/R8_utils_api|R8 — Utils API]] — `CheckpointManager` save/load/resume/atomicity.
-- [[Docs/12_Triton_Kernels|Triton Kernels]] — fused MLA/MoE kernels behind the SDPA/stacked inference paths; canonical config falls back to `moe_dispatch="stacked"` (register cap at `moe_inter_dim=384`).
-
-<!-- docs:verified 2026-08-04 · 59aeef3 -->

@@ -1,4 +1,4 @@
-# R5 — Multi-Token Prediction API Reference
+# DeepSeek-v3-Lite — R5 Multi-Token Prediction API Reference
 
 > **60-second summary:** `models/mtp.py` implements DeepSeek-V3's Multi-Token
 > Prediction (MTP) — $D$ auxiliary heads that each fuse the main trunk's hidden
@@ -10,7 +10,7 @@
 >
 > This is the API reference; for the derivation, length-alignment algebra, and
 > speculative-decoding theory see
-> [[Docs/05_Multi_Token_Prediction|Multi-Token Prediction]] (T5).
+> [Multi-Token Prediction](../concepts/moe-mtp.md) (T5).
 
 ---
 
@@ -61,8 +61,8 @@ MTP is **enabled** in training only when both gates pass in
 `Pretrainer.mtp_wrapper` stays `None` and the plain `Transformer` path runs.
 When enabled, the parameter count reported for μP LR scaling is the MTP wrapper
 total (418.7M), so the scaled LR becomes **8.07e-4** instead of 8.14e-4
-(see [[Docs/08_Training_Pipeline|Training]] and
-[[Docs/Guides/G2_mup_and_lr_tuning|G2]]).
+(see [Training](../training.md) and
+[G2](../guides/G2_mup_and_lr_tuning.md)).
 
 ---
 
@@ -338,7 +338,7 @@ is always `(total, main, mtp)` in that order.
   use_cache=True)` to get `hidden_last`, embeds `token_main` with
   `main_model.embed`, then drafts `draft_logits, _ = self.mtp(hidden_last,
   token_main_emb)` (single-position call: `(1, 1, dim)` in, `(1, 1, V)` out).
-  Acceptance criterion (greedy verification variant — see T5 for why):
+  Acceptance criterion (greedy verification variant — see [DeepSeekMoE & MTP](../concepts/moe-mtp.md) for why):
   $p_{\mathrm{main}}(\mathrm{draft}) \ge \text{threshold} \cdot
   \max(p_{\mathrm{draft}}(\mathrm{draft}), 10^{-12})$.
 - `inference/speculative.py:SpeculativeDecoder.generate` — prefill pass with
@@ -387,7 +387,7 @@ per token remain ~185M because depth-1 reuses the trunk hidden state.
 - **MTP attention is torch MHA, not MLA.** `MTPBlock.attn` is
   `nn.MultiheadAttention(dim, n_heads, batch_first=True, bias=False)` with
   full `(B, S, dim)` Q/K/V — a deliberate simplification vs the trunk's MLA
-  (see [[Docs/03_Multi_Head_Latent_Attention|MLA]] and
+  (see [MLA](../concepts/attention-and-precision.md) and
   `R3_mla_api.md`). No KV-lora compression, no RoPE, no cache integration in
   the block.
 - **Explicit mask, not `is_causal`.** Causality comes from the `(S, S)` `-inf`
@@ -431,13 +431,22 @@ per token remain ~185M because depth-1 reuses the trunk hidden state.
 
 ---
 
-**Related:** [[Docs/05_Multi_Token_Prediction|T5 MTP chapter]] ·
-[[Docs/02_Model_Architecture|T2 Architecture]] ·
-[[Docs/08_Training_Pipeline|T8 Training]] ·
-[[Docs/10_Inference_and_Serving|T10 Inference]] ·
+**Related:** [DeepSeekMoE & MTP](../concepts/moe-mtp.md) ·
+[Foundations & Architecture](../concepts/foundations.md) ·
+[Training Pipeline](../training.md) ·
+[Inference & Serving](../inference.md) ·
 `R2_transformer_api.md` (`forward_with_hidden`, `_sample`, `count_parameters`) ·
 `R1_config_schema.md` (`mtp_depth`, `mtp_loss_weight`) ·
 `R7_training_api.md` (`Pretrainer.train_step`) ·
 `R9_inference_api.md` (`SpeculativeDecoder`, `generate_interactive`)
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+## References
+
+- [DeepSeekMoE & MTP](../concepts/moe-mtp.md) — MTP chapter (derivation, alignment algebra, speculation theory)
+- [Foundations & Architecture](../concepts/foundations.md) — trunk architecture
+- [Training Pipeline](../training.md) — MTP loss consumption
+- [Inference & Serving](../inference.md) — speculative decoding at serving time
+- [R2 — Transformer API](../references/R2_transformer_api.md) (`forward_with_hidden`, `_sample`, `count_parameters`)
+- [R1 — Config Schema](../references/R1_config_schema.md) (`mtp_depth`, `mtp_loss_weight`)
+- [R7 — Training API](../references/R7_training_api.md) (`Pretrainer.train_step`)
+- [R9 — Inference API](../references/R9_inference_api.md) (`SpeculativeDecoder`, `generate_interactive`)

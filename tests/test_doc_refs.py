@@ -1,6 +1,6 @@
 """Machine-checked doc<->code alignment gate (docs/docs_expansion_plan.md section 5).
 
-Scans docs/**/*.md and the root README/AGENTS/SKILLS/CONTEXT/Reference for
+Scans docs/**/*.md and the root README/AGENTS/SKILLS for
 `file.py:Symbol` anchors and resolves each against the repo:
 
   - missing file          -> fail (wrong prefix, e.g. bare `mla.py:`)
@@ -60,7 +60,7 @@ def iter_docs() -> list[Path]:
     # the contributing guide) are link-linted but not symbol-scanned.
     excluded = {"docs_expansion_plan.md", "G6_contributing.md"}
     docs = [p for p in sorted(ROOT.glob("docs/**/*.md")) if p.name not in excluded]
-    for name in ("README.md", "AGENTS.md", "SKILLS.md", "CONTEXT.md", "Reference.md"):
+    for name in ("README.md", "AGENTS.md", "SKILLS.md"):
         p = ROOT / name
         if p.exists():
             docs.append(p)

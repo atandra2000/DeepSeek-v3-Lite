@@ -1,10 +1,10 @@
-# G1 — Debugging Playbook: NaN Guard, Shape Errors, Cache Bugs, Triton Fallback
+# DeepSeek-v3-Lite — Debugging Playbook
 
-> **Canonical** for "something is wrong" in DeepSeek-v3-Lite: how the NaN guard trips and rolls back, the shape contracts that produce the classic `RuntimeError`s, the two distinct Triton-fallback mechanisms (and why the canonical config always uses the PyTorch MoE path), the KV-cache lifecycle traps, and decision trees for "loss not decreasing" and "divergence". Procedural guide — the surrounding theory lives in [[Docs/08_Training_Pipeline]], [[Docs/11_Operations_and_Testing]], and the API references [[reference/R7_training_api|R7]] / [[reference/R3_mla_api|R3]] / [[reference/R6_triton_api|R6]].
+> **Canonical** for "something is wrong" in DeepSeek-v3-Lite: how the NaN guard trips and rolls back, the shape contracts that produce the classic `RuntimeError`s, the two distinct Triton-fallback mechanisms (and why the canonical config always uses the PyTorch MoE path), the KV-cache lifecycle traps, and decision trees for "loss not decreasing" and "divergence". Procedural guide — the surrounding theory lives in [08 Training Pipeline](../training.md), [11 Operations and Testing](../concepts/kernels-and-ops.md), and the API references [R7](../references/R7_training_api.md) / [R3](../references/R3_mla_api.md) / [R6](../references/R6_triton_api.md).
 
-> **Status:** everything below is implemented and covered by the CPU test suite (199 nodes: 189 pass + 10 GPU-gated skips, see [[Docs/11_Operations_and_Testing]]), but **no GPU training run has ever executed** — `checkpoints/` is empty, so any timing, memory, or loss-curve figure quoted here as "expected" is an estimate, not a measurement.
+> **Status:** everything below is implemented and covered by the CPU test suite (199 nodes: 189 pass + 10 GPU-gated skips, see [11 Operations and Testing](../concepts/kernels-and-ops.md)), but **no GPU training run has ever executed** — `checkpoints/` is empty, so any timing, memory, or loss-curve figure quoted here as "expected" is an estimate, not a measurement.
 
-**Depends on:** [[Docs/08_Training_Pipeline]] · [[Docs/11_Operations_and_Testing]] · **Read next:** [[guides/G2_mup_and_lr_tuning]] (the LR side of a NaN), [[guides/G5_checkpoint_ops]] (what rollback restores), [[guides/G3_triton_development]] (kernel-side fallbacks)
+**Depends on:** [Training Pipeline](../training.md) · [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) · **Read next:** [G2 μP & LR Tuning](../guides/G2_mup_and_lr_tuning.md) (the LR side of a NaN), [G5 Checkpoint Ops](../guides/G5_checkpoint_ops.md) (what rollback restores), [G3 Triton Development](../guides/G3_triton_development.md) (kernel-side fallbacks)
 
 ---
 
@@ -92,7 +92,7 @@ python -m pytest tests/test_training.py -v            # includes TestNanGuardRol
 Work the checklist in order — the last item is the most common real cause.
 
 - [ ] **LR: is it the μP value, or something else?** The canonical config sets `mup_lr: true`; `Pretrainer.__init__` overrides `lr` at construction:
-  `new_lr = config.mup_lr_reference * (config.mup_lr_reference_params / total) ** 0.5`, with the reference anchored at `6.0e-4` @ 757\,226\,496 params → **8.14e-4** for the 411.6M base model, **8.07e-4** with MTP (418.7M). The startup log prints `µP LR scaling: 8.00e-04 → 8.14e-04 (ref 6.00e-04 @ 757,226,496 params)`. If you instead see the raw `2.2e-4` dataclass default or the config's `8.0e-4` in the `lr=` column, `mup_lr` was silently off (typo, nested-config key shadowing) — and an 8e-4-class LR on an un-μP'd model is a classic diverge recipe. See [[guides/G2_mup_and_lr_tuning]].
+  `new_lr = config.mup_lr_reference * (config.mup_lr_reference_params / total) ** 0.5`, with the reference anchored at `6.0e-4` @ 757\,226\,496 params → **8.14e-4** for the 411.6M base model, **8.07e-4** with MTP (418.7M). The startup log prints `µP LR scaling: 8.00e-04 → 8.14e-04 (ref 6.00e-04 @ 757,226,496 params)`. If you instead see the raw `2.2e-4` dataclass default or the config's `8.0e-4` in the `lr=` column, `mup_lr` was silently off (typo, nested-config key shadowing) — and an 8e-4-class LR on an un-μP'd model is a classic diverge recipe. See [G2 mup and lr tuning](../guides/G2_mup_and_lr_tuning.md).
 - [ ] **Is warmup actually running?** The scheduler horizon is the *opt-step* count: `opt_steps = max(1, config.max_steps // config.gradient_accumulation_steps)` → 512\,000 // 4 = **128\,000** opt steps for the canonical run, and `warmup_steps: 2000` is in that same space (2000 optimizer steps ≈ 8000 micro-steps). A model whose LR jumps straight to 8e-4 (e.g. scheduler never stepped, or horizon computed in micro-steps) shows the first NaN inside the first thousand micro-steps. `training/pretrain.py:make_warmup_cosine_lambda` is the closed form.
 - [ ] **MoE routing spikes.** The aux-loss-free gate pushes expert *counts* toward balance by nudging biases (`models/moe.py:DeepSeekMoE.update_gate_bias`, `bias_update_speed: 0.001`, `bias_update_every: 1` canonical). If routing collapses onto one expert, that expert's weights see a large fraction of the tokens and can blow up. The log's `balance_loss=…` column (from `models/moe.py:DeepSeekMoE.get_load_balance_loss`, logged by `utils/logging.py:TrainingLogger.log`) should hover near `n_activated_experts = 4` — a balance_loss climbing toward 20 (all routed tokens to one of 20 experts) is a routing crash, not an arithmetic one.
 - [ ] **Shard corruption.** Tokens are stored as uint32 mmap'd shards (`shard_*.bin`). A corrupted shard can yield tokens `≥ vocab_size` — which raises `IndexError` in `nn.Embedding` (shape section, §4.4) — or, worse, in-range but garbage tokens that spike the loss for exactly one batch. Because rollback does *not* restore the sampler RNG, a data-corruption NaN recurs at a different step each time; a deterministic NaN at the same step is arithmetic, not data. Rebuild with `python3 data/prepare_data.py --stage pretrain`, or use the tiny local shard builder `python scripts/build_small_pretrain_data.py --tokenizer gpt2 --source synthetic --target-tokens 200000`.
@@ -104,7 +104,7 @@ Work the checklist in order — the last item is the most common real cause.
 ```mermaid
 flowchart TD
     A[nan-guard fired] --> B{First time or streak?}
-    B -- streak < 5 --> C[Inspect: LR in log = muP value? warmup active? balance_loss rising?]
+    B -- streak < 5 --> C[Inspect: LR in log = μP value? warmup active? balance_loss rising?]
     B -- 5 consecutive --> D[Rolled back to latest complete checkpoint]
     C --> E{Root cause found?}
     E -- no --> F[Reduce LR ~2x for this experiment only, or fix mup_lr wiring]
@@ -180,7 +180,7 @@ if use_cache:
     ctx_pe = self.pe_cache[:bsz, :end_pos]
 ```
 
-The shape contract: cache tensors are `(new_bsz, max_seq_len, kv_lora_rank)` and `(new_bsz, max_seq_len, qk_rope_head_dim)` — MLA caches the *compressed latent* `(d_c + d_R) = 216` floats/token/layer, not per-head K/V (see [[Docs/03_Multi_Head_Latent_Attention]] and [[reference/R3_mla_api|R3]]). Write and read must agree on `bsz`, `start_pos`, `end_pos`; a mismatch shows up as an SDPA size error when `:end_pos` disagrees with the mask's `kv_len`, or as garbage logits when the write slice is wider than the read slice (future tokens overwrite past ones). Also: `end_pos > max_seq_len` raises `RuntimeError(f"Layer {self.layer_idx}: end_pos {end_pos} exceeds max_seq_len {self.max_seq_len}")` — the "context too long" error, not a mask error.
+The shape contract: cache tensors are `(new_bsz, max_seq_len, kv_lora_rank)` and `(new_bsz, max_seq_len, qk_rope_head_dim)` — MLA caches the *compressed latent* `(d_c + d_R) = 216` floats/token/layer, not per-head K/V (see [03 Multi Head Latent Attention](../concepts/attention-and-precision.md) and [R3](../references/R3_mla_api.md)). Write and read must agree on `bsz`, `start_pos`, `end_pos`; a mismatch shows up as an SDPA size error when `:end_pos` disagrees with the mask's `kv_len`, or as garbage logits when the write slice is wider than the read slice (future tokens overwrite past ones). Also: `end_pos > max_seq_len` raises `RuntimeError(f"Layer {self.layer_idx}: end_pos {end_pos} exceeds max_seq_len {self.max_seq_len}")` — the "context too long" error, not a mask error.
 
 ### 4.4 Shape-error checklist
 
@@ -243,7 +243,7 @@ def _check_dim_limits(I: int, D: int) -> None:
         )
 ```
 
-The canonical config has `moe_inter_dim: 384` (I) and `dim: 768` (D) — **both exceed 256**, so with `moe_dispatch: "triton_grouped"` the kernel raises `ValueError` on every forward and the module prints the fallback warning once, then runs stacked **forever**. This is structural, not a bug: the kernel is valid at smoke-config dims (I, D ≤ 256, e.g. `configs/pretrain_1650_2m.yaml` has `moe_inter_dim: 32`, `dim: 64`). The MLA kernel has **no such cap at canonical dims** — `kv_lora_rank=192`, `qk_nope=48`, `qk_rope=24`, `v=64` all fit, and sequence length is tiled — so the MLA fused path *can* activate on the canonical config. Full register-budget math: [[Docs/12_Triton_Kernels]] and [[reference/R6_triton_api|R6]].
+The canonical config has `moe_inter_dim: 384` (I) and `dim: 768` (D) — **both exceed 256**, so with `moe_dispatch: "triton_grouped"` the kernel raises `ValueError` on every forward and the module prints the fallback warning once, then runs stacked **forever**. This is structural, not a bug: the kernel is valid at smoke-config dims (I, D ≤ 256, e.g. `configs/pretrain_1650_2m.yaml` has `moe_inter_dim: 32`, `dim: 64`). The MLA kernel has **no such cap at canonical dims** — `kv_lora_rank=192`, `qk_nope=48`, `qk_rope=24`, `v=64` all fit, and sequence length is tiled — so the MLA fused path *can* activate on the canonical config. Full register-budget math: [12 Triton Kernels](../concepts/kernels-and-ops.md) and [R6](../references/R6_triton_api.md).
 
 ### 5.4 Determining which path a run actually executed
 
@@ -303,7 +303,7 @@ The reallocation is a **fresh `torch.zeros`** — existing contents are dropped,
 flowchart TD
     A[loss flat for 1000+ opt steps] --> B{What does lr= column say?}
     B -- 0.0 or stuck at warmup start --> C[Scheduler not stepping: check opt_steps horizon = max_steps // grad_accum; warmup in opt-step space]
-    B -- correct muP value 8.14e-4/8.07e-4 --> D{balance_loss growing?}
+    B -- correct μP value 8.14e-4/8.07e-4 --> D{balance_loss growing?}
     D -- yes --> E[MoE routing collapse: gate bias runaway, check bias_update_speed/every]
     D -- no --> F{Does a tiny overfit test learn?}
     F -- no --> G[Model/data wiring: tokenizer mismatch, target shift broken, mask leakage]
@@ -314,7 +314,7 @@ flowchart TD
 Two decisive experiments, in order:
 
 1. **Overfit a single batch.** Take one batch, train on it for a few hundred steps (tiny config: `--config configs/pretrain_1650_2m.yaml`, or the `small_cfg` fixture). A correct wiring drives loss toward 0. If it can't overfit one batch, the bug is in the model/data wiring (mask, targets, tokenizer), not the schedule. Run the wiring tests first: `python -m pytest tests/test_models.py -k "chunked or forward" -v` and `python -m pytest tests/test_training.py -v`.
-2. **Check the tokenizer contract.** The canonical model has vocab 100\,018 (`deepseek-coder-v2-lite`); the tiny config uses GPT-2's 50\,257. Data built with the wrong tokenizer either crashes (ids ≥ vocab) or trains to a wrong loss floor — and "correct" losses are unknowable a priori here because **no GPU run has ever executed**: there is no published reference curve for this repo, so "expected loss" must come from a scaling-law estimate (see [[Docs/01_Foundations]]) or your own small-scale run, not from a checkpoint.
+2. **Check the tokenizer contract.** The canonical model has vocab 100\,018 (`deepseek-coder-v2-lite`); the tiny config uses GPT-2's 50\,257. Data built with the wrong tokenizer either crashes (ids ≥ vocab) or trains to a wrong loss floor — and "correct" losses are unknowable a priori here because **no GPU run has ever executed**: there is no published reference curve for this repo, so "expected loss" must come from a scaling-law estimate (see [01 Foundations](../concepts/foundations.md)) or your own small-scale run, not from a checkpoint.
 
 ### 7.2 "Loss is diverging"
 
@@ -325,7 +325,7 @@ flowchart TD
     B -- no --> D{Spikes then recovers?}
     D -- yes --> E[Single bad batch: corrupt shard or pathological sequence - check data around spike step]
     D -- no --> F{Steady growth from step 0?}
-    F -- yes --> G[LR too high for the schedule: verify muP wiring, warmup, grad_clip]
+    F -- yes --> G[LR too high for the schedule: verify μP wiring, warmup, grad_clip]
     F -- no --> H{Diverges after N steps?}
     H -- yes --> I[Late-run instability: LR not decaying (horizon bug) or MoE expert collapse]
 ```
@@ -350,13 +350,11 @@ flowchart TD
 
 ---
 
-## 9. See Also
+## References
+- [08 Training Pipeline](../training.md) — the loop, AdamW, scheduler, and the μP derivation behind §3.2.
+- [11 Operations and Testing](../concepts/kernels-and-ops.md) — test-suite map, checkpoint format, and the ops-level view of the same guard/fallback contracts.
+- [12 Triton Kernels](../concepts/kernels-and-ops.md) — register-budget math and kernel design behind §5.
+- [R7 — Training API](../references/R7_training_api.md) · [R3 — MLA API](../references/R3_mla_api.md) · [R6 — Triton API](../references/R6_triton_api.md) — per-symbol contracts.
+- [G2 — μP and LR tuning](../guides/G2_mup_and_lr_tuning.md) — the LR side of a NaN.
+- [G5 — Checkpoint Ops](../guides/G5_checkpoint_ops.md) — what the rollback state machine depends on.
 
-- [[Docs/08_Training_Pipeline]] — the loop, AdamW, scheduler, and the μP derivation behind §3.2.
-- [[Docs/11_Operations_and_Testing]] — test-suite map, checkpoint format, and the ops-level view of the same guard/fallback contracts.
-- [[Docs/12_Triton_Kernels]] — register-budget math and kernel design behind §5.
-- [[reference/R7_training_api|R7 — Training API]] · [[reference/R3_mla_api|R3 — MLA API]] · [[reference/R6_triton_api|R6 — Triton API]] — per-symbol contracts.
-- [[guides/G2_mup_and_lr_tuning|G2 — μP and LR tuning]] — the LR side of a NaN.
-- [[guides/G5_checkpoint_ops|G5 — Checkpoint Ops]] — what the rollback state machine depends on.
-
-<!-- docs:verified 2026-08-04 · 59aeef3 -->

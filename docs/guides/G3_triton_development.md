@@ -1,8 +1,8 @@
-# G3 — Triton Kernel Development Guide
+# DeepSeek-v3-Lite — Triton Kernel Development
 
 > How to write, extend, gate, test, and benchmark custom Triton kernels in this repo. Covers the contract every kernel must satisfy, the register-budget math behind the 256-element caps, the two sanctioned kernels' known extension points, and the end-to-end recipe for adding a new one.
 
-**Depends on:** [[Docs/12_Triton_Kernels]] (the tutorial), [[Docs/04_DeepSeekMoE]], [[Docs/03_Multi_Head_Latent_Attention]] · **Read next:** [[Docs/guides/G4_benchmarking]]
+**Depends on:** [Triton Kernels](../concepts/kernels-and-ops.md) (the tutorial), [DeepSeekMoE & MTP](../concepts/moe-mtp.md), [MLA & Mixed Precision](../concepts/attention-and-precision.md) · **Read next:** [G4 Benchmarking](../guides/G4_benchmarking.md)
 
 **Source files:** `models/mla_triton.py`, `models/moe_triton.py`, `models/_triton_dispatch.py`, `models/mla.py`, `models/moe.py`, `models/transformer.py`, `tests/test_mla_triton.py`, `tests/test_moe_triton.py`, `scripts/microbench_a100.py`, `scripts/step_time_a100.py`
 
@@ -10,7 +10,7 @@
 
 ## 0. 60-second summary
 
-This repo has exactly two sanctioned custom Triton kernels: fused MLA attention (`models/mla_triton.py:triton_mla_attention`) and fused grouped-GEMM MoE dispatch (`models/moe_triton.py:triton_grouped_moe_dispatch`). Both are **opt-in** (config key + `ENABLE_TRITON_KERNELS=1`), both ship a pure-PyTorch reference for CPU tests, both wrap the kernel in a `torch.autograd.Function` with FP32 accumulators, and both are gated by a 256-element register cap. Before any other component gets a kernel, AGENTS.md hard rule 1 requires updating AGENTS.md and `docs/12_Triton_Kernels.md` — and rule 2 requires a measured ≥1.5× speedup over the raw-PyTorch path before it may become a default. This guide is the procedural companion to that contract: what the rules are, where the caps come from, how to extend the two existing kernels, and the step-by-step recipe for a third.
+This repo has exactly two sanctioned custom Triton kernels: fused MLA attention (`models/mla_triton.py:triton_mla_attention`) and fused grouped-GEMM MoE dispatch (`models/moe_triton.py:triton_grouped_moe_dispatch`). Both are **opt-in** (config key + `ENABLE_TRITON_KERNELS=1`), both ship a pure-PyTorch reference for CPU tests, both wrap the kernel in a `torch.autograd.Function` with FP32 accumulators, and both are gated by a 256-element register cap. Before any other component gets a kernel, AGENTS.md hard rule 1 requires updating AGENTS.md and `concepts/kernels-and-ops.md` — and rule 2 requires a measured ≥1.5× speedup over the raw-PyTorch path before it may become a default. This guide is the procedural companion to that contract: what the rules are, where the caps come from, how to extend the two existing kernels, and the step-by-step recipe for a third.
 
 ## 1. Why this guide exists
 
@@ -50,7 +50,7 @@ Write it, gate it (ENABLE_TRITON_KERNELS), test it (§3.7), document it.
 
 Two hard constraints from AGENTS.md that cut this tree short most of the time:
 
-- **Rule 1:** "Bulk of the codebase (RMSNorm, SwiGLU, embeddings, LM head, loss, gate, MLA SDPA, MTP, inference) stays raw PyTorch. … No other component gets a custom kernel without updating this file and `docs/12_Triton_Kernels.md`."
+- **Rule 1:** "Bulk of the codebase (RMSNorm, SwiGLU, embeddings, LM head, loss, gate, MLA SDPA, MTP, inference) stays raw PyTorch. … No other component gets a custom kernel without updating this file and `concepts/kernels-and-ops.md`."
 - **Rule 2:** the ≥1.5× bar — "below that, do not enable by default."
 
 ## 3. The kernel contract, rule by rule
@@ -85,7 +85,7 @@ out = _TritonGroupedMoeFunction.apply(x_sorted, w1, w2, w3, expert_offsets)
 return out * sorted_weights.unsqueeze(-1)
 ```
 
-That last line is a contract, not an optimization: the gate must receive a gradient, which requires `sorted_weights` to stay on the autograd graph (see [[Docs/04_DeepSeekMoE]] for the aux-loss-free mechanism).
+That last line is a contract, not an optimization: the gate must receive a gradient, which requires `sorted_weights` to stay on the autograd graph (see [04 DeepSeekMoE](../concepts/moe-mtp.md) for the aux-loss-free mechanism).
 
 The Function itself follows the FA2 re-compute pattern:
 
@@ -95,13 +95,13 @@ The Function itself follows the FA2 re-compute pattern:
 
 ### 3.4 FP32 accumulators, BF16 I/O
 
-"BF16 autocast, FP32 AdamW" ([[Docs/08_Training_Pipeline]]) extends all the way down: `tl.dot` accumulates in FP32, and the kernels only round at the boundary. The MoE forward builds `gate_acc`/`up_acc` as `tl.zeros(..., dtype=tl.float32)` chained through `tl.dot(x_tile, tl.trans(w1_tile), acc=gate_acc)`; the dw kernel accumulates into FP32 locals and the backward casts once on return (`dw1.to(w1.dtype)`). Where a dot needs matching operand dtypes (Triton requires it), the cast is explicit and deliberate: `tl.dot(p.to(v_tile.dtype), v_tile)` in MLA, `h_typed = h.to(x_ptr.dtype.element_ty)` in MoE — a documented accuracy tradeoff, not an accident.
+"BF16 autocast, FP32 AdamW" ([08 Training Pipeline](../training.md)) extends all the way down: `tl.dot` accumulates in FP32, and the kernels only round at the boundary. The MoE forward builds `gate_acc`/`up_acc` as `tl.zeros(..., dtype=tl.float32)` chained through `tl.dot(x_tile, tl.trans(w1_tile), acc=gate_acc)`; the dw kernel accumulates into FP32 locals and the backward casts once on return (`dw1.to(w1.dtype)`). Where a dot needs matching operand dtypes (Triton requires it), the cast is explicit and deliberate: `tl.dot(p.to(v_tile.dtype), v_tile)` in MLA, `h_typed = h.to(x_ptr.dtype.element_ty)` in MoE — a documented accuracy tradeoff, not an accident.
 
 ### 3.5 Block sizes, autotune, pre-warm
 
 Block sizes are `tl.constexpr` and computed from real dims with `models/mla_triton.py:_next_pow2` (Triton requires power-of-two `tl.arange` lengths). The AGENTS.md contract adds: "tuned with `@triton.autotune` over a small grid of (block size, num_warps, num_stages) configs. Pre-warm at `__init__` to amortise the first-call compile cost."
 
-Current state, honestly: **neither kernel uses `@triton.autotune` today.** The launch sites hard-code `BLOCK_Q=BLOCK_N=64` (MLA), `BLOCK_T=32` (MoE), `num_warps=4`, `num_stages=2` — a deliberate choice for a single-model repo with two fixed shapes, per `docs/12_Triton_Kernels.md` §8. Both kernels are structured to accept autotune without rework: when you add it, (a) put the decorator on the `@triton.jit` kernel, not inside the Function, (b) make `key=` cover every shape-dependent dimension (for MLA `["S_q", "S_kv", "R", "D_nope", "D_rope", "D_v"]`; for MoE `["T", "D", "I", "E"]`), and (c) keep 4–8 hand-picked configs, not a sweep. Pre-warm: there is no kernel warmup call in the repo yet — the first real step pays the compile tax. `scripts/step_time_a100.py:main`'s `--warmup` steps absorb it for benchmarks, but a `__init__`-time warmup call with the real shapes is the contract's intent and still open work.
+Current state, honestly: **neither kernel uses `@triton.autotune` today.** The launch sites hard-code `BLOCK_Q=BLOCK_N=64` (MLA), `BLOCK_T=32` (MoE), `num_warps=4`, `num_stages=2` — a deliberate choice for a single-model repo with two fixed shapes, per `concepts/kernels-and-ops.md` §8. Both kernels are structured to accept autotune without rework: when you add it, (a) put the decorator on the `@triton.jit` kernel, not inside the Function, (b) make `key=` cover every shape-dependent dimension (for MLA `["S_q", "S_kv", "R", "D_nope", "D_rope", "D_v"]`; for MoE `["T", "D", "I", "E"]`), and (c) keep 4–8 hand-picked configs, not a sweep. Pre-warm: there is no kernel warmup call in the repo yet — the first real step pays the compile tax. `scripts/step_time_a100.py:main`'s `--warmup` steps absorb it for benchmarks, but a `__init__`-time warmup call with the real shapes is the contract's intent and still open work.
 
 ### 3.6 Double opt-in: `ENABLE_TRITON_KERNELS` and no silent fallback
 
@@ -136,11 +136,11 @@ The suite is 199 tests (189 pass + 10 GPU-gated skips) on a CPU laptop; the Trit
 AGENTS.md rule 2: "For the two sanctioned Triton paths, target ≥ 1.5× speedup over the raw-PyTorch path in `scripts/microbench_a100.py`; below that, do not enable by default." Two honest caveats:
 
 - `scripts/microbench_a100.py:main` measures **peak VRAM**, not speed — the ≥1.5× bar is therefore a policy target whose measurement harness does not exist yet. §7 below is the methodology that will produce it.
-- The MoE bar is **structurally blocked at the canonical config**: `moe_inter_dim=384` and `dim=768` exceed the 256 cap, so `moe_dispatch: "triton_grouped"` always falls back to `stacked` there. The bar is only reachable at smoke-config dims (`configs/pretrain_1650_2m.yaml`, `I=32, D=64`) until the §5.2 extension lands. The MLA kernel, by contrast, is usable at the canonical config (`kv_lora_rank=192`, `qk_nope_head_dim=48`, `qk_rope_head_dim=24`, `v_head_dim=64` — all under the cap). No GPU run has measured either kernel; every speed figure in this guide and [[Docs/12_Triton_Kernels]] is an estimate.
+- The MoE bar is **structurally blocked at the canonical config**: `moe_inter_dim=384` and `dim=768` exceed the 256 cap, so `moe_dispatch: "triton_grouped"` always falls back to `stacked` there. The bar is only reachable at smoke-config dims (`configs/pretrain_1650_2m.yaml`, `I=32, D=64`) until the §5.2 extension lands. The MLA kernel, by contrast, is usable at the canonical config (`kv_lora_rank=192`, `qk_nope_head_dim=48`, `qk_rope_head_dim=24`, `v_head_dim=64` — all under the cap). No GPU run has measured either kernel; every speed figure in this guide and [12 Triton Kernels](../concepts/kernels-and-ops.md) is an estimate.
 
 ## 4. Register-budget math: where the 256 caps come from
 
-Both caps — `models/mla_triton.py:_check_mla_dim_limits` (R, D_nope, D_rope, D_v ≤ 256) and `models/moe_triton.py:_check_dim_limits` (I, D ≤ 256) — are tile-arithmetic decisions, not policy. The reasoning (all figures `[INFERENCE]` — no profiler has run; see [[Docs/12_Triton_Kernels]] §7):
+Both caps — `models/mla_triton.py:_check_mla_dim_limits` (R, D_nope, D_rope, D_v ≤ 256) and `models/moe_triton.py:_check_dim_limits` (I, D ≤ 256) — are tile-arithmetic decisions, not policy. The reasoning (all figures `[INFERENCE]` — no profiler has run; see [12 Triton Kernels](../concepts/kernels-and-ops.md) §7):
 
 - A thread has **255 addressable 32-bit registers**; beyond that the compiler spills to local memory (L1/L2-backed, much slower).
 - A `num_warps=4` program is 128 threads, so a tile of $N$ elements costs roughly $N/128$ registers per thread.
@@ -159,13 +159,13 @@ What works today: the kernel fuses K_nope/V materialisation, RoPE, and online-so
 
 Open work, in order of value:
 
-1. **Fused backward.** The v1 stub re-runs `mla_attention_reference` inside `backward` — correct by construction, but it costs a full Python reference forward + autograd every step, and it stacks with grad-checkpoint recompute (see the `★ Insight` in [[Docs/12_Triton_Kernels]] §6). A fused `dx`-style backward (mirroring the MoE pattern) removes the second recompute.
-2. **Autotune + pre-warm** (§3.5), then measure ([[Docs/guides/G4_benchmarking]]).
+1. **Fused backward.** The v1 stub re-runs `mla_attention_reference` inside `backward` — correct by construction, but it costs a full Python reference forward + autograd every step, and it stacks with grad-checkpoint recompute (see the `★ Insight` in [12 Triton Kernels](../concepts/kernels-and-ops.md) §6). A fused `dx`-style backward (mirroring the MoE pattern) removes the second recompute.
+2. **Autotune + pre-warm** (§3.5), then measure ([G4 benchmarking](../guides/G4_benchmarking.md)).
 3. **Watch shared memory if you raise `num_stages`:** the K-loop pipeline prefetches `ctx_kv` blocks; at `BLOCK_R=256` there is little shared-memory headroom.
 
 ### 5.2 MoE grouped kernel (`models/moe_triton.py`) — the canonical-config path
 
-The known blocker: `_check_dim_limits` raises at `I=384, D=768`, so the canonical config always runs `stacked`. Lifting the cap is a three-part change, all documented in [[Docs/12_Triton_Kernels]] §5.7:
+The known blocker: `_check_dim_limits` raises at `I=384, D=768`, so the canonical config always runs `stacked`. Lifting the cap is a three-part change, all documented in [12 Triton Kernels](../concepts/kernels-and-ops.md) §5.7:
 
 1. **I-tiling in fwd/dx.** Today `i_idx = tl.arange(0, BLOCK_I)` covers the *full* I in one tile. Add an outer `for i_start in range(0, I, BLOCK_I)` loop and accumulate `gate_acc`/`up_acc` across I-blocks (they are already fp32 `acc=` chains).
 2. **`dh` must become a D-accumulator in the dw kernel.** This is the latent bug to fix while you're there: `_grouped_moe_bwd_dw_kernel` computes `dh = tl.dot(dy_tile, w2_tile)` once per D-block and never accumulates. The true gradient is `dh = dy @ w2` summed over *all* D. Today it is exact only because `D ≤ BLOCK_D` guarantees a single D-block; the moment D-tiling is enabled without an `acc=` chain on `dh`, the weight gradients silently become partial sums. `[INFERENCE]` — unreachable today, a correctness landmine tomorrow.
@@ -207,7 +207,7 @@ class _CustomFunction(torch.autograd.Function):
 
 **Step 6 — test file.** `tests/test_<kernel>_triton.py` with: reference-vs-kernel comparisons at `atol=1e-2` (BF16, GPU-gated), `torch.autograd.gradcheck` (or at minimum per-input grad-presence + reference-gradient comparison) on a tiny fp32 config, a shape/NaN-finite test, an import-surface test (no-triton path), and the `ValueError` cap test. GPU tests behind `pytest.mark.skipif(not (HAS_TRITON and torch.cuda.is_available()))` so the 199-node CPU suite stays green. Add the full-model agree test (`test_sdpa_and_triton_agree` pattern) once the module wiring exists.
 
-**Step 7 — docs and contract.** Update AGENTS.md (rule 1 requires the sanctioned list to grow) and `docs/12_Triton_Kernels.md`; the API reference lives in `reference/R6_triton_api.md`. Every cited symbol must resolve under `tests/test_doc_refs.py` — run `python3 tests/test_doc_refs.py` before finishing.
+**Step 7 — docs and contract.** Update AGENTS.md (rule 1 requires the sanctioned list to grow) and `concepts/kernels-and-ops.md`; the API reference lives in `references/R6_triton_api.md`. Every cited symbol must resolve under `tests/test_doc_refs.py` — run `python3 tests/test_doc_refs.py` before finishing.
 
 **Step 8 — benchmark before defaulting.** §7 methodology, ≥1.5× bar, and only then consider making the key default-on. Until then it stays opt-in.
 
@@ -215,7 +215,7 @@ class _CustomFunction(torch.autograd.Function):
 
 The repo's existing GPU scripts: `scripts/microbench_a100.py:main` (VRAM: builds the canonical model, runs one fwd+bwd, compares measured peak against `utils/memory.py:estimate_model_memory_gb`) and `scripts/step_time_a100.py:main` (end-to-end ms/step, tokens/s, MFU vs a `--peak-tflops` argument; defaults `--steps 20 --warmup 5`, TF32 on, `torch.compile(mode="max-autotune")` by default, AdamW `fused=True`). Step-level throughput is also logged live by `utils/logging.py:TrainingLogger.log` (`tokens_per_sec` over a `log_interval` rolling window — deliberately a whole-step number, not a kernel number).
 
-**Kernel-level comparisons — the honest protocol** (from [[Docs/12_Triton_Kernels]] §9; none of it has run yet):
+**Kernel-level comparisons — the honest protocol** (from [12 Triton Kernels](../concepts/kernels-and-ops.md) §9; none of it has run yet):
 
 1. **Synchronize before timing** — `torch.cuda.synchronize()` around `time.perf_counter()`; kernel launches are async.
 2. **Warm up, then median** — discard the first call (compile + cache fill); `triton.testing.do_bench` implements exactly this.
@@ -246,6 +246,13 @@ The honest deliverable when the first A100 run lands: a table of per-path step t
 3. **You add a third kernel and skip the `ValueError` cap test. What breaks?** Nothing on the laptop — but the `199`-node CPU suite no longer documents the kernel's boundary, and a future config change could silently route the kernel into a register-spill regime on GPU with no test noticing (§3.7).
 4. **`ENABLE_TRITON_KERNELS=1` is set and triton is installed, yet a run still executes the PyTorch path. Name two legal ways that happens.** The config doesn't request the Triton dispatch key (both must be present), or the kernel raised `ValueError`/`ImportError` at runtime and the module's one-shot fallback engaged (§3.6). Both are by design — a config checked in without the env var must never take the Triton path, and a run that requested it must never crash silently.
 
-> **Next:** [[Docs/guides/G4_benchmarking]] — microbench/step_time/MFU methodology.
+> **Next:** [G4 Benchmarking](../guides/G4_benchmarking.md) — microbench/step_time/MFU methodology.
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+## References
+
+- [Triton Kernels](../concepts/kernels-and-ops.md) — kernel-by-kernel tutorial, register budget, autotune
+- [MLA & Mixed Precision](../concepts/attention-and-precision.md) — MLA math behind the flash kernel
+- [DeepSeekMoE & MTP](../concepts/moe-mtp.md) — gate math, stacked-vs-grouped layouts
+- [R6 — Triton API](../references/R6_triton_api.md) - per-symbol kernel contract
+- [G4 — Benchmarking](../guides/G4_benchmarking.md) - microbench/step-time/MFU methodology
+- Source files: `models/mla_triton.py`, `models/moe_triton.py`, `models/_triton_dispatch.py`, `tests/test_mla_triton.py`, `tests/test_moe_triton.py`

@@ -1,10 +1,10 @@
-# G5 — Checkpoint Operations: Save, Load, Resume & Recovery
+# DeepSeek-v3-Lite — Checkpoint Operations
 
-> **Canonical** for DeepSeek-v3-Lite's checkpoints: the three-file-per-step layout, the atomic-write mechanics that make a checkpoint crash-safe, shared-tensor dedup under weight tying, the two resume paths, and the disaster-recovery playbook. Procedural guide — the surrounding theory lives in [[Docs/08_Training_Pipeline]] and [[Docs/11_Operations_and_Testing]].
+> **Canonical** for DeepSeek-v3-Lite's checkpoints: the three-file-per-step layout, the atomic-write mechanics that make a checkpoint crash-safe, shared-tensor dedup under weight tying, the two resume paths, and the disaster-recovery playbook. Procedural guide — the surrounding theory lives in [08 Training Pipeline](../training.md) and [11 Operations and Testing](../concepts/kernels-and-ops.md).
 
-> **Status:** the checkpoint machinery is implemented and covered by the CPU test suite (199 nodes: 189 pass + 10 GPU-gated skips, see [[Docs/11_Operations_and_Testing]]), but **no GPU training run has ever executed** — `checkpoints/` is empty, so every file-size figure below is a derived estimate, not a measurement.
+> **Status:** the checkpoint machinery is implemented and covered by the CPU test suite (199 nodes: 189 pass + 10 GPU-gated skips, see [11 Operations and Testing](../concepts/kernels-and-ops.md)), but **no GPU training run has ever executed** — `checkpoints/` is empty, so every file-size figure below is a derived estimate, not a measurement.
 
-**Depends on:** [[Docs/08_Training_Pipeline]] · [[Docs/11_Operations_and_Testing]] · **Read next:** [[guides/G1_debugging_playbook]] (NaN rollback), [[guides/G6_contributing]] (doc/test expectations)
+**Depends on:** [Training Pipeline](../training.md) · [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) · **Read next:** [G1 Debugging Playbook](../guides/G1_debugging_playbook.md) (NaN rollback), [Contributing](../guides/contributing.md) (doc/test expectations)
 
 ---
 
@@ -60,7 +60,7 @@ extra_meta = {"scheduler": self.scheduler.state_dict(), "opt_steps": self._opt_s
 
 - `step` — the micro-step (global_step) counter; forced from the save argument in `CheckpointManager.save` (`{"step": step, **{k: v for k, v in (extra_meta or {}).items() if k != "step"}}`), so a caller-supplied `step` key can never corrupt it.
 - `scheduler` — the `LambdaLR` state dict: `base_lrs`, `last_epoch`, `_step_count`, `_last_lr`. It round-trips through JSON correctly because `LambdaLR.load_state_dict` pops `lr_lambdas` and keeps the live closures — `json.dump(..., default=str)` stringifies anything non-JSON (a latent foot-gun if scheduler state ever grows a tensor field; today it is all ints/floats/lists).
-- `opt_steps` — the optimizer-step counter (`self._opt_steps`). This is what makes the LR schedule resume *mid-arc*: the cosine horizon is `max_steps // gradient_accumulation_steps` in opt-step space (see [[Docs/08_Training_Pipeline]] and [[guides/G2_mup_and_lr_tuning]]), and both this counter and the scheduler state travel in the JSON.
+- `opt_steps` — the optimizer-step counter (`self._opt_steps`). This is what makes the LR schedule resume *mid-arc*: the cosine horizon is `max_steps // gradient_accumulation_steps` in opt-step space (see [08 Training Pipeline](../training.md) and [G2 mup and lr tuning](../guides/G2_mup_and_lr_tuning.md)), and both this counter and the scheduler state travel in the JSON.
 - `config` — `dataclasses.asdict(self.config)`, i.e. the entire `TrainingConfig` including the raw YAML `model_config`. A checkpoint is self-describing: you can rebuild the exact training setup from `meta_step_N.json` alone.
 - `has_mtp` — whether the run trained with an MTP wrapper; the loader uses it to decide whether to restore `mtp.` keys.
 - `tag` — `""` (empty) for periodic saves, `"final"` for the end-of-run save. **The filename does not change** — a final checkpoint is still `model_step_512000.safetensors`; only the meta distinguishes it. `_find_latest_checkpoint` therefore cannot tell a final from a periodic save.
@@ -75,7 +75,7 @@ With canonical numbers (411.6M deduped params, 2 B/param BF16 weights, 12 B/para
 | `optim_step_N.pt` | ~4.6 GiB (+ ~85 MB with MTP) | 12 B/param; largest file, slowest write |
 | `meta_step_N.json` | a few KB | instant |
 
-[INFERENCE] — derived from arithmetic, consistent with the memory budget in [[Docs/11_Operations_and_Testing]] §5.2; no checkpoint has been produced by a real run yet. At `save_interval: 4000` over 512,000 steps that is ~127 periodic checkpoints ≈ ~0.7 TB of disk if never pruned — retention is not wired in (see §10).
+[INFERENCE] — derived from arithmetic, consistent with the memory budget in [11 Operations and Testing](../concepts/kernels-and-ops.md) §5.2; no checkpoint has been produced by a real run yet. At `save_interval: 4000` over 512,000 steps that is ~127 periodic checkpoints ≈ ~0.7 TB of disk if never pruned — retention is not wired in (see §10).
 
 ## 4. Atomicity Mechanics
 
@@ -142,7 +142,7 @@ for k, v in state.items():
 
 The first key in dict order wins; `head.weight` (registered last) loses to `embed.weight`. The same pointer check silently collapses the MTP aliases: `mtp.mtp_modules.0.output_head.weight` shares the main head's storage and `MultiTokenPrediction.__init__` (`models/mtp.py:MultiTokenPrediction.__init__`) registers `embed` and the shared head via `set_output_head` (`models/mtp.py:MTPModule.set_output_head`), so every one of those keys is a duplicate and never hits the file.
 
-**Restore works because aliasing is structural, not serialized.** On load, `CheckpointManager.load` calls `model.load_state_dict(weights, strict=False)`; `head.weight` is reported missing (a logged warning, see §10) but the load copies into `embed.weight` *in place* — and since `head.weight` *is* `embed.weight` (same storage), the head is updated through the survivor. No code ever reconstructs the tie; the tie reconstructs it. This is asserted by `tests/test_utils.py` (load restores `embed.weight` and `head.weight.data_ptr()` equality) and documented as the expected warning in [[Docs/10_Inference_and_Serving]].
+**Restore works because aliasing is structural, not serialized.** On load, `CheckpointManager.load` calls `model.load_state_dict(weights, strict=False)`; `head.weight` is reported missing (a logged warning, see §10) but the load copies into `embed.weight` *in place* — and since `head.weight` *is* `embed.weight` (same storage), the head is updated through the survivor. No code ever reconstructs the tie; the tie reconstructs it. This is asserted by `tests/test_utils.py` (load restores `embed.weight` and `head.weight.data_ptr()` equality) and documented as the expected warning in [10 Inference and Serving](../inference.md).
 
 ## 6. Save Flow
 
@@ -231,11 +231,11 @@ Recovery: the previous complete step is still intact (atomicity guarantees it). 
 
 ### 8.3 Missing or corrupt `meta_step_N.json` — the silent hazard
 
-If the meta file is absent, `CheckpointManager.load` substitutes `{"step": step}` — weights and optimizer load, but **scheduler state and `opt_steps` are not restored**. The run continues at `global_step = N` with a *fresh* `LambdaLR` — i.e. the LR schedule restarts its warmup at step 0 while training thinks it is at step $N$. The warmup lambda at step 0 is 0, so the effective LR collapses toward 0 and recovery is not obvious from the loss curve. This is why completeness requires all three files: meta is the only carrier of the schedule position. If you must reconstruct, take `max_steps // gradient_accumulation_steps` as the horizon and re-derive the position from `global_step` ([[guides/G2_mup_and_lr_tuning]]).
+If the meta file is absent, `CheckpointManager.load` substitutes `{"step": step}` — weights and optimizer load, but **scheduler state and `opt_steps` are not restored**. The run continues at `global_step = N` with a *fresh* `LambdaLR` — i.e. the LR schedule restarts its warmup at step 0 while training thinks it is at step $N$. The warmup lambda at step 0 is 0, so the effective LR collapses toward 0 and recovery is not obvious from the loss curve. This is why completeness requires all three files: meta is the only carrier of the schedule position. If you must reconstruct, take `max_steps // gradient_accumulation_steps` as the horizon and re-derive the position from `global_step` ([G2 mup and lr tuning](../guides/G2_mup_and_lr_tuning.md)).
 
 ### 8.4 NaN guard rollback
 
-`train_step` (`training/pretrain.py:Pretrainer.train_step`) returns `None` on a NaN/Inf total loss after zeroing gradients; after `nan_guard_max_consecutive: 5` consecutive fires, `train()` restores the latest complete checkpoint, resets `global_step` to its step, and clears the streak — or raises `RuntimeError("NaN/Inf with no checkpoint to restore from")` if none exists. Rollback is the same `load_checkpoint` path as resume, so weights + optimizer + schedule all rewind together. The DataLoader is **not** rewound and the partial accumulation window's gradients are discarded — the guard saves the model state, not the data stream. See [[guides/G1_debugging_playbook]] for the full state machine and `tests/test_training.py` (`TestNanGuardRollback`) for the rollback test.
+`train_step` (`training/pretrain.py:Pretrainer.train_step`) returns `None` on a NaN/Inf total loss after zeroing gradients; after `nan_guard_max_consecutive: 5` consecutive fires, `train()` restores the latest complete checkpoint, resets `global_step` to its step, and clears the streak — or raises `RuntimeError("NaN/Inf with no checkpoint to restore from")` if none exists. Rollback is the same `load_checkpoint` path as resume, so weights + optimizer + schedule all rewind together. The DataLoader is **not** rewound and the partial accumulation window's gradients are discarded — the guard saves the model state, not the data stream. See [G1 debugging playbook](../guides/G1_debugging_playbook.md) for the full state machine and `tests/test_training.py` (`TestNanGuardRollback`) for the rollback test.
 
 ## 9. Inference Loading: the Weight-Tying Nuance
 
@@ -248,7 +248,7 @@ model.eval()
 ckpt_mgr.load(model, step, device=args.device, strict=False)
 ```
 
-The restore chain works **only because the inference model is built from the same config** — canonical `weight_tying: true` means `head.weight` aliases `embed.weight` again, so the missing-key restore of §5 applies. The nuance: **the checkpoint file never contains `head.weight`, period.** Any consumer that builds a non-tied model (`weight_tying: false`) gets a silently untrained head — `strict=False` logs a missing-key warning and continues. There is no way to recover the head from the file; the tie is the only carrier. Same contract for the MTP draft head: the wrapper re-aliases `output_head` to `model.head` via `set_output_head` *before* loading `mtp.` keys, and `mtp_module.load_state_dict(mtp_state, strict=False)` tolerates the absent shared head (see [[Docs/10_Inference_and_Serving]] §MTP, which covers the `[warn] No MTP weights in checkpoint` case). `Transformer.__init__` also re-derives the mask/cache infrastructure from the config, so an inference config must match the training config's `max_seq_len` or the pre-allocated cache differs from what the checkpoint assumed — benign for weights, relevant for KV-cache sizing ([[Docs/10_Inference_and_Serving]]).
+The restore chain works **only because the inference model is built from the same config** — canonical `weight_tying: true` means `head.weight` aliases `embed.weight` again, so the missing-key restore of §5 applies. The nuance: **the checkpoint file never contains `head.weight`, period.** Any consumer that builds a non-tied model (`weight_tying: false`) gets a silently untrained head — `strict=False` logs a missing-key warning and continues. There is no way to recover the head from the file; the tie is the only carrier. Same contract for the MTP draft head: the wrapper re-aliases `output_head` to `model.head` via `set_output_head` *before* loading `mtp.` keys, and `mtp_module.load_state_dict(mtp_state, strict=False)` tolerates the absent shared head (see [10 Inference and Serving](../inference.md) §MTP, which covers the `[warn] No MTP weights in checkpoint` case). `Transformer.__init__` also re-derives the mask/cache infrastructure from the config, so an inference config must match the training config's `max_seq_len` or the pre-allocated cache differs from what the checkpoint assumed — benign for weights, relevant for KV-cache sizing ([10 Inference and Serving](../inference.md)).
 
 ## 10. Pitfalls Checklist
 
@@ -270,4 +270,10 @@ The restore chain works **only because the inference model is built from the sam
 
 ---
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+## References
+
+- [Training Pipeline](../training.md) — checkpoint format inside the loop, NaN-guard rollback
+- [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) — atomic checkpoint system, VRAM budget
+- [R8 — Utils API](../references/R8_utils_api.md) - `CheckpointManager` save/load/resume/atomicity contract
+- [G1 — Debugging Playbook](../guides/G1_debugging_playbook.md) - NaN rollback
+- [Contributing](../guides/contributing.md) — doc/test expectations

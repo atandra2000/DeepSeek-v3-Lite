@@ -32,7 +32,7 @@ A working forward + a non-NaN loss is the minimum.
 
 ## Skill 2: Add a new MLA hyperparameter
 
-See [`docs/03_Multi_Head_Latent_Attention.md`](docs/03_Multi_Head_Latent_Attention.md) for dimension breakdown and absorption algebra.
+See [`docs/concepts/attention-and-precision.md`](docs/concepts/attention-and-precision.md) for dimension breakdown and absorption algebra.
 
 `kv_lora_rank` (default 192), `qk_nope_head_dim` (48), `qk_rope_head_dim` (24),
 `v_head_dim` (64), `q_lora_rank` (0 in 422M). Changes:
@@ -100,7 +100,7 @@ print(f'μP LR:    {ref_lr * scale:.3e}')
 
 ## Skill 6: Add a new data source to the mixture
 
-Edit the **universal** mixture at `data/shared_data/config/mixture.yaml` (in the LLM
+Edit the **universal** mixture at `LLM/shared_data/config/mixture.yaml` (in the LLM
 umbrella — this project imports it via `sys.path`, it is not vendored here). Re-run:
 
 ```bash
@@ -116,13 +116,13 @@ The mixture weights must sum to 1.0. To override per-project, pass
 
 | Question | Start here |
 |---|---|
-| Run smoke tests / first training | [docs/00_Getting_Started.md](docs/00_Getting_Started.md) |
-| Tune YAML | [docs/08_Training_Pipeline.md](docs/08_Training_Pipeline.md) |
-| MLA dimensions / absorption | [docs/03_Multi_Head_Latent_Attention.md](docs/03_Multi_Head_Latent_Attention.md) + `models/mla.py` |
-| MoE bias / routing | [docs/04_DeepSeekMoE.md](docs/04_DeepSeekMoE.md) + `models/moe.py` |
-| Checkpoints / VRAM | [docs/11_Operations_and_Testing.md](docs/11_Operations_and_Testing.md) |
-| Invariants / what tests prove | [docs/11_Operations_and_Testing.md](docs/11_Operations_and_Testing.md) |
-| Enable Triton | [docs/12_Triton_Kernels.md](docs/12_Triton_Kernels.md) + `ENABLE_TRITON_KERNELS=1` |
+| Run smoke tests / first training | [Getting Started](docs/guides/getting-started.md) |
+| Tune YAML | [Training Pipeline](docs/training.md) |
+| MLA dimensions / absorption | [MLA & Mixed Precision](docs/concepts/attention-and-precision.md) + `models/mla.py` |
+| MoE bias / routing | [DeepSeekMoE & MTP](docs/concepts/moe-mtp.md) + `models/moe.py` |
+| Checkpoints / VRAM | [Operations, Testing & Triton Kernels](docs/concepts/kernels-and-ops.md) |
+| Invariants / what tests prove | [Operations, Testing & Triton Kernels](docs/concepts/kernels-and-ops.md) |
+| Enable Triton | [Triton Kernels](docs/concepts/kernels-and-ops.md) + `ENABLE_TRITON_KERNELS=1` |
 
 ## Pitfalls (cross-cutting)
 - **NaN guard** is `nan_guard_max_consecutive=5` — after 5 consecutive NaN

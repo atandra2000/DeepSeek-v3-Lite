@@ -1,8 +1,8 @@
-# Inference — Generation and Speculative Decoding
+# DeepSeek-v3-Lite — Inference & Serving
 
-> **Read this if** you're debugging generation, KV cache, or speculative decode. **Skip if** you're training only → [[Docs/08_Training_Pipeline|Training]].
+> **Read this if** you're debugging generation, KV cache, or speculative decode. **Skip if** you're training only → [Training](training.md).
 
-**Depends on:** [[Docs/02_Model_Architecture|Model Architecture]], [[Docs/03_Multi_Head_Latent_Attention|MLA]], [[Docs/05_Multi_Token_Prediction|MTP]] · **Read next:** (end of learning path)
+**Depends on:** [Foundations & Architecture](concepts/foundations.md), [MLA & Mixed Precision](concepts/attention-and-precision.md), [DeepSeekMoE & MTP](concepts/moe-mtp.md)
 
 ---
 
@@ -62,7 +62,7 @@ $$
 
 **Without KV cache:** $O(T^2)$ per sequence. **With MLA cache:** amortised $O(T)$ per generated token after prefill.
 
-**Prerequisites:** [[Docs/01_Foundations|foundations]] §11, [[Docs/03_Multi_Head_Latent_Attention|MLA]] §KV Cache Management.
+**Prerequisites:** [foundations](concepts/foundations.md) §11, [MLA](concepts/attention-and-precision.md) §KV Cache Management.
 
 ---
 
@@ -124,7 +124,7 @@ At $S = 2048$, $L = 18$: $432 \times 2048 \times 18 \approx 15.9$ MB — vs $\si
 | MoE bias | Updated each step | Frozen (buffer persists) |
 | Compile | `torch.compile` on | Optional (usually eager) |
 
-The MoE row deserves one clarification: at inference the gate **biases** (a `register_buffer`ed vector on `models/moe.py:AuxLossFreeGate`, not parameters) are loaded from the checkpoint and never updated — the aux-loss-free load-balancing controller (`models/moe.py:AuxLossFreeGate.update_bias`) from [[Docs/08_Training_Pipeline|Training]] only runs inside `train_step`. Frozen biases are exactly right for serving: routing should be deterministic per prompt.
+The MoE row deserves one clarification: at inference the gate **biases** (a `register_buffer`ed vector on `models/moe.py:AuxLossFreeGate`, not parameters) are loaded from the checkpoint and never updated — the aux-loss-free load-balancing controller (`models/moe.py:AuxLossFreeGate.update_bias`) from [Training](training.md) only runs inside `train_step`. Frozen biases are exactly right for serving: routing should be deterministic per prompt.
 
 ---
 
@@ -216,7 +216,7 @@ else:
 
 - **Write** `[start_pos:end_pos]`, **read** `[:end_pos]` — the attended context is exactly "everything up to and including this step", which is what makes `mask=None` safe at `seqlen == 1`.
 - `.detach()` matters: the cached latents are *values*, not graph nodes. At inference mode nothing needs gradients anyway, but the detach keeps the cache usable even if a forward happens under grad-enabled context.
-- `ctx_kv` is the compressed latent $(B, \text{end\_pos}, 192)$; `ctx_pe` is the RoPE key $(B, \text{end\_pos}, 24)$. Both feed the attention core (absorbed or SDPA) — see [[Docs/03_Multi_Head_Latent_Attention|MLA]] for what happens next.
+- `ctx_kv` is the compressed latent $(B, \text{end\_pos}, 192)$; `ctx_pe` is the RoPE key $(B, \text{end\_pos}, 24)$. Both feed the attention core (absorbed or SDPA) — see [MLA](concepts/attention-and-precision.md) for what happens next.
 
 **Pitfall — stale context:** because the cache is positional and never cleared by a forward, any call after a previous cached call inherits the old prefix. `Transformer.generate` always starts with `self.reset_cache()`, but a bare `model(tokens, use_cache=True)` call in a notebook does not. Between independent prompts, call `model.reset_cache()`.
 
@@ -240,7 +240,7 @@ $$
 m = \max_c m^{(c)}, \qquad l = \sum_c l^{(c)}\, e^{m^{(c)} - m}, \qquad o = \frac{1}{l} \sum_c o^{(c)}\, e^{m^{(c)} - m}
 $$
 
-Because each chunk's stats are self-contained (that is the flash-attention trick — see [[Docs/12_Triton_Kernels|Triton Kernels]] for the same math in the MLA kernel), the merge is exact: no approximation is introduced by splitting. The speedup is bounded by $\min(\text{chunks}, \text{parallel units available})$, so it is a latency win for long contexts, not a FLOP reduction.
+Because each chunk's stats are self-contained (that is the flash-attention trick — see [Triton Kernels](concepts/kernels-and-ops.md) for the same math in the MLA kernel), the merge is exact: no approximation is introduced by splitting. The speedup is bounded by $\min(\text{chunks}, \text{parallel units available})$, so it is a latency win for long contexts, not a FLOP reduction.
 
 **How this repo's MLA kernel maps onto it.** The fused kernel behind `models/mla_triton.py:triton_mla_attention` already tiles both query and KV dimensions (`BLOCK_Q=64`, `BLOCK_N=64`) and keeps the register-bounded dims ($R \le 256$) in registers; its per-query reduction over KV is a serial loop over `BLOCK_N` tiles — the "flash" form with a single split. At the canonical `max_seq_len = 2048` and `BLOCK_N = 64`, that is 32 tiles per query: entirely reasonable for one program, and the kernel is already an order of magnitude faster than materialising full K/V (see Appendix D). Split-K — many programs per query, each owning a slice of the 32 tiles, plus a combine kernel — is the technique you reach for when context grows to tens of thousands of tokens, where the serial tile loop starts to dominate the step time. `[INFERENCE]` No long-context GPU benchmark has been run in this repo (no GPU run exists at all); the split-K discussion is the standard argument from the flash-decoding literature (Dao et al., 2023), and the repo's kernel structure (tile loop + online softmax) is exactly the shape that would accept a split-K transform.
 
@@ -319,7 +319,7 @@ These four properties are what make the loop correct; each is worth stating prec
 
 ### `forward_with_hidden` (MTP / speculative only)
 
-Returns `(logits, h)` where `h` is the **pre-final-norm** trunk hidden state — `models/transformer.py:Transformer.forward_with_hidden`. It is identical to `forward` except it also hands the raw residual-stream output to the caller, which is exactly what the MTP block conditions on (MTP applies its own norms, so it needs the *pre*-norm state; see [[Docs/05_Multi_Token_Prediction|MTP]] §8). Used by `inference/speculative.py:SpeculativeDecoder.generate_step` to feed the draft head after the main model commits token $t_1$; `use_cache=False` in the training wrapper (`MultiTokenPrediction`) so the draft path never pollutes a cache during training.
+Returns `(logits, h)` where `h` is the **pre-final-norm** trunk hidden state — `models/transformer.py:Transformer.forward_with_hidden`. It is identical to `forward` except it also hands the raw residual-stream output to the caller, which is exactly what the MTP block conditions on (MTP applies its own norms, so it needs the *pre*-norm state; see [MTP](concepts/moe-mtp.md) §8). Used by `inference/speculative.py:SpeculativeDecoder.generate_step` to feed the draft head after the main model commits token $t_1$; `use_cache=False` in the training wrapper (`MultiTokenPrediction`) so the draft path never pollutes a cache during training.
 
 ---
 
@@ -583,7 +583,7 @@ mtp_module.load_state_dict(mtp_state, strict=False)
 mtp_module.set_output_head(model.head)  # re-share after load
 ```
 
-**Order is load-bearing: `set_output_head` before `load_state_dict`.** The checkpoint stores the head's weights under the *main model's* `head.*` keys (the head is shared, so it is never saved under `mtp.*`) — a standalone `MTPModule` constructed with `output_head=None` would therefore fail `load_state_dict(strict=True)` (missing `output_head.weight`) and, worse, *forward* with a `None` head. `main` wires the head first, then loads the `mtp.`-prefixed keys; `strict=False` tolerates the absent `output_head` keys. The exact failure mode — and the fix — is pinned by `tests/test_inference.py:TestSpeculativeDecoder.test_draft_without_head_raises_and_attach_after_load_works` ("Regression: interactive --use_speculative crashed because the draft module's output_head was never attached"). See [[Docs/05_Multi_Token_Prediction|MTP]] §10.5 for the same pitfall from the training side.
+**Order is load-bearing: `set_output_head` before `load_state_dict`.** The checkpoint stores the head's weights under the *main model's* `head.*` keys (the head is shared, so it is never saved under `mtp.*`) — a standalone `MTPModule` constructed with `output_head=None` would therefore fail `load_state_dict(strict=True)` (missing `output_head.weight`) and, worse, *forward* with a `None` head. `main` wires the head first, then loads the `mtp.`-prefixed keys; `strict=False` tolerates the absent `output_head` keys. The exact failure mode — and the fix — is pinned by `tests/test_inference.py:TestSpeculativeDecoder.test_draft_without_head_raises_and_attach_after_load_works` ("Regression: interactive --use_speculative crashed because the draft module's output_head was never attached"). See [MTP](concepts/moe-mtp.md) §10.5 for the same pitfall from the training side.
 
 **Pitfall — "No MTP weights" is a warning, not an error.** If the checkpoint has no `mtp.` keys, `main` prints `[warn] No MTP weights in checkpoint; draft head is uninitialised.` and continues. The draft head then proposes near-random tokens and acceptance collapses to ~0 — the decode still runs (every step falls back to `token_main`), it just gains nothing. Check the warning text if speculative mode seems slower than standard decode.
 
@@ -591,7 +591,7 @@ mtp_module.set_output_head(model.head)  # re-share after load
 
 ## Speculative Decoding
 
-**60-second summary.** `inference/speculative.py:SpeculativeDecoder` uses the MTP head trained with $\lambda = 0.3$ as a **draft model** — no separate checkpoint, no extra weights beyond the ~7.1M the MTP block adds. Each step: run the main model on the last token, sample `token_main`; run the trunk *again* on `token_main` to obtain the hidden state the draft conditions on; the MTP block proposes `token_draft`; a threshold test accepts or rejects it. Accepted, two tokens are emitted per main-model forward pair; rejected, only `token_main`. The theory, acceptance math, and cache-consistency analysis live in [[Docs/05_Multi_Token_Prediction|MTP]] §11–§13; this section walks the code and the repo's deliberate simplifications.
+**60-second summary.** `inference/speculative.py:SpeculativeDecoder` uses the MTP head trained with $\lambda = 0.3$ as a **draft model** — no separate checkpoint, no extra weights beyond the ~7.1M the MTP block adds. Each step: run the main model on the last token, sample `token_main`; run the trunk *again* on `token_main` to obtain the hidden state the draft conditions on; the MTP block proposes `token_draft`; a threshold test accepts or rejects it. Accepted, two tokens are emitted per main-model forward pair; rejected, only `token_main`. The theory, acceptance math, and cache-consistency analysis live in [MTP](concepts/moe-mtp.md) §11–§13; this section walks the code and the repo's deliberate simplifications.
 
 ### `generate_step` algorithm
 
@@ -620,7 +620,7 @@ Position by position:
 
 1. `main_logits = self.main_model(last_token, start_pos=start_pos, use_cache=True)` — forward #1: the trunk reads the cache prefix and **writes** position `start_pos`.
 2. `token_main = Transformer._sample(...)` — the main token is *sampled* with the caller's temperature (`top_p=1.0, top_k=0` — nucleus/ceiling are forced off in the speculative path). `temperature=0` degenerates to argmax, as usual.
-3. `_, hidden = self.main_model.forward_with_hidden(token_main.unsqueeze(0), start_pos=t1_pos, use_cache=True)` — forward #2, at `t1_pos = start_pos + 1`: **this is why the main model runs twice per step.** The MTP contract is $x_{t+2} \leftarrow (h_{t+1}, e_{t+1})$ — the draft needs the *hidden state* of the token it conditions on, and the only way to get it is to run the trunk on `token_main`. The cache write at `t1_pos` is a write of the same values the next step would produce anyway — see [[Docs/05_Multi_Token_Prediction|MTP]] §13 for the full double-write analysis.
+3. `_, hidden = self.main_model.forward_with_hidden(token_main.unsqueeze(0), start_pos=t1_pos, use_cache=True)` — forward #2, at `t1_pos = start_pos + 1`: **this is why the main model runs twice per step.** The MTP contract is $x_{t+2} \leftarrow (h_{t+1}, e_{t+1})$ — the draft needs the *hidden state* of the token it conditions on, and the only way to get it is to run the trunk on `token_main`. The cache write at `t1_pos` is a write of the same values the next step would produce anyway — see [MTP](concepts/moe-mtp.md) §13 for the full double-write analysis.
 4. `draft_logits, _ = self.mtp(hidden_last, token_main_emb)` — one MTP-block pass; `token_main_emb` comes from the *shared* embedding (`self.main_model.embed`), so the draft conditions on the same token representation the main model committed.
 5. `token_draft = draft_probs.argmax(dim=-1)` — the draft is **always greedy**, regardless of temperature. Deliberate: the verifier checks the draft's single most-likely continuation; a sampled draft would make the acceptance test noisy.
 6. Acceptance: `p_main_of_draft >= self.threshold * max(p_draft_of_draft, 1e-12)` — a deterministic threshold check, **not** the Metropolis–Hastings acceptance of Leviathan et al. The probabilities are the raw softmaxes of the *unscaled* logits — temperature affects what `token_main` is, but the threshold test always compares the temperature-1 distributions. The `1e-12` floor guards `0 >= τ·0` when the draft's argmax probability underflows to zero (spurious acceptance).
@@ -641,7 +641,7 @@ $$
 \mathbb{E}[\text{tokens per step}] = 1 + \mathbb{P}(\text{accept}) \approx 1 + 0.8 = 1.8
 $$
 
-**Caveats:** (1) the `≈0.8` acceptance figure came from smoke tests — this repo has **no trained checkpoint yet**, so real acceptance on a trained MTP head is unknown and prompt-dependent; treat every throughput figure as an estimate; (2) the threshold rule is a throughput heuristic, **not lossless** speculative sampling — it biases the output distribution toward draft-favoured tokens and never resamples on rejection (see [[Docs/05_Multi_Token_Prediction|MTP]] §11.4–11.5 for the exact deviations: no rejection resampling, deterministic accept, and "greedy with draft-flavoured detours" even at temperature 0).
+**Caveats:** (1) the `≈0.8` acceptance figure came from smoke tests — this repo has **no trained checkpoint yet**, so real acceptance on a trained MTP head is unknown and prompt-dependent; treat every throughput figure as an estimate; (2) the threshold rule is a throughput heuristic, **not lossless** speculative sampling — it biases the output distribution toward draft-favoured tokens and never resamples on rejection (see [MTP](concepts/moe-mtp.md) §11.4–11.5 for the exact deviations: no rejection resampling, deterministic accept, and "greedy with draft-flavoured detours" even at temperature 0).
 
 ### `generate()` outer loop
 
@@ -670,7 +670,7 @@ def generate(self, input_ids: torch.Tensor, max_new_tokens: int = 512, temperatu
     return output
 ```
 
-1. Prefill: `main_model(output, start_pos=0, use_cache=True)` (after `reset_cache` — `generate` owns cache hygiene; `generate_step` alone does not, see [[Docs/05_Multi_Token_Prediction|MTP]] §13.4).
+1. Prefill: `main_model(output, start_pos=0, use_cache=True)` (after `reset_cache` — `generate` owns cache hygiene; `generate_step` alone does not, see [MTP](concepts/moe-mtp.md) §13.4).
 2. While `n_generated < max_new_tokens`:
    - `start_pos = output.size(1) - 1` — the position of the *last emitted* token; `generate_step` writes the new token at `start_pos + 1` (i.e. `t1_pos`), so the same invariant as standard decode holds: the cache is always one ahead of the last emitted token.
    - Append `token_main`, count it.
@@ -678,9 +678,9 @@ def generate(self, input_ids: torch.Tensor, max_new_tokens: int = 512, temperatu
    - EOS is checked separately for each token (`token_main.item()`, then `token_draft.item()`), batch size 1 only.
 3. `temperature` is used for the main-token draw (unlike older revisions of this code); the draft stays greedy and there is no top-p/top-k.
 
-**Cache coherence:** `forward_with_hidden` at `start_pos=t1_pos` must match the position after `token_main` is committed to the cache — it does, because forward #2 happens *after* forward #1 wrote `start_pos` and the write at `t1_pos` is deterministic given the same cache prefix. The full position-by-position trace is [[Docs/05_Multi_Token_Prediction|MTP]] §13.
+**Cache coherence:** `forward_with_hidden` at `start_pos=t1_pos` must match the position after `token_main` is committed to the cache — it does, because forward #2 happens *after* forward #1 wrote `start_pos` and the write at `t1_pos` is deterministic given the same cache prefix. The full position-by-position trace is [MTP](concepts/moe-mtp.md) §13.
 
-**Honest compute accounting:** each accepted step costs two trunk forwards (not one), so the wall-clock win is real only when two tokens are emitted per iteration *and* the acceptance rate clears ~50% (the second forward roughly doubles the per-iteration cost). [[Docs/05_Multi_Token_Prediction|MTP]] §11.5 works the break-even math; the repo's smoke-derived estimate of 1.7–1.9× assumes acceptance around 0.8 — unverified on real weights.
+**Honest compute accounting:** each accepted step costs two trunk forwards (not one), so the wall-clock win is real only when two tokens are emitted per iteration *and* the acceptance rate clears ~50% (the second forward roughly doubles the per-iteration cost). [MTP](concepts/moe-mtp.md) §11.5 works the break-even math; the repo's smoke-derived estimate of 1.7–1.9× assumes acceptance around 0.8 — unverified on real weights.
 
 ---
 
@@ -723,7 +723,7 @@ For interactive generation ($B=1$, prompt 512, generating 256 tokens) — **all 
 | Activations (single-token decode) | negligible |
 | CUDA context | 2–14 GB |
 
-**Total:** ~1–2 GB for weights + overhead — fits on consumer GPUs for inference-only (no optimizer state; the 4.9 GB FP32 AdamW state from [[Docs/08_Training_Pipeline|Training]] is absent at inference).
+**Total:** ~1–2 GB for weights + overhead — fits on consumer GPUs for inference-only (no optimizer state; the 4.9 GB FP32 AdamW state from [Training](training.md) is absent at inference).
 
 The cache line comes from the 432 bytes/token/layer figure in [Complexity Analysis](#complexity-analysis): $432 \times 2048 \times 18 \approx 15.9$ MB, and it is **capped** — the cache is pre-allocated to `max_seq_len` and never grows, so the worst case is known in advance. Use `utils/memory.py:estimate_model_memory_gb(model, seq_len, batch_size, inference=True)` for the analytical budget (the `inference=True` flag drops optimizer and activation bytes).
 
@@ -734,7 +734,7 @@ The cache line comes from the 432 bytes/token/layer figure in [Complexity Analys
 1. **`--top_p` applies to the standard path only** — `generate_interactive` forwards `top_p=args.top_p` to `model.generate`, but the speculative path has no `top_p` parameter (the main-token draw is `top_p=1.0, top_k=0`). Use the standard path for nucleus sampling.
 2. **No batch inference** — `SpeculativeDecoder` assumes batch size 1 (indexes row 0 directly).
 3. **No continuous batching** — serving-at-scale patterns not implemented; the cache is batch-static per session.
-4. **Triton MoE kernel not validated for decode** — the canonical config falls back to the stacked MoE dispatch (the Triton kernel is register-capped at $I, D \le 256$, and the canonical `moe_inter_dim=384` exceeds it); use `moe_dispatch="stacked"` for inference. See [[Docs/12_Triton_Kernels|Triton Kernels]].
+4. **Triton MoE kernel not validated for decode** — the canonical config falls back to the stacked MoE dispatch (the Triton kernel is register-capped at $I, D \le 256$, and the canonical `moe_inter_dim=384` exceeds it); use `moe_dispatch="stacked"` for inference. See [Triton Kernels](concepts/kernels-and-ops.md).
 5. **`transformers` required for CLI** — optional import; tests import helpers without it.
 6. **Speculative path is sampling-limited** — the main token is sampled with `temperature` (greedy at 0), but top-k/top-p are hardcoded off and the **draft is always greedy**; acceptance uses raw temperature-1 probabilities. No rejection resampling, so the output distribution is not guaranteed to match the main model's.
 7. **Simplified speculative sampling** — threshold accept rule, not optimal Metropolis–Hastings (Leviathan et al.). The rule biases the output distribution (it does not resample on rejection), so it is not lossless. Future work: full speculative sampling for distribution-correctness at equal acceptance.
@@ -749,7 +749,7 @@ The cache line comes from the 432 bytes/token/layer figure in [Complexity Analys
 |---|---|---|
 | Gibberish after first token | `start_pos` off-by-one | Trace `prompt_len + step` in `generate()`; the first decode forward must use `start_pos=prompt_len` |
 | Same output every run | `temperature=0` or broken sampling | Check `_sample` args; `temperature == 0.0` is an exact equality — `1e-9` is not greedy-deterministic in *code path*, though it is effectively greedy in *output* |
-| `RuntimeError: output_head not set` | `MTPModule` built without a head | Call `set_output_head(model.head)` before the first draft forward — see `main()` and [[Docs/05_Multi_Token_Prediction|MTP]] §10.5 |
+| `RuntimeError: output_head not set` | `MTPModule` built without a head | Call `set_output_head(model.head)` before the first draft forward — see `main()` and [MTP](concepts/moe-mtp.md) §10.5 |
 | Speculative never accepts | Random MTP weights | Train with `mtp_depth=1`, load `mtp.*` keys; check for the `[warn] No MTP weights` line |
 | OOM on long context | Cache exceeds `max_seq_len` | Truncate prompt or raise `max_seq_len` in config; the MLA `end_pos` guard raises before corruption |
 | Missing `head.weight` on load | Weight tying | Expected — `strict=False` restores it through the shared `embed.weight` storage |
@@ -819,7 +819,7 @@ Step 1: main→t5, draft→t6, accept → emit [t5, t6] in one logical step
 | Decode 1 | `[5555]` | 4 | 4 | argmax |
 
 **Tensor shapes:**
-- Prefill logits: $(1, 3, 100\,018)$ — the vocabulary has 100,018 ids (see [[Docs/09_Data_Pipeline|Data Pipeline]])
+- Prefill logits: $(1, 3, 100\,018)$ — the vocabulary has 100,018 ids (see [Data Pipeline](concepts/data-pipeline.md))
 - Decode logits: $(1, 1, 100\,018)$ each step
 
 **Common bug:** Using `start_pos=2` on first decode step (off by one from prompt length 3).
@@ -894,7 +894,7 @@ During decode, the SDPA path:
 3. Concatenates with RoPE key
 4. Runs `F.scaled_dot_product_attention` with Q (1 token) vs all cached K/V
 
-This materialization happens **every decode step** on the SDPA path — it's the trade-off: the SDPA path uses a fused GPU kernel (faster) but doesn't use the true absorption trick. The manual path keeps everything in latent space (no materialization) but is slower due to Python loops. At the 411.6M scale, the SDPA path is faster overall. (The Triton fused path — `models/mla_triton.py:triton_mla_attention` — fuses materialization + RoPE + attention into one kernel and is the third option; see [[Docs/12_Triton_Kernels|Triton Kernels]].)
+This materialization happens **every decode step** on the SDPA path — it's the trade-off: the SDPA path uses a fused GPU kernel (faster) but doesn't use the true absorption trick. The manual path keeps everything in latent space (no materialization) but is slower due to Python loops. At the 411.6M scale, the SDPA path is faster overall. (The Triton fused path — `models/mla_triton.py:triton_mla_attention` — fuses materialization + RoPE + attention into one kernel and is the third option; see [Triton Kernels](concepts/kernels-and-ops.md).)
 
 ### Standard Generation — full loop with shapes
 
@@ -996,13 +996,12 @@ if top_p < 1.0:
 
 - `inference/generate.py`, `inference/speculative.py`
 - `models/transformer.py` — `generate()`, `_sample()`, `forward_with_hidden()`
-- [[Docs/05_Multi_Token_Prediction|MTP]] — MTP theory, acceptance math, cache consistency
-- [[Docs/02_Model_Architecture|transformer]] — wiring
-- [[Docs/03_Multi_Head_Latent_Attention|MLA]] — KV cache internals
-- [[Docs/11_Operations_and_Testing|utils]] — checkpoint format
-- [[Docs/12_Triton_Kernels|Triton Kernels]] — fused MLA/MoE kernels, register caps
+- [MTP](concepts/moe-mtp.md) — MTP theory, acceptance math, cache consistency
+- [transformer](concepts/foundations.md) — wiring
+- [MLA](concepts/attention-and-precision.md) — KV cache internals
+- [utils](concepts/kernels-and-ops.md) — checkpoint format
+- [Triton Kernels](concepts/kernels-and-ops.md) — fused MLA/MoE kernels, register caps
 - [Holtzman et al., 2020 — The Curious Case of Neural Text Degeneration](https://arxiv.org/abs/1904.09751) — nucleus sampling
 - [Leviathan et al., 2023 — Fast Inference from Transformers via Speculative Decoding](https://arxiv.org/abs/2211.17192)
 - [Dao et al., 2023 — FlashDecoding](https://arxiv.org/abs/2205.14135) — split-K rationale
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->

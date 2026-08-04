@@ -1,10 +1,10 @@
-# 00 — Getting Started
+# DeepSeek-v3-Lite — Getting Started
 
 > **Canonical** for DeepSeek-V3 onboarding, environment setup, smoke tests, and canonical numbers. Educational textbook chapter.
 
-> Your first stop: what DeepSeek-v3-Lite is, how to run it, and where to read next. Architecture, MLA math, DeepSeekMoE routing, MTP, and FP8 precision depth live in the chapter sequence starting at [[Docs/01_Foundations]].
+> Your first stop: what DeepSeek-v3-Lite is, how to run it, and where to read next. Architecture, MLA math, DeepSeekMoE routing, MTP, and FP8 precision depth live in the chapter sequence starting at [01 Foundations](../concepts/foundations.md).
 
-**Depends on:** (none) · **Read next:** [[Docs/01_Foundations]]
+**Depends on:** (none) · **Read next:** [Foundations & Architecture](../concepts/foundations.md)
 
 ---
 
@@ -21,7 +21,7 @@
 1. **Multi-Head Latent Attention (MLA)** — Low-rank KV compression ($d_c = 192$) with decoupled RoPE ($d_R = 24$) reduces KV cache memory consumption by over $75\%$ while outperforming standard Multi-Head Attention.
 2. **DeepSeekMoE with Aux-Loss-Free Balancing** — 20 fine-grained routed experts (4 activated per token) + 1 always-active shared expert. Load balancing is achieved without auxiliary loss penalties by dynamically adjusting expert bias terms ($b_i \leftarrow b_i + \gamma \cdot \text{sign}(\text{target} - \text{load})$).
 3. **Multi-Token Prediction (MTP)** — Sequential MTP modules (depth 1) predict next-token targets $t+1$ and $t+2$ simultaneously, densifying training signals and enabling zero-overhead speculative decoding.
-4. **$\mu\text{P}$ Learning Rate Scaling & optional fused Triton kernels** — Maximal Update Parameterization ($\mu\text{P}$) scaling transfers the LR across widths; optional fused Triton kernels accelerate MLA attention and grouped MoE GEMM in BF16. *(DeepSeek-V3's FP8 mixed precision and DualPipe parallelism are paper techniques documented in [[Docs/06_FP8_Mixed_Precision]] and [[Docs/07_DualPipe_Parallelism]] but not implemented in this single-GPU BF16 repo.)*
+4. **$\mu\text{P}$ Learning Rate Scaling & optional fused Triton kernels** — Maximal Update Parameterization ($\mu\text{P}$) scaling transfers the LR across widths; optional fused Triton kernels accelerate MLA attention and grouped MoE GEMM in BF16. *(DeepSeek-V3's FP8 mixed precision and DualPipe parallelism are paper techniques documented in [06 FP8 Mixed Precision](../concepts/attention-and-precision.md) and [07 DualPipe Parallelism](../concepts/parallelism.md) but not implemented in this single-GPU BF16 repo.)*
 
 ---
 
@@ -67,7 +67,7 @@ MTP Module (Depth 1) ───> Predicts t+2 Token ───> MTP Loss (Weight =
 | `mtp_depth` / `mtp_loss_weight` | **1 / 0.3** | MTP depth & auxiliary loss weight |
 
 > [!NOTE]
-> Configuration file: [`configs/pretrain_a100_422m.yaml`](../configs/pretrain_a100_422m.yaml). The filename's "422m" is a **historical nominal** — the actual deduped parameter count is 411,632,256 (411.6M base; 418.7M with the MTP head's ~7.1M). Never quote "422M" as a parameter count.
+> Configuration file: [`configs/pretrain_a100_422m.yaml`](../../configs/pretrain_a100_422m.yaml). The filename's "422m" is a **historical nominal** — the actual deduped parameter count is 411,632,256 (411.6M base; 418.7M with the MTP head's ~7.1M). Never quote "422M" as a parameter count.
 
 ---
 
@@ -292,7 +292,7 @@ On CUDA hardware, `python3 scripts/microbench_a100.py:main` builds the 422M mode
 | Pre-flight `AssertionError: Need at least 75 GB VRAM` or `CUDA not available` | `scripts/launch_a100.sh` requires an A100-class GPU and a CUDA-enabled torch wheel | Use `configs/pretrain_1650_2m.yaml` on smaller GPUs; install the CUDA torch wheel (see §5.2) for A100; the CPU suite needs no GPU at all |
 | `[warn] Triton dispatch keys set without ENABLE_TRITON_KERNELS=1; forcing …` | YAML requests `attn_impl: triton` / `moe_dispatch: triton_grouped` but the master env var is unset — `models/_triton_dispatch.py:enforce_triton_env_var` force-backs to the PyTorch default with one warning | On a CUDA box with `triton` installed: `export ENABLE_TRITON_KERNELS=1`. Otherwise accept the fallback; it is deliberate, not an error |
 | `ERROR: no shard_*.bin files in data/pretrain_chinchilla` | Data prep has not run | `python3 data/prepare_data.py --stage pretrain` (needs `shared_data`), or `python3 scripts/build_small_pretrain_data.py` for the small config |
-| `RuntimeError: NaN/Inf with no checkpoint to restore from` | The NaN guard (`training/pretrain.py:Pretrainer.train`) fired before the first checkpoint existed | Check LR/warmup, data quality, and dtype; see [[guides/G1_debugging_playbook]] and [[Docs/08_Training_Pipeline]] |
+| `RuntimeError: NaN/Inf with no checkpoint to restore from` | The NaN guard (`training/pretrain.py:Pretrainer.train`) fired before the first checkpoint existed | Check LR/warmup, data quality, and dtype; see [G1 debugging playbook](../guides/G1_debugging_playbook.md) and [08 Training Pipeline](../training.md) |
 | HuggingFace auth/network error for the tokenizer | `deepseek-ai/deepseek-coder-v2-lite` requires accepting terms and network access | For smoke runs use `configs/pretrain_1650_2m.yaml` (GPT-2 tokenizer, no auth); for the real run, accept the terms on HF once |
 | `FileNotFoundError` for a config or data path | Config/data paths are CWD-relative | Run commands from the repo root (`scripts/launch_a100.sh` `cd`s to the root itself) |
 
@@ -304,20 +304,20 @@ Follow the 14-chapter sequence under `Docs/`:
 
 | Step | Chapter | Focus Area |
 |---|---|---|
-| 00 | [[Docs/00_Getting_Started]] | Onboarding, canonical numbers, smoke test execution |
-| 01 | [[Docs/01_Foundations]] | DeepSeek lineage (V1 $\rightarrow$ V2 $\rightarrow$ V3) & design choices |
-| 02 | [[Docs/02_Model_Architecture]] | Full topology, tensor shapes, parameter accounting |
-| 03 | [[Docs/03_Multi_Head_Latent_Attention]] | MLA low-rank compression, matrix absorption, RoPE |
-| 04 | [[Docs/04_DeepSeekMoE]] | Fine-grained experts, shared expert, aux-loss-free bias updates |
-| 05 | [[Docs/05_Multi_Token_Prediction]] | MTP module depth, training loss, speculative decoding |
-| 06 | [[Docs/06_FP8_Mixed_Precision]] | E4M3/E5M2 precision, tile-wise & block-wise FP8 scaling |
-| 07 | [[Docs/07_DualPipe_Parallelism]] | DualPipe bidirectional pipeline parallelism & overlap |
-| 08 | [[Docs/08_Training_Pipeline]] | Pretraining loop, AdamW, $\mu\text{P}$ scaling, NaN guards |
-| 09 | [[Docs/09_Data_Pipeline]] | Tokenizer, dataset mixture, mmap binary sharding |
-| 10 | [[Docs/10_Inference_and_Serving]] | Autoregressive sampling, MLA KV decompression, speculative decode |
-| 11 | [[Docs/11_Operations_and_Testing]] | Pytest suite, safetensors checkpointing, VRAM budget |
-| 12 | [[Docs/12_Triton_Kernels]] | Custom Triton kernels (MLA, MoE dispatch, FP8 GEMM) |
-| 13 | [[Docs/13_Portfolio_Comparison]] | Architecture comparison vs LLaMA-3, Mamba-3, HyMo |
+| 00 | [00 Getting Started](../guides/getting-started.md) | Onboarding, canonical numbers, smoke test execution |
+| 01 | [01 Foundations](../concepts/foundations.md) | DeepSeek lineage (V1 $\rightarrow$ V2 $\rightarrow$ V3) & design choices |
+| 02 | [02 Model Architecture](../concepts/foundations.md) | Full topology, tensor shapes, parameter accounting |
+| 03 | [03 Multi Head Latent Attention](../concepts/attention-and-precision.md) | MLA low-rank compression, matrix absorption, RoPE |
+| 04 | [04 DeepSeekMoE](../concepts/moe-mtp.md) | Fine-grained experts, shared expert, aux-loss-free bias updates |
+| 05 | [05 Multi Token Prediction](../concepts/moe-mtp.md) | MTP module depth, training loss, speculative decoding |
+| 06 | [06 FP8 Mixed Precision](../concepts/attention-and-precision.md) | E4M3/E5M2 precision, tile-wise & block-wise FP8 scaling |
+| 07 | [07 DualPipe Parallelism](../concepts/parallelism.md) | DualPipe bidirectional pipeline parallelism & overlap |
+| 08 | [08 Training Pipeline](../training.md) | Pretraining loop, AdamW, $\mu\text{P}$ scaling, NaN guards |
+| 09 | [09 Data Pipeline](../concepts/data-pipeline.md) | Tokenizer, dataset mixture, mmap binary sharding |
+| 10 | [10 Inference and Serving](../inference.md) | Autoregressive sampling, MLA KV decompression, speculative decode |
+| 11 | [11 Operations and Testing](../concepts/kernels-and-ops.md) | Pytest suite, safetensors checkpointing, VRAM budget |
+| 12 | [12 Triton Kernels](../concepts/kernels-and-ops.md) | Custom Triton kernels (MLA, MoE dispatch, FP8 GEMM) |
+| 13 | [13 Portfolio Comparison](../concepts/foundations.md) | Architecture comparison vs LLaMA-3, Mamba-3, HyMo |
 
 ### 9.1 What to Read Next — routing graph
 
@@ -338,17 +338,17 @@ flowchart LR
     A --> P["docs/13 Portfolio Comparison"]
 ```
 
-- **"I want the theory, from first principles"** → [[Docs/01_Foundations]] (RMSNorm, RoPE, weight tying, BF16 numerics, μP intuition).
-- **"I want to see code immediately"** → [[Docs/02_Model_Architecture]] plus the API reference `[[reference/R2_transformer_api]]`.
-- **"I want to understand MLA / MoE / MTP specifically"** → [[Docs/03_Multi_Head_Latent_Attention]], [[Docs/04_DeepSeekMoE]], [[Docs/05_Multi_Token_Prediction]] (deepen with `[[reference/R3_mla_api]]`, `[[reference/R4_moe_api]]`, `[[reference/R5_mtp_api]]`).
-- **"I want to train something"** → [[Docs/08_Training_Pipeline]] then [[Docs/09_Data_Pipeline]]; the training loop walkthrough anchors every stage of `training/pretrain.py` (`[[reference/R7_training_api]]`).
-- **"I want to run inference / serve / sample"** → [[Docs/10_Inference_and_Serving]] (`[[reference/R9_inference_api]]`).
-- **"I want to operate it: tests, checkpoints, VRAM"** → [[Docs/11_Operations_and_Testing]] and the ops guide `[[guides/G5_checkpoint_ops]]`.
-- **"I want to dig into the Triton kernels"** → [[Docs/12_Triton_Kernels]] with the developer guide `[[guides/G3_triton_development]]`.
-- **"Something broke / I'm debugging"** → `[[guides/G1_debugging_playbook]]` (NaN guard, shape errors, cache bugs, Triton fallback).
-- **"I want to tune the learning rate / benchmark"** → `[[guides/G2_mup_and_lr_tuning]]`, `[[guides/G4_benchmarking]]`.
-- **"How does this compare to other architectures?"** → [[Docs/13_Portfolio_Comparison]].
-- **"I want to contribute docs/code"** → `[[guides/G6_contributing]]` (doc contract, anchor rules, test expectations).
+- **"I want the theory, from first principles"** → [01 Foundations](../concepts/foundations.md) (RMSNorm, RoPE, weight tying, BF16 numerics, μP intuition).
+- **"I want to see code immediately"** → [02 Model Architecture](../concepts/foundations.md) plus the API reference `[R2 transformer api](../references/R2_transformer_api.md)`.
+- **"I want to understand MLA / MoE / MTP specifically"** → [03 Multi Head Latent Attention](../concepts/attention-and-precision.md), [04 DeepSeekMoE](../concepts/moe-mtp.md), [05 Multi Token Prediction](../concepts/moe-mtp.md) (deepen with `[R3 mla api](../references/R3_mla_api.md)`, `[R4 moe api](../references/R4_moe_api.md)`, `[R5 mtp api](../references/R5_mtp_api.md)`).
+- **"I want to train something"** → [08 Training Pipeline](../training.md) then [09 Data Pipeline](../concepts/data-pipeline.md); the training loop walkthrough anchors every stage of `training/pretrain.py` (`[R7 training api](../references/R7_training_api.md)`).
+- **"I want to run inference / serve / sample"** → [10 Inference and Serving](../inference.md) (`[R9 inference api](../references/R9_inference_api.md)`).
+- **"I want to operate it: tests, checkpoints, VRAM"** → [11 Operations and Testing](../concepts/kernels-and-ops.md) and the ops guide `[G5 checkpoint ops](../guides/G5_checkpoint_ops.md)`.
+- **"I want to dig into the Triton kernels"** → [12 Triton Kernels](../concepts/kernels-and-ops.md) with the developer guide `[G3 triton development](../guides/G3_triton_development.md)`.
+- **"Something broke / I'm debugging"** → `[G1 debugging playbook](../guides/G1_debugging_playbook.md)` (NaN guard, shape errors, cache bugs, Triton fallback).
+- **"I want to tune the learning rate / benchmark"** → `[G2 mup and lr tuning](../guides/G2_mup_and_lr_tuning.md)`, `[G4 benchmarking](../guides/G4_benchmarking.md)`.
+- **"How does this compare to other architectures?"** → [13 Portfolio Comparison](../concepts/foundations.md).
+- **"I want to contribute docs/code"** → `guides/G6_contributing` (doc contract, anchor rules, test expectations).
 
 ---
 
@@ -371,6 +371,11 @@ flowchart LR
 
 ---
 
-> **Next:** [[Docs/01_Foundations]] — DeepSeek architectural lineage from V1 to V3.
+> **Next:** [Foundations & Architecture](../concepts/foundations.md) — DeepSeek architectural lineage from V1 to V3.
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+## References
+
+- [Foundations & Architecture](../concepts/foundations.md) — next stop on the learning path
+- [Training Pipeline](../training.md) — launch sequence, YAML reference
+- [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) — test suite, VRAM budget, CI
+- [R1 — Config Schema](../references/R1_config_schema.md) - every YAML key

@@ -1,7 +1,7 @@
-# G6 — Contributing to DeepSeek-v3-Lite
+# DeepSeek-v3-Lite — Contributing
 
 > **Status:** guide · **Applies to:** every change — code, tests, docs, CI.
-> **Depends on:** [[Docs/11_Operations_and_Testing]] · **Read next:** [[Docs/12_Triton_Kernels]] (before touching kernels), [[Docs/00_Getting_Started]] (if you are new)
+> **Depends on:** [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) · **Read next:** [Triton Kernels](../concepts/kernels-and-ops.md) (before touching kernels), [Getting Started](../guides/getting-started.md) (if you are new)
 
 ## 60-Second Summary
 
@@ -14,7 +14,7 @@ Contributing to this repo is a checklist discipline, not a free-form exercise. E
 1. `~/.claude/CLAUDE.md` — workspace overview; contains the git commit policy (§7).
 2. `~/Desktop/CoreProjects/AGENTS.md` — workspace rules; read once before any cross-project work.
 3. `AGENTS.md` in this repo — project hard rules (§5 of this guide quotes them).
-4. `docs/docs_expansion_plan.md` §4 + the doc-writing contract — binding for any docs change (§2).
+4. `docs/README.md` (canonical layout + style template) + §2 of this guide — binding for any docs change.
 
 When documents disagree, the repo is the source of truth: code wins over docs, tests win over prose, current source wins over memory. If a doc contradicts `training/pretrain.py:main`, the doc is stale — fix the doc, not the code.
 
@@ -29,20 +29,20 @@ When documents disagree, the repo is the source of truth: code wins over docs, t
 | `tests/` | 8 files, `conftest.py` fixtures | every behavior claim (§4) |
 | `scripts/` | `check_docs.py`, `smoke_forward.py`, `microbench_a100.py`, … | dev tooling, CI steps |
 | `configs/` | `pretrain_a100_422m.yaml` (canonical) | run recipes |
-| `docs/` | spine 00–13, `reference/R1–R9`, `guides/G1–G6` | prose (contract in §2) |
+| `docs/` | `concepts/`, `references/R1–R9`, `guides/`, `training.md`, `inference.md` | prose (contract in §2) |
 
 ### 1.3 Decision tree: which directory?
 
-- Changing model structure → `models/` + the matching R-reference (e.g. `reference/R3_mla_api.md`) + `docs/02`/`03`/`04`.
-- Changing the loop, LR schedule, or loss math → `training/pretrain.py` + `reference/R7_training_api.md` + `docs/08`.
-- Changing checkpoints or logging → `utils/checkpoint.py` / `utils/logging.py` + `reference/R8_utils_api.md` + `docs/11`.
-- Changing sampling or decode → `inference/` + `reference/R9_inference_api.md` + `docs/10`.
-- Adding a Triton kernel → you are almost certainly *not* allowed to (see §5.1); if you are, read [[G3_triton_development]] and `docs/12_Triton_Kernels.md` first.
+- Changing model structure → `models/` + the matching R-reference (e.g. `references/R3_mla_api.md`) + the relevant `concepts/` doc.
+- Changing the loop, LR schedule, or loss math → `training/pretrain.py` + `references/R7_training_api.md` + `training.md`.
+- Changing checkpoints or logging → `utils/checkpoint.py` / `utils/logging.py` + `references/R8_utils_api.md` + `concepts/kernels-and-ops.md`.
+- Changing sampling or decode → `inference/` + `references/R9_inference_api.md` + `inference.md`.
+- Adding a Triton kernel → you are almost certainly *not* allowed to (see §5.1); if you are, read [G3_triton_development](G3_triton_development.md) and `concepts/kernels-and-ops.md` first.
 - Any behavior claim, anywhere → add/extend a test in `tests/` (§4). "It works on my machine" is not a claim this repo accepts.
 
 ## 2. The Documentation Contract
 
-The full contract lives in `docs/docs_expansion_plan.md` §4 and the mandatory writer brief (`local://doc_contract.md`). Every doc — spine chapter, reference, or guide — must satisfy it. The parts that get contributors in trouble:
+The canonical layout and style template live in `docs/README.md`; the mandatory writer brief (`local://doc_contract.md`) applies to every docs change. Every doc — concept, reference, guide, or top-level pipeline doc — must satisfy both. The parts that get contributors in trouble:
 
 ### 2.1 Style template
 
@@ -81,10 +81,10 @@ These are canonical; never reintroduce the old values ("422M as a param count", 
 ### 2.4 Snippets, links, honesty
 
 - **Snippets:** copy verbatim from source; mark cuts with `…`; mark invented code `# illustrative`. Never quote "as of a past commit".
-- **Links:** cross-link only to docs that exist (00–13, R1–R9, G1–G6), via `[[Docs/xx_…]]` wikilinks or relative `.md` links. No dead `#anchor` fragments.
+- **Links:** cross-link only to docs that exist (the files under `docs/`), via relative `.md` links. No dead `#anchor` fragments.
 - **Honesty:** label measured vs derived vs `[INFERENCE]`. `.benchmarks/` is empty → numbers are estimates. Paper-spec chapters (06, 07) keep their banner.
 
-**Doc-contribution checklist:** (1) read `docs/docs_expansion_plan.md` §4; (2) verify every anchor by grep; (3) run both gates locally (§3); (4) leave the `<!-- docs:verified … -->` footer alone — the coordinator re-stamps it; (5) never edit `docs/README.md` size tables by hand.
+**Doc-contribution checklist:** (1) read `docs/README.md` (layout + style template) and this guide's §2; (2) verify every anchor by grep; (3) run both gates locally (§3); (4) leave the `<!-- docs:verified … -->` footer alone — the coordinator re-stamps it; (5) never edit `docs/README.md` size tables by hand.
 
 ## 3. The Gates: What CI Actually Runs
 
@@ -103,7 +103,7 @@ python scripts/smoke_forward.py                                                 
 
 ### 3.1 `scripts/check_docs.py` — prose hygiene
 
-Lints every `docs/**/*.md` (via `scripts/check_docs.py:iter_doc_files`, which `rglob`s subfolders so `reference/` and `guides/` are covered): control characters, stale patterns (the banned curly-brace thousand-separator form, old test counts, corrupted math), broken internal `.md` links (resolved relative to the doc, so a guide links up with `../`), and backtick-quoted repo paths that do not exist. It also refreshes the size table and `docs:verified` footers with `--update-sizes` / `--stamp-footers`.
+Lints every `docs/**/*.md` (via `scripts/check_docs.py:iter_doc_files`, which `rglob`s subfolders so `references/` and `guides/` are covered): control characters, stale patterns (the banned curly-brace thousand-separator form, old test counts, corrupted math), broken internal `.md` links (resolved relative to the doc, so a guide links up with `../`), and backtick-quoted repo paths that do not exist. It also refreshes the size table and `docs:verified` footers with `--update-sizes` / `--stamp-footers`.
 
 **Failure → fix:** a broken link or a missing backtick path is a typo in your prose — fix the reference, not the checker.
 
@@ -184,7 +184,7 @@ These are quoted from `AGENTS.md` in this repo. Violations are review-blocking.
 
 ### 5.1 Exactly two sanctioned Triton paths
 
-**Rule:** raw PyTorch by default; custom Triton kernels are first-party for *exactly* two hot paths — MoE routed-expert dispatch (`models/moe_triton.py`) and MLA attention materialisation (`models/mla_triton.py`). No other component gets a custom kernel without updating `AGENTS.md` and `docs/12_Triton_Kernels.md`. The bulk of the codebase (RMSNorm, SwiGLU, embeddings, LM head, gate, MLA SDPA, MTP, inference) stays raw PyTorch; no HuggingFace Trainer, no Lightning. For the two sanctioned paths, the target is ≥1.5× speedup over the raw-PyTorch path in `scripts/microbench_a100.py`; below that bar, do not enable by default.
+**Rule:** raw PyTorch by default; custom Triton kernels are first-party for *exactly* two hot paths — MoE routed-expert dispatch (`models/moe_triton.py`) and MLA attention materialisation (`models/mla_triton.py`). No other component gets a custom kernel without updating `AGENTS.md` and `concepts/kernels-and-ops.md`. The bulk of the codebase (RMSNorm, SwiGLU, embeddings, LM head, gate, MLA SDPA, MTP, inference) stays raw PyTorch; no HuggingFace Trainer, no Lightning. For the two sanctioned paths, the target is ≥1.5× speedup over the raw-PyTorch path in `scripts/microbench_a100.py`; below that bar, do not enable by default.
 
 Kernel contract, both files: `import triton` is optional at import time (`HAS_TRITON = False` on failure); each file ships a pure-PyTorch reference in the same file (`models/mla_triton.py:mla_attention_reference`, `models/moe_triton.py:grouped_moe_pytorch`) that CPU tests use; the kernel is a `torch.autograd.Function` whose `forward` saves only what `backward` needs to re-compute (FA2 re-compute pattern); GEMM accumulators are fp32 while I/O stays BF16; block sizes are `tl.constexpr` and autotuned over a small grid, pre-warmed at `__init__`.
 
@@ -237,4 +237,9 @@ The repo's comment rules (AGENTS.md rule 9), with verifiable targets:
 **Q4.** Your change touches the MoE gate. What must you not do?
 **A.** Do not move the bias into the Triton kernel and do not add an auxiliary loss: the out-of-band `AuxLossFreeGate.update_bias` mechanism is a hard rule, and the kernel fuses only the forward (§5.3).
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+## References
+
+- [docs/README.md](../README.md) — canonical layout + style template
+- [R6 — Triton API](../references/R6_triton_api.md) - kernel contract the two sanctioned paths must satisfy
+- [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) — the gates subject matter
+- `tests/test_doc_refs.py`, `scripts/check_docs.py` - the machine gates

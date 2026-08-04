@@ -1,8 +1,8 @@
-# G2 — μP Learning Rate Tuning
+# DeepSeek-v3-Lite — μP & LR Tuning
 
-> **Read this if** you are about to change the learning rate, run an LR sweep, or wonder why the `lr` you set in YAML is not the LR the run actually uses. **Skip if** you only need the pretrain-loop mechanics → [[Docs/08_Training_Pipeline|Training Pipeline]].
+> **Read this if** you are about to change the learning rate, run an LR sweep, or wonder why the `lr` you set in YAML is not the LR the run actually uses. **Skip if** you only need the pretrain-loop mechanics → [Training Pipeline](../training.md).
 
-**Depends on:** [[Docs/08_Training_Pipeline|Training Pipeline]], [[Docs/01_Foundations|Foundations]] §13 (μP intuition) · **Read next:** [[guides/G1_debugging_playbook|Debugging Playbook]], [[guides/G4_benchmarking|Benchmarking]]
+**Depends on:** [Training Pipeline](../training.md), [Foundations & Architecture](../concepts/foundations.md) §13 (μP intuition) · **Read next:** [Debugging Playbook](../guides/G1_debugging_playbook.md), [Benchmarking](../guides/G4_benchmarking.md)
 
 ---
 
@@ -109,7 +109,7 @@ The effective LR at optimizer step $s$ is $\eta(s) = \eta_{\text{base}} \cdot \l
         mup_lr_reference_params=t.get("mup_lr_reference_params", 757226496),
 ```
 
-The defaults in the dataclass match the canonical config, so a config that omits them still gets the standard reference anchor. Full key-by-key reference: [[reference/R1_config_schema|R1 — Config Schema]] and [[reference/R7_training_api|R7 — Training API]].
+The defaults in the dataclass match the canonical config, so a config that omits them still gets the standard reference anchor. Full key-by-key reference: [R1 — Config Schema](../references/R1_config_schema.md) and [R7 — Training API](../references/R7_training_api.md).
 
 ### 4.2 The override, in `Pretrainer.__init__`
 
@@ -194,7 +194,7 @@ Keep `mup_lr: true` and scale the **reference**, not `lr` — that keeps the μP
 
 - The logged LR must climb linearly from 0 to the target over `warmup_steps` **optimizer** steps. With `log_interval: 50` and warmup 2000, the LR column at micro-step 8000 should read the full μP LR.
 - If loss *spikes* in the first few hundred optimizer steps even at 1×, warmup is too short relative to the LR — check `β2`-moment calibration, not just the schedule. A spike at the *end* of warmup (s ≈ w) means the arm's LR is too high for the warmup length: either lengthen warmup or drop the arm.
-- A loss that diverges during the *first* optimizer step is usually not an LR problem at all — check data, dtype (BF16 autocast), and the NaN-guard path (see [[guides/G1_debugging_playbook|G1 — Debugging Playbook]]) before blaming the sweep.
+- A loss that diverges during the *first* optimizer step is usually not an LR problem at all — check data, dtype (BF16 autocast), and the NaN-guard path (see [G1 — Debugging Playbook](../guides/G1_debugging_playbook.md)) before blaming the sweep.
 
 ### 5.4 Divergence thresholds and the decision tree
 
@@ -214,14 +214,14 @@ flowchart TD
 
 Thresholds (heuristic — label any result as an estimate until a GPU run measures it):
 
-- **Divergence:** NaN/Inf (the guard fires at 5 consecutive bad micro-steps and rolls back to checkpoint — see `nan_guard` in [[Docs/08_Training_Pipeline|Training Pipeline]]), or CE that *increases* for ~2,000 opt steps after warmup. Halve `c`.
+- **Divergence:** NaN/Inf (the guard fires at 5 consecutive bad micro-steps and rolls back to checkpoint — see `nan_guard` in [Training Pipeline](../training.md)), or CE that *increases* for ~2,000 opt steps after warmup. Halve `c`.
 - **Under-training:** CE at the checkpoint within ~10% of the control but with a clearly worse final slope, or gradient norms that never approach the `max_grad_norm: 1.0` clip. Double `c`.
 - **Clip-bound:** if `clip_grad_norm_` rescales every step (grad norm pinned at 1.0), the run is at the clip boundary — a sign the LR is at or above the stable ceiling; compare loss, don't just reduce.
 - **MoE balance:** watch `balance_loss` as a *secondary* signal. A too-high LR can destabilize gate-bias updates (`bias_update_speed: 0.001`); an abrupt rise in balance loss with a stable CE usually means the experts are the fragile part, not the LR.
 
 ### 5.5 Evaluation protocol
 
-1. Run the grid on the smoke config (minutes per arm on a laptop CPU; hours on A100 — see [[guides/G4_benchmarking|G4 — Benchmarking]] for step-time measurement).
+1. Run the grid on the smoke config (minutes per arm on a laptop CPU; hours on A100 — see [G4 — Benchmarking](../guides/G4_benchmarking.md) for step-time measurement).
 2. Pick the best 1–2 arms by smoothed CE at the fixed checkpoint, *then* by trajectory.
 3. Re-run the winners at the canonical config with identical `max_steps`/warmup/horizon and confirm the ordering holds.
 4. Lock the winner in as a new `mup_lr_reference` (e.g. `4.5e-4` if 0.75× won) — *not* by writing `lr`, which stays inert while `mup_lr: true`.
@@ -231,7 +231,7 @@ Thresholds (heuristic — label any result as an estimate until a GPU run measur
 ## 6. Pitfalls
 
 1. **Setting `lr` and expecting it to apply.** With `mup_lr: true` the YAML `lr` is overwritten at `Pretrainer.__init__` before the optimizer is built. Grep the log for `µP LR scaling: … → …` — that arrow is the only trustworthy LR statement. To sweep, change `mup_lr_reference` (or disable `mup_lr`).
-2. **Changing `max_steps` without re-checking the horizon.** The cosine horizon is `max_steps // gradient_accumulation_steps`, derived at startup. Double `total_steps` and the run stops mid-arc (final LR still high); halve it and the run decays to the floor too early. Worse: on *resume*, the lambda is rebuilt from the current config while the step counter is restored from the checkpoint — an edited `max_steps` silently reshapes the remaining arc of a resumed run. Resume with the exact config that produced the checkpoint (see [[guides/G5_checkpoint_ops|G5 — Checkpoint Ops]]).
+2. **Changing `max_steps` without re-checking the horizon.** The cosine horizon is `max_steps // gradient_accumulation_steps`, derived at startup. Double `total_steps` and the run stops mid-arc (final LR still high); halve it and the run decays to the floor too early. Worse: on *resume*, the lambda is rebuilt from the current config while the step counter is restored from the checkpoint — an edited `max_steps` silently reshapes the remaining arc of a resumed run. Resume with the exact config that produced the checkpoint (see [G5 — Checkpoint Ops](../guides/G5_checkpoint_ops.md)).
 3. **Treating `warmup_steps` as micro-steps.** 2000 is 2000 *optimizer* steps = 8,000 micro-batches at `gradient_accumulation_steps: 4`. If you "fix" warmup by multiplying by 4, you get a 4× longer warmup than intended. Do not divide `warmup_steps` by the accumulation factor either — the code does not.
 4. **Toggling MTP changes the LR silently.** `N` in the formula is the deduped count of the *training model*: `mtp_depth: 1` with `mtp_loss_weight: 0` builds no wrapper (N = 411.6M → 8.14e-4); `mtp_loss_weight: 0.3` builds it (N = 418.7M → 8.07e-4). A sweep that mixes MTP on/off arms is comparing different LRs, not different LR multipliers. The per-component breakdown printed at startup (`log_per_component_params: true`) shows you which count is in effect.
 5. **Trusting the LR column during warmup.** The log samples LR every `log_interval` micro-steps from `get_last_lr()[0]`. Early lines read tiny values by design (λ(0)=0, then a linear ramp); a low LR at micro-step 50 is not a bug. Also the effective LR of optimizer step $t$ is λ(t−1) — off-by-one against the log column, harmless but confusing when you verify exact values.
@@ -256,6 +256,11 @@ Thresholds (heuristic — label any result as an estimate until a GPU run measur
 
 ---
 
-> **See also:** [[Docs/08_Training_Pipeline|Training Pipeline]] (μP derivation + LR scheduler math), [[Docs/01_Foundations|Foundations]] §13, [[reference/R7_training_api|R7 — Training API]], [[reference/R1_config_schema|R1 — Config Schema]], [[guides/G1_debugging_playbook|G1 — Debugging Playbook]], [[guides/G4_benchmarking|G4 — Benchmarking]], [[guides/G5_checkpoint_ops|G5 — Checkpoint Ops]].
+> **See also:** [Training Pipeline](../training.md) (μP derivation + LR scheduler math), [Foundations](../concepts/foundations.md) §13, [R7 — Training API](../references/R7_training_api.md), [R1 — Config Schema](../references/R1_config_schema.md), [G1 — Debugging Playbook](../guides/G1_debugging_playbook.md), [G4 — Benchmarking](../guides/G4_benchmarking.md), [G5 — Checkpoint Ops](../guides/G5_checkpoint_ops.md).
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+## References
+
+- [Training Pipeline](../training.md) — μP derivation + LR scheduler math
+- [Foundations & Architecture](../concepts/foundations.md) — μP intuition
+- [R7 — Training API](../references/R7_training_api.md) / [R1 - Config Schema](../references/R1_config_schema.md)
+- [G1 — Debugging Playbook](../guides/G1_debugging_playbook.md) / [G4 - Benchmarking](../guides/G4_benchmarking.md) / [G5 - Checkpoint Ops](../guides/G5_checkpoint_ops.md)

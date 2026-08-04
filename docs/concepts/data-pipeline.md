@@ -1,8 +1,8 @@
-# Data Pipeline — Tokenization, Sharding, and Loading
+# DeepSeek-v3-Lite — Data Pipeline
 
-> **Read this if** you're preparing or validating training data. **Skip if** shards already exist → [[Docs/08_Training_Pipeline|Training]].
+> **Read this if** you're preparing or validating training data. **Skip if** shards already exist → [Training](../training.md).
 
-**Depends on:** [[Docs/08_Training_Pipeline|Training]] · **Read next:** [[Docs/10_Inference_and_Serving|Inference]]
+**Depends on:** [Training](../training.md) · **Read next:** [Inference](../inference.md)
 
 ---
 
@@ -672,7 +672,7 @@ A: Padding would inject fake next-token targets — the model would be trained t
 
 **Q: Can I use the GPT-2 tokenizer?** Only for the 1650 smoke config (`vocab_size=50257`). The 422M config (`configs/pretrain_a100_422m.yaml`) requires the DeepSeek tokenizer (`vocab_size=100018`).
 
-**Q: Where is DATA_PIPELINE.md?** This repo ships `data/DATA_PIPELINE.md` (a redirect) and the full guide is this document. The universal pipeline's own README is at `LLM/shared_data/README.md`.
+**Q: Where is the data guide?** The data guide is this document (the standalone data redirect was folded into [Training](../training.md)). The universal pipeline's own README is at `LLM/shared_data/README.md`.
 
 **Q: How long does full prep take?** Hours to days depending on bandwidth and CPU cores (download is bandwidth-bound; tokenize is CPU-bound). Use the `--skip-*` flags and `--source NAME` for incremental reruns. The shared_data README's stage wall-clock table (~8 h once, ~13 h for five projects sharing the clean output) is an estimate — no full run has been executed.
 
@@ -705,7 +705,6 @@ A: Padding would inject fake next-token targets — the model would be trained t
 
 - `data/prepare_data.py` — the DeepSeek shim (`_ensure_deepseek_data_config`, `main`)
 - `data/data_config.yaml` — generated project config (DeepSeek overrides)
-- `data/DATA_PIPELINE.md` — redirect to this chapter
 - `training/pretrain.py` — `PretrainDataset` (`__init__`, `_locate`, `__getitem__`) and `Pretrainer.train_step`
 - `models/transformer.py` — `Transformer.__init__` (embedding rows) and `Transformer.forward` (defensive cast)
 - `scripts/build_small_pretrain_data.py` — torch-serialised single-shard builder for smoke tests
@@ -713,7 +712,5 @@ A: Padding would inject fake next-token targets — the model would be trained t
 - `LLM/shared_data/config/mixture.yaml` — canonical mixture (the only source of truth for weights)
 - `LLM/shared_data/config/data_config.yaml` — universal pipeline knobs
 - `LLM/shared_data/shard_writer.py`, `manifest.py`, `dedup.py`, `quality_filter.py`, `dataset.py` — pack, manifest, dedup, filter, reader implementations
-- [[Docs/08_Training_Pipeline|Training]] — the full training loop that consumes `PretrainDataset`
-- [[Docs/10_Inference_and_Serving|Inference]] — tokenizer reuse at inference time (chat template, `generate`)
-
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+- [Training](../training.md) — the full training loop that consumes `PretrainDataset`
+- [Inference](../inference.md) — tokenizer reuse at inference time (chat template, `generate`)

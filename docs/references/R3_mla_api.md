@@ -1,10 +1,10 @@
-# R3 — MLA API Reference (`models/mla.py`)
+# DeepSeek-v3-Lite — R3 MLA API Reference
 
-> **What this is:** the complete symbol-level reference for `MultiHeadLatentAttention`, the DeepSeek-V3-style multi-head latent attention layer used by every transformer block in this repo. Every entry is a signature, a shape contract, a default, and a caller list — no tutorial prose (that lives in [[Docs/03_Multi_Head_Latent_Attention|T3 MLA]] and [[Docs/01_Foundations|T1 Foundations]] §5–7).
+> **What this is:** the complete symbol-level reference for `MultiHeadLatentAttention`, the DeepSeek-V3-style multi-head latent attention layer used by every transformer block in this repo. Every entry is a signature, a shape contract, a default, and a caller list — no tutorial prose (that lives in [MLA & Mixed Precision](../concepts/attention-and-precision.md) and [Foundations & Architecture](../concepts/foundations.md) §5–7).
 >
 > **Scope:** one class, eight public methods, three attention implementations (`sdpa` / `manual` / `triton`), one KV-cache contract, one RoPE table. All shapes below use the canonical config (`configs/pretrain_a100_422m.yaml`): $D{=}768$, $H{=}12$, $R{=}192$, $D_{\text{nope}}{=}48$, $D_{\text{rope}}{=}24$, $D_v{=}64$, $D_{\text{qk}}{=}72$, $S_{\max}{=}2048$.
 >
-> **Companion files:** [[R1_config_schema|R1 Config Schema]] (every YAML key read here), [[R2_transformer_api|R2 Transformer API]] (the caller), [[R6_triton_api|R6 Triton API]] (the kernel this layer dispatches to). The math and the worked example are in [[Docs/03_Multi_Head_Latent_Attention|T3]].
+> **Companion files:** R1 Config Schema (every YAML key read here), R2 Transformer API (the caller), R6 Triton API (the kernel this layer dispatches to). The math and the worked example are in [MLA & Mixed Precision](../concepts/attention-and-precision.md).
 
 ---
 
@@ -31,7 +31,7 @@ class MultiHeadLatentAttention(nn.Module):
     def __init__(self, config: dict, layer_idx: int = 0):
 ```
 
-One instance per transformer block. `config` is the `model:` section of the YAML (or an equivalent dict); every key below is read at construction and the resolved values become attributes. All canonical values from `configs/pretrain_a100_422m.yaml`; for the complete key list and defaults see [[R1_config_schema|R1 §Config keys]].
+One instance per transformer block. `config` is the `model:` section of the YAML (or an equivalent dict); every key below is read at construction and the resolved values become attributes. All canonical values from `configs/pretrain_a100_422m.yaml`; for the complete key list and defaults see R1 §Config keys.
 
 | Config key | Default | Attribute | Canonical | Notes |
 |---|---|---|---|---|
@@ -101,7 +101,7 @@ else:
 | `"manual"` | fall-through branch | scores directly in latent space via `_per_batch_bmm` (true absorption); softmax in fp32; per-batch output bmm | reference / debug; `tests/test_models.py:TestMLA` |
 | `"triton"` | Triton branch | delegates to `triton_mla_attention` via `_forward_triton` (fused materialize+RoPE+attention) | opt-in fast path; needs `ENABLE_TRITON_KERNELS=1` + Triton installed |
 
-**Fallback semantics (`triton` mode only).** The Triton branch is wrapped in `try/except (ImportError, ValueError)` inside `models/mla.py:MultiHeadLatentAttention.forward`. On the first failure it prints one warning (`[mla] triton attn_impl unavailable (...); falling back to 'sdpa' for this model.`), sets `self.attn_impl = "sdpa"` (persistent for this layer), and completes the forward via the SDPA branch. Later failures are silent — the layer is permanently on SDPA until the module is rebuilt. Any `ImportError` (Triton missing) or `ValueError` (kernel dimension limits, e.g. `D_nope > 256`) triggers the fallback; other exceptions propagate. A `RuntimeError` from `_forward_triton` does **not** trigger it — this matches the MoE layers' behavior (see [[R6_triton_api|R6 §dispatch]] and [[R4_moe_api|R4]]).
+**Fallback semantics (`triton` mode only).** The Triton branch is wrapped in `try/except (ImportError, ValueError)` inside `models/mla.py:MultiHeadLatentAttention.forward`. On the first failure it prints one warning (`[mla] triton attn_impl unavailable (...); falling back to 'sdpa' for this model.`), sets `self.attn_impl = "sdpa"` (persistent for this layer), and completes the forward via the SDPA branch. Later failures are silent — the layer is permanently on SDPA until the module is rebuilt. Any `ImportError` (Triton missing) or `ValueError` (kernel dimension limits, e.g. `D_nope > 256`) triggers the fallback; other exceptions propagate. A `RuntimeError` from `_forward_triton` does **not** trigger it — this matches the MoE layers' behavior (see R6 §dispatch and R4).
 
 ## 7. KV-cache contract
 
@@ -143,7 +143,7 @@ def _apply_rope(self, x: torch.Tensor, start_pos: int, seqlen: int) -> torch.Ten
 Rotates the last dim of `x` by the absolute positions `[start_pos, start_pos + seqlen)`.
 
 - **Contract:** `x` has last dim `qk_rope_head_dim` (any leading shape; the rope dim must be even) → returns same shape, same dtype.
-- **Mechanics:** `x.float()` → `view_as_complex(x.reshape(*x.shape[:-1], -1, 2))` → multiply by `freqs_cis[start_pos:start_pos+seqlen].view(1, seqlen, 1, -1)` → `view_as_real(...).flatten(-2)` → cast back to `x.dtype`. One complex multiply per element; the table row index is the **absolute** position, which is what makes the score depend only on relative offset (rotation-composition property, see [[Docs/03_Multi_Head_Latent_Attention|T3 §6]]).
+- **Mechanics:** `x.float()` → `view_as_complex(x.reshape(*x.shape[:-1], -1, 2))` → multiply by `freqs_cis[start_pos:start_pos+seqlen].view(1, seqlen, 1, -1)` → `view_as_real(...).flatten(-2)` → cast back to `x.dtype`. One complex multiply per element; the table row index is the **absolute** position, which is what makes the score depend only on relative offset (rotation-composition property, see [MLA & Mixed Precision](../concepts/attention-and-precision.md) §6).
 - **dtype note:** the rotation happens in fp32 (via `.float()`), the result is cast back to the input dtype — no precision loss from BF16 table arithmetic.
 - **Callers:** `forward` (twice: query rope key `q_pe` with shape `(B, S_q, H, D_rope)`; key rope key `k_pe` from `(B, S_q, 1, D_rope)`, squeezed back to `(B, S_q, D_rope)`).
 - **Requires** `freqs_cis` to already cover `start_pos + seqlen` (guaranteed by `_extend_rope` earlier in `forward`).
@@ -215,11 +215,11 @@ def _forward_triton(self, q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v,
                     bsz, seqlen, h, mask, start_pos, use_cache) -> torch.Tensor:
 ```
 
-The host wrapper for the fused Triton kernel — it imports `triton_mla_attention` from `models/mla_triton.py` (lazily, so the import cost and the `ImportError` happen here, inside the `try` in `forward`), re-arranges tensors to the kernel's layout, and calls it. Never anchor the JIT kernel itself (`_mla_flash_fwd_kernel`) — it is an implementation detail; the documented public boundary is `models/mla_triton.py:triton_mla_attention` (see [[R6_triton_api|R6]]).
+The host wrapper for the fused Triton kernel — it imports `triton_mla_attention` from `models/mla_triton.py` (lazily, so the import cost and the `ImportError` happen here, inside the `try` in `forward`), re-arranges tensors to the kernel's layout, and calls it. Never anchor the JIT kernel itself (`_mla_flash_fwd_kernel`) — it is an implementation detail; the documented public boundary is `models/mla_triton.py:triton_mla_attention` (see R6).
 
 - **Input layout (python-level):** `q_nope (B, S_q, H, D_nope)`, `q_pe (B, S_q, H, D_rope)` (already rotated), `ctx_kv (B, S_kv, R)`, `ctx_pe (B, S_kv, D_rope)`, `wkv_b_k (H, D_nope, R)`, `wkv_b_v (H, D_v, R)`.
 - **Kernel layout:** permutes the queries to `(B, H, S_q, D_*)` and `.contiguous()`; passes `softmax_scale=self.softmax_scale`.
-- **Causality translation:** `is_causal = mask is not None`; `q_start = start_pos if (is_causal and use_cache) else 0`. The kernel builds its own causal mask in SRAM keyed on **global** position (`s_q_off + q_start >= k_off`); `q_start` is the cache offset of the query block, so a cached mid-sequence prefill cannot attend its own future. A wrong `q_start` (e.g. 0 during cached decode) silently leaks future keys — see [[Docs/03_Multi_Head_Latent_Attention|T3 Appendix C]].
+- **Causality translation:** `is_causal = mask is not None`; `q_start = start_pos if (is_causal and use_cache) else 0`. The kernel builds its own causal mask in SRAM keyed on **global** position (`s_q_off + q_start >= k_off`); `q_start` is the cache offset of the query block, so a cached mid-sequence prefill cannot attend its own future. A wrong `q_start` (e.g. 0 during cached decode) silently leaks future keys — see [MLA & Mixed Precision](../concepts/attention-and-precision.md) Appendix C.
 - **Output:** kernel returns `(B, S_q, H, D_v)`; the wrapper flattens to `(B, S_q, H*D_v)` and returns `self.wo(...)` — identical epilogue to the other paths.
 - **Caller:** `forward` (Triton branch only).
 
@@ -235,11 +235,16 @@ The host wrapper for the fused Triton kernel — it imports `triton_mla_attentio
 
 ## 10. Check your understanding
 
-1. **Q:** Why does the SDPA path materialize `K_nope`/`V` while the manual path does not? **A:** SDPA must materialize (it takes explicit K/V tensors); the fused bmm `ctx_kv_bmm @ cat([wkv_b_k, wkv_b_v]).T` reconstructs all heads' K and V in one operation, avoiding the per-head loop and the four-tensor `cat` of the naive reference. The manual path keeps scores in latent space (`q_nope_proj @ ctx_kvᵀ`) and is ~4× the FLOPs of MHA — it exists as the reference/teaching path and the equivalence anchor.
+1. **Q:** Why does the SDPA path materialize `K_nope`/`V` while the manual path does not? **A:** SDPA must materialize (it takes explicit K/V tensors); the fused bmm `ctx_kv_bmm @ cat([wkv_b_k, wkv_b_v]).T` reconstructs all heads' K and V in one operation, avoiding the per-head loop and the four-tensor `cat` of the naive reference. The manual path keeps scores in latent space (`q_nope_proj @ ctx_kvᵀ`) and is ~4× the FLOPs of MHA — it exists as the references/teaching path and the equivalence anchor.
 2. **Q:** What is in the cache, exactly, and why is the write detached? **A:** The *normalized* latent `kv_normed` (192 floats) and the *rotated* rope key `k_pe` (24 floats), per token per layer. Detach keeps cache entries off the autograd graph so a decode forward never back-propagates through past positions.
 3. **Q:** When does `q_start` differ from `start_pos` in `_forward_triton`? **A:** When the call is causal and cached (`mask is not None and use_cache`), `q_start = start_pos`; otherwise 0. For a cache-free full-sequence forward the block-local and global positions coincide, so 0 is correct.
 4. **Q:** At `max_seq_len = 8192, mscale = 1.1, rope_factor = 1.0`, what is `softmax_scale`? **A:** `mscale = 1.1` (factor is 1.0, so no log correction), and since 8192 > 4096, `softmax_scale = 72^{-1/2} \cdot 1.1^2 \approx 0.1426` — guarded by `tests/test_models.py:TestMLAAdditional.test_softmax_scale_with_mscale`.
 
 ---
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+## References
+
+- [MLA & Mixed Precision](../concepts/attention-and-precision.md) — the math and worked examples
+- [R1 — Config Schema](../references/R1_config_schema.md) - every YAML key read here
+- [R2 — Transformer API](../references/R2_transformer_api.md) - the caller
+- [R6 — Triton API](../references/R6_triton_api.md) - the kernel this layer dispatches to

@@ -1,12 +1,12 @@
-# R7 — Training API Reference (`training/pretrain.py`)
+# DeepSeek-v3-Lite — R7 Training API Reference
 
 > The single-GPU BF16 pre-training entry point: `TrainingConfig` (the runtime view of the YAML), `PretrainDataset` (packed-token windows over single-file or sharded mmap'd data), `Pretrainer` (model/optimizer/scheduler wiring, micro-step loop, NaN guard, checkpoints), and `main` (CLI).
 
 **Source:** `training/pretrain.py` — the only training driver in the repo. No `torch.distributed`, no pipeline stages; one process, one device (`torch.device("cuda" if torch.cuda.is_available() else "cpu")`).
 
-**Locked numbers (see [the doc contract](../docs_expansion_plan.md)):** deduped params **411.6M** base ($411\,632\,256$) / **418.7M** with MTP ($418\,713\,984$); μP LR $6.0\times 10^{-4}\times\sqrt{757\,226\,496/N}$ → **8.14e-4** base / **8.07e-4** with MTP; "422M" is only the config *filename* (`configs/pretrain_a100_422m.yaml`). **No GPU training run has ever executed** — all wall-clock/MFU figures elsewhere are estimates.
+**Locked numbers (see [the docs README](../README.md)):** deduped params **411.6M** base ($411\,632\,256$) / **418.7M** with MTP ($418\,713\,984$); μP LR $6.0\times 10^{-4}\times\sqrt{757\,226\,496/N}$ → **8.14e-4** base / **8.07e-4** with MTP; "422M" is only the config *filename* (`configs/pretrain_a100_422m.yaml`). **No GPU training run has ever executed** — all wall-clock/MFU figures elsewhere are estimates.
 
-**Siblings:** [R1 config schema](R1_config_schema.md) (every YAML key), [R2 transformer API](R2_transformer_api.md), [R4 MoE API](R4_moe_api.md), [R5 MTP API](R5_mtp_api.md), [R8 utils API](R8_utils_api.md) (CheckpointManager, TrainingLogger). Narrative walkthroughs: [08 Training Pipeline](../08_Training_Pipeline.md), [09 Data Pipeline](../09_Data_Pipeline.md), [11 Operations & Testing](../11_Operations_and_Testing.md).
+**Siblings:** [R1 config schema](R1_config_schema.md) (every YAML key), [R2 transformer API](R2_transformer_api.md), [R4 MoE API](R4_moe_api.md), [R5 MTP API](R5_mtp_api.md), [R8 utils API](R8_utils_api.md) (CheckpointManager, TrainingLogger). Narrative walkthroughs: [08 Training Pipeline](../training.md), [09 Data Pipeline](../concepts/data-pipeline.md), [11 Operations & Testing](../concepts/kernels-and-ops.md).
 
 ---
 
@@ -176,7 +176,7 @@ Sum over MoE layers of `models/moe.py:DeepSeekMoE.get_load_balance_loss`. Return
 
 ### 4.6 `Pretrainer._log_per_component_params(model)`
 
-Walks `model.named_parameters()`, skips any tensor `id` already seen (counts the tied head once), buckets by name substrings: `embed` → `embedding`; `head` → `lm_head`; `.attn.` with `wq/wkv_a/wkv_b/wo/q_norm/kv_norm` → `mla_attn`; `attn_norm`/`ffn_norm`/`.norm.weight` suffix → `rmsnorm`; `.experts.` with `w1/w2/w3` → `moe_routed_experts`; `shared_experts` → `moe_shared_experts`; `.ffn.w` → `dense_swiglu`; `.gate.` → `moe_gate`; else `other`. Logs each bucket with count and percent, then TOTAL in millions. Known cosmetic quirk (see [02 Model Architecture](../02_Model_Architecture.md)): the final `norm.weight` (11 chars) cannot end with `".norm.weight"` (12), so it lands in `other`.
+Walks `model.named_parameters()`, skips any tensor `id` already seen (counts the tied head once), buckets by name substrings: `embed` → `embedding`; `head` → `lm_head`; `.attn.` with `wq/wkv_a/wkv_b/wo/q_norm/kv_norm` → `mla_attn`; `attn_norm`/`ffn_norm`/`.norm.weight` suffix → `rmsnorm`; `.experts.` with `w1/w2/w3` → `moe_routed_experts`; `shared_experts` → `moe_shared_experts`; `.ffn.w` → `dense_swiglu`; `.gate.` → `moe_gate`; else `other`. Logs each bucket with count and percent, then TOTAL in millions. Known cosmetic quirk (.concepts/foundations.md)): the final `norm.weight` (11 chars) cannot end with `".norm.weight"` (12), so it lands in `other`.
 
 ### 4.7 `Pretrainer.train_step(tokens, targets, micro_step) -> Optional[Dict[str, Optional[float]]]`
 
@@ -268,10 +268,9 @@ Guarded by `tests/test_training.py::TestConfigFromYAML` (parses a fixture YAML t
 
 ---
 
-## 7. Callers
-
+## References
 **CLI / scripts**
-- `python3 training/pretrain.py --config configs/pretrain_a100_422m.yaml` — documented in [00 Getting Started](../00_Getting_Started.md), `Reference.md`, and `scripts/launch_a100.sh` (nohup launch with `--data-path`/`--checkpoint-dir`/`--resume`).
+- `python3 training/pretrain.py --config configs/pretrain_a100_422m.yaml` — documented in [00 Getting Started](../guides/getting-started.md), and `scripts/launch_a100.sh` (nohup launch with `--data-path`/`--checkpoint-dir`/`--resume`).
 - `scripts/e2e_test_gpu.py` — imports `PretrainDataset, Pretrainer, TrainingConfig`, constructs a real `Pretrainer` on GPU (with `fused=False` AdamW patch), reports peak VRAM after init.
 
 **Tests** (`tests/test_training.py` is the primary consumer; `tests/test_utils.py::TestCheckpointManagerMTP` replicates the `save_checkpoint` combined-state layout)
@@ -284,4 +283,3 @@ Guarded by `tests/test_training.py::TestConfigFromYAML` (parses a fixture YAML t
 
 ---
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->

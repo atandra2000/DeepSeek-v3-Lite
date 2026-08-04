@@ -1,8 +1,8 @@
-# R6 — Triton Kernel API Reference
+# DeepSeek-v3-Lite — R6 Triton Kernel API Reference
 
 Scope: the two opt-in fused kernels — fused MLA attention (`models/mla_triton.py`) and fused grouped-GEMM SwiGLU MoE dispatch (`models/moe_triton.py`) — plus the master environment-variable gate (`models/_triton_dispatch.py`) and the two callers that own fallback behavior (`models/mla.py`, `models/moe.py`).
 
-Both kernels are **opt-in**: a config may request `attn_impl: "triton"` / `moe_dispatch: "triton_grouped"`, but unless `ENABLE_TRITON_KERNELS=1` is set, `models/_triton_dispatch.py:enforce_triton_env_var` rewrites those keys to their PyTorch defaults (`"sdpa"` / `"stacked"`) at model construction, with one warning. At runtime each caller additionally falls back if Triton is missing or a register-budget dim exceeds 256. This file is the API contract; the design walkthrough lives in `../12_Triton_Kernels.md`, and the MLA / MoE layer contracts in `./R3_mla_api.md` / `./R4_moe_api.md`.
+Both kernels are **opt-in**: a config may request `attn_impl: "triton"` / `moe_dispatch: "triton_grouped"`, but unless `ENABLE_TRITON_KERNELS=1` is set, `models/_triton_dispatch.py:enforce_triton_env_var` rewrites those keys to their PyTorch defaults (`"sdpa"` / `"stacked"`) at model construction, with one warning. At runtime each caller additionally falls back if Triton is missing or a register-budget dim exceeds 256. This file is the API contract; the design walkthrough lives in [Kernels & Ops](../concepts/kernels-and-ops.md), and the MLA / MoE layer contracts in [R3](./R3_mla_api.md) / [R4](./R4_moe_api.md).
 
 > Honesty note: Triton is Linux + CUDA only. No GPU training run has ever executed in this repo (`.benchmarks/` is empty), so every performance figure elsewhere is an estimate — this reference makes no throughput claims.
 
@@ -336,10 +336,8 @@ Canonical config ships `attn_impl: "sdpa"` + `moe_dispatch: "stacked"` (`configs
 9. **`bwd_dw` `dh` does not accumulate across `D`-blocks** — latent defect, unreachable while the 256 cap holds; revisit before any D-tiling change.
 10. **Kernels JIT-compile on first launch** (seconds of wall time); there is no `triton.compile` pre-warm in this repo. Combined with no GPU run ever executed, all kernel timing claims are estimates.
 
-## 8. Cross-links
-
-- Tutorials: `../12_Triton_Kernels.md` (kernel-by-kernel design, register budget, autotune), `../03_Multi_Head_Latent_Attention.md` (MLA math, `q_start` cache lifecycle), `../04_DeepSeekMoE.md` (gate math, stacked-vs-grouped layouts, canonical-cap framing).
+## References
+- Tutorials: [Kernels & Ops](../concepts/kernels-and-ops.md) (kernel-by-kernel design, register budget, autotune), [MLA & Mixed Precision](../concepts/attention-and-precision.md) (MLA math, `q_start` cache lifecycle), [DeepSeekMoE & MTP](../concepts/moe-mtp.md) (gate math, stacked-vs-grouped layouts, canonical-cap framing).
 - Sibling references: `./R3_mla_api.md` (layer contract: `softmax_scale`, `mscale`, cache), `./R4_moe_api.md` (gate/stacked path, `_stacked_w*` contract), `./R2_transformer_api.md` (construction-time guard, mask building), `./R7_training_api.md` (training entry point, `Pretrainer.__init__`).
 - Guides: `./../guides/G1_debugging_playbook.md` (Triton-fallback symptoms), `./../guides/G3_triton_development.md` (extending kernels, register math), `./../guides/G4_benchmarking.md` (what is/isn't measured).
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->

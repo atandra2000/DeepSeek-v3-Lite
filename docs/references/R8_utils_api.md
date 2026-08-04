@@ -1,8 +1,8 @@
-# R8 — utils API Reference
+# DeepSeek-v3-Lite — R8 Utils API Reference
 
 > **60-second summary.** The `utils/` package is the training infrastructure that is not the model: `utils/checkpoint.py` owns the atomic three-file checkpoint triplet (`CheckpointManager`), `utils/logging.py` owns the rolling-window console/WandB logger (`TrainingLogger` plus the `init_logging`/`get_logger` process-global pair), and `utils/memory.py` owns the CPU-arithmetic VRAM budget estimator (`estimate_model_memory_gb`, `assert_fits_in_available_gpu`). All three are pure-PyTorch, CPU-runnable, and exercised directly by `tests/test_utils.py`; the training loop reaches them through `training/pretrain.py:Pretrainer`, and inference through `inference/generate.py:main`.
 >
-> **Scope.** Every public symbol of the three modules, with exact signatures, defaults, shape/atomicity contracts, and callers. Reference style: one-line purpose per entry, no tutorial prose (see [[Docs/08_Training_Pipeline|T8]] for the loop walkthrough, [[Docs/11_Operations_and_Testing|T11]] for the ops view, and `../guides/G5_checkpoint_ops.md` for the recovery playbook).
+> **Scope.** Every public symbol of the three modules, with exact signatures, defaults, shape/atomicity contracts, and callers. Reference style: one-line purpose per entry, no tutorial prose (see [Training Pipeline](../training.md) for the loop walkthrough, [Kernels & Ops](../concepts/kernels-and-ops.md) for the ops view, and [G5 — Checkpoint Ops](../guides/G5_checkpoint_ops.md) for the recovery playbook).
 >
 > **Anchor convention.** Symbols are cited as `utils/<file>.py:Symbol` (path prefix + `Class.method` or module-level name). No line anchors. JIT kernels are never cited — the utils layer has none.
 
@@ -115,7 +115,7 @@ def _checkpoint_complete(self, step: int) -> bool:
 
 1. **Two layers of dedup.** `training/pretrain.py:Pretrainer.save_checkpoint` drops the `head.weight` key outright when `weight_tying` is on; `_atomic_save_safetensors` dedups **by `data_ptr()`** as a second line of defense that would also catch any other accidentally shared storage. The file therefore contains exactly one copy of the tied embedding.
 2. **Restore.** `models/transformer.py:Transformer.__init__` re-establishes the tie (`self.head.weight = self.embed.weight` — one `Parameter` object) *before* `load` runs, so `load_state_dict(strict=False)` copies into `embed.weight`, which *is* the head's storage. `head.weight` shows up in the missing-keys audit and is expected: a warning under `strict=False`, an error under `strict=True`.
-3. **MTP keys.** MTP weights travel in the same safetensors file under the `mtp.` prefix (`mtp.mtp_modules.*`); `training/pretrain.py:Pretrainer.load_checkpoint` strips the prefix and restores them into the MTP module with `strict=False`. See [[Docs/05_Multi_Token_Prediction|T5]] and `../reference/R5_mtp_api.md`.
+3. **MTP keys.** MTP weights travel in the same safetensors file under the `mtp.` prefix (`mtp.mtp_modules.*`); `training/pretrain.py:Pretrainer.load_checkpoint` strips the prefix and restores them into the MTP module with `strict=False`. See [DeepSeekMoE & MTP](../concepts/moe-mtp.md) and [R5 — MTP API](./R5_mtp_api.md).
 
 ---
 
@@ -154,7 +154,7 @@ def log(self, step: int, loss: float, metrics: Optional[Dict[str, float]] = None
 | `lr` | `0.0` | Printed as `lr={lr:.2e}`; forwarded as `train/lr`. |
 
 - **Throughput line (batch_size included).** `tokens_per_sec = (log_interval * seq_len * batch_size) / elapsed`, where `elapsed = max(time.time() - self._step_start, 1e-6)`. The window is exactly `log_interval` micro-batches of `batch_size × seq_len` tokens each — the logger assumes every interval consumed exactly that many tokens.
-- **PPL.** `ppl = torch.tensor(avg_loss).exp().item()` — nats → perplexity; see [[Docs/01_Foundations|T1]] for the loss/PPL relationship.
+- **PPL.** `ppl = torch.tensor(avg_loss).exp().item()` — nats → perplexity; see [Foundations & Architecture](../concepts/foundations.md) for the loss/PPL relationship.
 - **Output.** `step=… | loss=… | ppl=… | lr=… | tps=…` plus one `k=v` per metric. WandB receives `train/loss`, `train/ppl`, `train/lr`, `train/tokens_per_sec` (+ `train/{k}`), logged with `step=step`.
 - **State reset.** On a logged step, `_loss_window = []` and `_step_start = time.time()`.
 - **Callers.** `training/pretrain.py:Pretrainer.train` — once per optimizer step, with `lr=lr` and `metrics=log_metrics` (e.g. `mtp_loss`, `balance_loss`). This is the only host round-trip in the loop: `.item()` is called once per log step, not per micro-step.
@@ -206,7 +206,7 @@ def _optimiser_bytes(model: nn.Module) -> int:
 def _kv_cache_bytes(model: nn.Module, seq_len: int, batch_size: int, dtype_bytes: int = 2) -> int:
 ```
 
-`utils/memory.py:_kv_cache_bytes` — sums over `model.layers`: per layer, `batch_size * seq_len * (kv_lora_rank + qk_rope_head_dim) * dtype_bytes`; layers without an `attn` attribute (or missing dims) contribute 0. The cache stores the **compressed latent** (192 + 24 = 216 floats/token/layer), independent of head count — the MLA win (see [[Docs/03_Multi_Head_Latent_Attention|T3]]).
+`utils/memory.py:_kv_cache_bytes` — sums over `model.layers`: per layer, `batch_size * seq_len * (kv_lora_rank + qk_rope_head_dim) * dtype_bytes`; layers without an `attn` attribute (or missing dims) contribute 0. The cache stores the **compressed latent** (192 + 24 = 216 floats/token/layer), independent of head count — the MLA win (see [MLA & Mixed Precision](../concepts/attention-and-precision.md)).
 
 ```python
 def _activation_bytes(
@@ -249,7 +249,7 @@ def estimate_model_memory_gb(
 | `inference` | `False` | `True` drops the optimizer (12×N) and activation terms — inference carries no AdamW state and forward activations are dominated by the KV cache. |
 
 - **Formula.** `bytes_total = _parameter_bytes(model) + _kv_cache_bytes(model, seq_len, batch_size, dtype_bytes)`; if not `inference`, add `_optimiser_bytes(model) + _activation_bytes(seq_len, batch_size, hidden_dim, n_layers, grad_checkpoint, dtype_bytes)`. Return `(bytes_total / 1024**3) + overhead_gb`.
-- **Canonical-config numbers** (batch 8, seq 2048, 18 layers, BF16, 411\,632\,256 deduped params; component subtotal verified by running the estimator on the real model, 2026-08-04 — still estimates): parameters 0.77 GiB, AdamW 4.60 GiB, KV cache 0.12 GiB, activations (grad-ckpt) 10.13 GiB → subtotal ~15.6 GiB; + overhead 2 (CPU) – 13.6 (CUDA) → **~17.6 CPU / ~29.2 CUDA GiB**. With MTP (418\,713\,984 params) the subtotal is ~15.7 GiB. `inference=True` → ~0.89 GiB. Full table in [[Docs/11_Operations_and_Testing|T11 §5]].
+- **Canonical-config numbers** (batch 8, seq 2048, 18 layers, BF16, 411\,632\,256 deduped params; component subtotal verified by running the estimator on the real model, 2026-08-04 — still estimates): parameters 0.77 GiB, AdamW 4.60 GiB, KV cache 0.12 GiB, activations (grad-ckpt) 10.13 GiB → subtotal ~15.6 GiB; + overhead 2 (CPU) – 13.6 (CUDA) → **~17.6 CPU / ~29.2 CUDA GiB**. With MTP (418\,713\,984 params) the subtotal is ~15.7 GiB. `inference=True` → ~0.89 GiB. Full table in [Kernels & Ops](../concepts/kernels-and-ops.md) §5.
 - **Callers.** `scripts/microbench_a100.py` (training-mode estimate); docs chapters 02/10/11/12; `tests/test_utils.py` (`TestMemoryEstimation` pins each component's byte arithmetic).
 
 ### 3.4 `assert_fits_in_available_gpu`
@@ -277,7 +277,7 @@ def assert_fits_in_available_gpu(estimate_gb: float, safety_margin_gb: float = 0
 | `utils/memory.py:estimate_model_memory_gb` | `scripts/microbench_a100.py`, docs, `tests/test_utils.py` |
 | `utils/memory.py:assert_fits_in_available_gpu` | `scripts/microbench_a100.py` (margin 2.0), `tests/test_utils.py` |
 
-Sibling references: `../reference/R7_training_api.md` (Pretrainer wiring), `../reference/R2_transformer_api.md` (weight tying / `count_parameters`), `../reference/R9_inference_api.md` (checkpoint resolution in `generate`), `../guides/G5_checkpoint_ops.md` (recovery playbook).
+Sibling references: `../references/R7_training_api.md` (Pretrainer wiring), `../references/R2_transformer_api.md` (weight tying / `count_parameters`), `../references/R9_inference_api.md` (checkpoint resolution in `generate`), `../guides/G5_checkpoint_ops.md` (recovery playbook).
 
 ---
 
@@ -316,4 +316,9 @@ The loss is appended to `_loss_window` and the method returns early (`5 % 10 != 
 
 ---
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+## References
+
+- [Training Pipeline](../training.md) — loop walkthrough (T8)
+- [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) — ops view of the same machinery
+- [G5 — Checkpoint Ops](../guides/G5_checkpoint_ops.md) - recovery playbook
+- `tests/test_utils.py` - direct consumers of all three modules

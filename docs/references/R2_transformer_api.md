@@ -1,4 +1,4 @@
-# R2 — Transformer API Reference (`models/transformer.py`)
+# DeepSeek-v3-Lite — R2 Transformer API Reference
 
 > **60-second summary.** `models/transformer.py` is the model body of DeepSeek-V3-Lite: an
 > embedding, a stack of pre-norm blocks (MLA attention + SwiGLU/MoE FFN), a final RMSNorm and
@@ -33,7 +33,7 @@ that tie makes naive `sum(p.numel())` overcount by 7.1M… the embedding head, p
 
 Private helpers are part of the API contract because training/inference reach into them
 indirectly: `_build_causal_mask` defines the mask geometry the Triton kernel consumes (see
-`../12_Triton_Kernels.md`), and `_sample` is called cross-module by `inference/speculative.py`
+[Kernels & Ops](../concepts/kernels-and-ops.md)), and `_sample` is called cross-module by `inference/speculative.py`
 as a static method.
 
 ---
@@ -150,7 +150,7 @@ def __init__(self, config: dict, use_checkpoint: bool = False):
      `enforce_triton_env_var(model_cfg, print)`.
   2. `self.embed = nn.Embedding(vocab_size, dim)` initialized with
      `nn.init.normal_(self.embed.weight, std=0.006)` — the whole model's init scheme is
-     this one std (see `../01_Foundations.md`).
+     this one std (see [Foundations & Architecture](../concepts/foundations.md)).
   3. `self.layers = nn.ModuleList([TransformerBlock(i, model_cfg) for i in range(n_layers)])`.
   4. `self.norm = nn.RMSNorm(dim, eps=1e-6)` — final pre-head norm (pre-norm is applied
      once more before the head).
@@ -362,7 +362,7 @@ def _sample(logits: torch.Tensor, temperature: float, top_p: float, top_k: int) 
   (`Transformer._sample(main_logits[:, -1, :], temperature, top_p=1.0, top_k=0)`). With
   `top_p=1.0, top_k=0` the method reduces to temperature sampling / argmax.
 - Callers: `Transformer.generate`, `inference/speculative.py`, sampling tests. See
-  `../10_Inference_and_Serving.md` for the theory.
+  [Inference & Serving](../inference.md) for the theory.
 
 ---
 
@@ -383,7 +383,7 @@ def count_parameters(model: nn.Module) -> Tuple[int, int]:
   trainable for the base Transformer (411.6M); `MultiTokenPrediction(config, raw_model)`
   → 418,713,984 (418.7M), MTP delta ≈ 7.1M. The μP LR is then
   $6.0\mathrm{e}{-4}\times\sqrt{757\,226\,496/N}$ → **8.14e-4** base / **8.07e-4** with MTP
-  (exact: 8.138e-4 / 8.069e-4); see `../08_Training_Pipeline.md`.
+  (exact: 8.138e-4 / 8.069e-4); see [Training Pipeline](../training.md).
 - Callers: `training/pretrain.py` (base + MTP totals feed the μP LR computation and the
   param log), `tests/test_training.py` (LR formula), memory estimator tests.
 
@@ -456,8 +456,18 @@ def count_parameters(model: nn.Module) -> Tuple[int, int]:
 **Related docs:** `R3_mla_api.md` (attention + cache contract), `R4_moe_api.md` (MoE
 gate/bias), `R5_mtp_api.md` (MTP wrapper over this model), `R7_training_api.md` (trainer
 callsites), `R9_inference_api.md` (generation entry points),
-`../02_Model_Architecture.md` (topology walkthrough), `../08_Training_Pipeline.md` (μP LR
-derivation), `../10_Inference_and_Serving.md` (sampling theory), `../12_Triton_Kernels.md`
+[Foundations & Architecture](../concepts/foundations.md) (topology walkthrough), [Training Pipeline](../training.md) (μP LR
+derivation), [Inference & Serving](../inference.md) (sampling theory), [Kernels & Ops](../concepts/kernels-and-ops.md)
 (mask consumption in kernels).
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+## References
+
+- [R3 — MLA API](../references/R3_mla_api.md) - attention + cache contract
+- [R4 — MoE API](../references/R4_moe_api.md) - MoE gate/bias
+- [R5 — MTP API](../references/R5_mtp_api.md) - MTP wrapper over this model
+- [R7 — Training API](../references/R7_training_api.md) - trainer callsites
+- [R9 — Inference API](../references/R9_inference_api.md) - generation entry points
+- [Foundations & Architecture](../concepts/foundations.md) — topology walkthrough
+- [Training Pipeline](../training.md) — μP LR derivation
+- [Inference & Serving](../inference.md) — sampling theory
+- [Kernels & Ops](../concepts/kernels-and-ops.md) — mask consumption in kernels

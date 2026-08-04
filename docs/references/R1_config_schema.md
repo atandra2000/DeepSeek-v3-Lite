@@ -1,7 +1,7 @@
-# R1 — Config Schema Reference
+# DeepSeek-v3-Lite — R1 Config Schema Reference
 
 > Reference chapter · Part of the DeepSeek-V3-Lite API reference (R1–R9).
-> Companion learning chapters: [[Docs/08_Training_Pipeline]] (training loop semantics), [[Docs/09_Data_Pipeline]] (data keys), [[Docs/11_Operations_and_Testing]] (fixture configs), [[guides/G2_mup_and_lr_tuning]] (μP LR).
+> Companion learning chapters: [08 Training Pipeline](../training.md) (training loop semantics), [09 Data Pipeline](../concepts/data-pipeline.md) (data keys), [11 Operations and Testing](../concepts/kernels-and-ops.md) (fixture configs), [G2 mup and lr tuning](../guides/G2_mup_and_lr_tuning.md) (μP LR).
 
 ## 1. What this is
 
@@ -103,7 +103,7 @@ the file.
 | `rope_theta` | float | 10000 | 10000 | `models/mla.py:MultiHeadLatentAttention.__init__` → `_extend_rope` (base of the inverse-frequency schedule) |
 
 **Purpose (one line each).** `vocab_size` = token-id universe, must equal `len(tokenizer)`
-(the DeepSeek tokenizer is 100,018 with `byte_fallback`, see [[Docs/09_Data_Pipeline]]);
+(the DeepSeek tokenizer is 100,018 with `byte_fallback`, see [09 Data Pipeline](../concepts/data-pipeline.md));
 `dim` = residual-stream width; `n_layers` = total blocks; `n_heads` = attention heads;
 `n_dense_layers` = how many leading blocks use dense FFNs; `n_routed_experts` /
 `n_shared_experts` / `n_activated_experts` = MoE fan-out; `inter_dim` vs `moe_inter_dim`
@@ -237,14 +237,14 @@ gate-bias schedule; `save_dir` = checkpoint root.
 | Key | Type | Default | Canonical | Smoke | Read by |
 |---|---|---|---|---|---|
 | `train_data_path` | str | `"data/pretrain_data.bin"` | `"data/pretrain_chinchilla"` | `"data/pretrain_chinchilla"` | `training/pretrain.py:main` (`or args.data_path`) → `TrainingConfig.data_path` → `training/pretrain.py:PretrainDataset.__init__` — a **directory** selects the sharded layout (`shard_*.bin`, mmap'd, `PretrainDataset._locate` bisect), a **file** the single-tensor layout |
-| `tokenizer_path` | str | `"deepseek-ai/deepseek-coder-v2-lite"` | `"deepseek-ai/deepseek-coder-v2-lite"` | `"gpt2"` | **Only `inference/generate.py:main`** (`AutoTokenizer.from_pretrained`). **Inert in training** — `Pretrainer` never touches it; the data pipeline fixes the tokenizer in `data/prepare_data.py` (see [[Docs/09_Data_Pipeline]]) |
+| `tokenizer_path` | str | `"deepseek-ai/deepseek-coder-v2-lite"` | `"deepseek-ai/deepseek-coder-v2-lite"` | `"gpt2"` | **Only `inference/generate.py:main`** (`AutoTokenizer.from_pretrained`). **Inert in training** — `Pretrainer` never touches it; the data pipeline fixes the tokenizer in `data/prepare_data.py` (see [09 Data Pipeline](../concepts/data-pipeline.md)) |
 
 The tokenizer choice must agree with `vocab_size`: the canonical pair is
 `deepseek-coder-v2-lite` (100,018 rows, `byte_fallback`), the smoke pair is `gpt2`
 (50,257 rows, no HF auth). `training/pretrain.py:main` also reads two *model-section*
 keys into `TrainingConfig` (`vocab_size`, `max_seq_len`) for dataset sizing; the
 model code reads them again from the dict. There is no check that the two agree —
-that is a run-configuration invariant (test-guarded; see [[Docs/11_Operations_and_Testing]]).
+that is a run-configuration invariant (test-guarded; see [11 Operations and Testing](../concepts/kernels-and-ops.md)).
 
 ## 6. Dispatch, env vars, and CLI overrides
 
@@ -295,12 +295,10 @@ Optional keys the readers fall back to, not present in either file:
   on CPU/Mac always falls back to `sdpa`.
 - **`mtp_loss_weight: 0.0` with `mtp_depth ≥ 1`** — MTP wrapper not built (silently).
 
-## 9. Cross-links
+## References
+- Model-shape consequences: [02 Model Architecture](../concepts/foundations.md) (budgets), [03 Multi Head Latent Attention](../concepts/attention-and-precision.md) (MLA dims, mscale), [04 DeepSeekMoE](../concepts/moe-mtp.md) (gate + dispatch), [05 Multi Token Prediction](../concepts/moe-mtp.md) (MTP loss).
+- Loop semantics behind the training keys: [08 Training Pipeline](../training.md); μP math: [G2 mup and lr tuning](../guides/G2_mup_and_lr_tuning.md); scheduler closed form: `training/pretrain.py:make_warmup_cosine_lambda`.
+- Data keys: [09 Data Pipeline](../concepts/data-pipeline.md); Triton dispatch details: [12 Triton Kernels](../concepts/kernels-and-ops.md) and [R6 triton api](../references/R6_triton_api.md).
+- Fixture configs used by the test suite (same schema, tiny dims): [11 Operations and Testing](../concepts/kernels-and-ops.md).
+- The dataclass itself: [R7 training api](../references/R7_training_api.md) (`TrainingConfig`, `Pretrainer`, `PretrainDataset`).
 
-- Model-shape consequences: [[Docs/02_Model_Architecture]] (budgets), [[Docs/03_Multi_Head_Latent_Attention]] (MLA dims, mscale), [[Docs/04_DeepSeekMoE]] (gate + dispatch), [[Docs/05_Multi_Token_Prediction]] (MTP loss).
-- Loop semantics behind the training keys: [[Docs/08_Training_Pipeline]]; μP math: [[guides/G2_mup_and_lr_tuning]]; scheduler closed form: `training/pretrain.py:make_warmup_cosine_lambda`.
-- Data keys: [[Docs/09_Data_Pipeline]]; Triton dispatch details: [[Docs/12_Triton_Kernels]] and [[reference/R6_triton_api]].
-- Fixture configs used by the test suite (same schema, tiny dims): [[Docs/11_Operations_and_Testing]].
-- The dataclass itself: [[reference/R7_training_api]] (`TrainingConfig`, `Pretrainer`, `PretrainDataset`).
-
-<!-- docs:verified 2026-08-04 · 59aeef3 -->

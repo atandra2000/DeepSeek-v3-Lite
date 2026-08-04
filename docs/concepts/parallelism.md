@@ -1,10 +1,10 @@
-# 07 — DualPipe Bidirectional Pipeline Parallelism
+# DeepSeek-v3-Lite — DualPipe Parallelism (Paper-Spec)
 
 > **Canonical** for DeepSeek-V3's DualPipe algorithm: the pipeline-bubble problem, 1F1B scheduling, and the bidirectional overlap that halves the bubble. Educational textbook chapter — from-scratch, with the schedule diagrams and the intuition.
 
 > How DeepSeek-V3 overlaps forward/backward GEMMs with All-to-All MoE dispatch so distributed MoE training spends GPU time computing instead of waiting on the network. **Status in this repo:** DualPipe is **paper-spec only — not implemented.** This reproduction is single-GPU (`training/pretrain.py` is an explicit single-device loop, no `torch.distributed`, no pipeline stages). This chapter documents the technique because it is central to DeepSeek-V3's distributed story; at 411.6M params on one A100, there is nothing to pipeline across.
 
-**Depends on:** [[Docs/04_DeepSeekMoE]], [[Docs/06_FP8_Mixed_Precision]] · **Read next:** [[Docs/08_Training_Pipeline]]
+**Depends on:** [MoE & MTP](../concepts/moe-mtp.md), [MLA & Mixed Precision](../concepts/attention-and-precision.md) · **Read next:** [Training](../training.md)
 
 ---
 
@@ -216,9 +216,9 @@ This is the engineering surface that makes DualPipe a *distributed-systems* proj
 
 ## 9. Why this repo skips it — the single-GPU loop
 
-DualPipe's value is realized only when (a) the model is split across ≥2 GPUs and (b) MoE All-to-All is a measurable stall. This repo's `training/pretrain.py` is an explicit **single-GPU** loop: one device, `torch.compile(max-autotune)`, gradient checkpointing, no `torch.distributed` process group, no `all_to_all`. The MoE experts all live on the one device, so routing is a `stacked`/`triton_grouped` local dispatch (see [[Docs/12_Triton_Kernels]]), not a cross-node collective. There is nothing to pipeline.
+DualPipe's value is realized only when (a) the model is split across ≥2 GPUs and (b) MoE All-to-All is a measurable stall. This repo's `training/pretrain.py` is an explicit **single-GPU** loop: one device, `torch.compile(max-autotune)`, gradient checkpointing, no `torch.distributed` process group, no `all_to_all`. The MoE experts all live on the one device, so routing is a `stacked`/`triton_grouped` local dispatch (see [12 Triton Kernels](../concepts/kernels-and-ops.md)), not a cross-node collective. There is nothing to pipeline.
 
-The choice is deliberate and documented in the design goals (see [[Docs/02_Model_Architecture]] §Design Goals): *single-GPU training* and *one file explains the full train path* are both portfolio-defensible properties, and both are incompatible with pipeline parallelism. DualPipe is documented here so the portfolio covers the full DeepSeek-V3 distributed story; it is the natural next chapter if the model were scaled to a size that no longer fit on one device.
+The choice is deliberate and documented in the design goals (see [02 Model Architecture](../concepts/foundations.md) §Design Goals): *single-GPU training* and *one file explains the full train path* are both portfolio-defensible properties, and both are incompatible with pipeline parallelism. DualPipe is documented here so the portfolio covers the full DeepSeek-V3 distributed story; it is the natural next chapter if the model were scaled to a size that no longer fit on one device.
 
 ### 9.1 What the single-GPU loop actually does
 
@@ -278,20 +278,20 @@ The optimizer (`optimizer.step()`, `scheduler.step()`, `zero_grad()`) runs only 
 | Cross-stage latency hiding | `torch.compile(mode="max-autotune")` + kernel fusion |
 | Cross-node expert routing | local `stacked` dispatch (`models/moe.py:DeepSeekMoE._routed_forward_stacked`) or opt-in `triton_grouped` (`models/moe_triton.py:triton_grouped_moe_dispatch`) |
 
-Every row of that table is a *within-device* substitute for a *between-device* mechanism. If the model outgrew one A100, the natural port is the V3 stack this chapter describes — but that is explicitly out of scope for this reproduction (see the banner and [[Docs/02_Model_Architecture|Design Goals]]).
+Every row of that table is a *within-device* substitute for a *between-device* mechanism. If the model outgrew one A100, the natural port is the V3 stack this chapter describes — but that is explicitly out of scope for this reproduction (see the banner and [Design Goals](../concepts/foundations.md)).
 
 ---
 
 ## 10. Pitfalls
 
-- **Bubble math assumes balanced stages.** The formulas divide by $P$ stages of equal $F+B$. This repo's layer mix is 2 dense + 16 MoE layers — an 18-layer model split into, say, 8 stages cannot be split evenly in *compute* (the dense SwiGLU layers cost ~1.3M FLOPs/token each vs ~8.8M for the MoE layers at canonical dims, per [[Docs/04_DeepSeekMoE]]). Real stage boundaries must be tuned against measured per-layer times, or the slowest stage sets the global clock and the bubble formula underestimates the true idle.
+- **Bubble math assumes balanced stages.** The formulas divide by $P$ stages of equal $F+B$. This repo's layer mix is 2 dense + 16 MoE layers — an 18-layer model split into, say, 8 stages cannot be split evenly in *compute* (the dense SwiGLU layers cost ~1.3M FLOPs/token each vs ~8.8M for the MoE layers at canonical dims, per [04 DeepSeekMoE](../concepts/moe-mtp.md)). Real stage boundaries must be tuned against measured per-layer times, or the slowest stage sets the global clock and the bubble formula underestimates the true idle.
 - **Exact vs asymptotic formulas.** $(P-1)/M$ is the large-$M$ limit of $(P-1)/(M+P-1)$. At $M = P$ they disagree by nearly 2× (see the $P=4, M=4$ check in Section 2). Quote the exact form for small $M$; the asymptotic form hides a real bubble.
 - **The $F/B$ ratio cancels in the fraction, but not in wall time.** The bubble *fraction* is ratio-independent, but the absolute idle time grows with $B \approx 2F$. A schedule that looks fine in unit-time diagrams can still waste most of a training run if the backward drain is long — which is exactly what 1F1B's interleaving mitigates.
 - **Overlap is only as good as the window it hides in.** DualPipe's $(P-1)/(2M)$ assumes the All-to-All fits entirely inside the opposing stream's compute window. If the network is slower than the GEMM (small expert GEMMs, congested topology), the stall reappears. The overlap claim is a *design target*, not a guarantee — and no GPU run of this repo (or of V3 at this scale) has measured it.
 - **Batch-size semantics change under pipelining.** With pipeline parallelism, the effective batch is $M \times$ (per-stage micro-batch size) $\times$ sequence length, and the optimizer step happens once per $M$ micro-batches. Hyperparameters that are step-indexed — the warmup/cosine schedule, the MoE bias update cadence (`bias_update_every`), gradient clipping — all see a different step rhythm than the single-GPU loop's. The μP LR scaling in `training/pretrain.py:Pretrainer.__init__` depends only on parameter count ($6.0e{-4}\sqrt{757226496/N} \to 8.14e{-4}$ base / $8.07e{-4}$ with MTP), so it is pipeline-agnostic — but every *count-based* schedule is not.
-- **MoE bias updates become stale and per-stage.** In this repo, `_update_moe_bias` (`training/pretrain.py:Pretrainer._update_moe_bias`) feeds routing counts from the last forward back into each gate's bias every `bias_update_every` optimizer steps (see [[Docs/04_DeepSeekMoE]] §Bias-update). Under pipeline parallelism each stage sees a *different* micro-batch at a given wall-clock time; the "global" load-balance signal becomes a per-stage, time-shifted signal, which can drive the 20 experts' biases out of sync. The aux-loss-free feedback loop is only well-defined in the single-GPU setting.
+- **MoE bias updates become stale and per-stage.** In this repo, `_update_moe_bias` (`training/pretrain.py:Pretrainer._update_moe_bias`) feeds routing counts from the last forward back into each gate's bias every `bias_update_every` optimizer steps (see [04 DeepSeekMoE](../concepts/moe-mtp.md) §Bias-update). Under pipeline parallelism each stage sees a *different* micro-batch at a given wall-clock time; the "global" load-balance signal becomes a per-stage, time-shifted signal, which can drive the 20 experts' biases out of sync. The aux-loss-free feedback loop is only well-defined in the single-GPU setting.
 - **Bidirectional schedules can deadlock.** The two counter-streams share stage buffers; a schedule that lets stream A fill stage $i$'s buffer while stream B waits on stage $i+1$'s buffer (and vice versa) deadlocks. This is why DeepSeek-V3 hardcodes the schedule instead of deriving it at runtime — and why a correct implementation needs buffer-accounting tests that a single-GPU repo simply has no reason to write.
-- **Do not retrofit.** Adding `torch.distributed` to this repo would break design goal #4 (CPU-testable: all correctness tests run without CUDA or a process group, see [[Docs/11_Operations_and_Testing]]). The 199-test suite assumes a single process and deterministic single-device numerics. Pipeline parallelism here is a *documented* technique, not a TODO.
+- **Do not retrofit.** Adding `torch.distributed` to this repo would break design goal #4 (CPU-testable: all correctness tests run without CUDA or a process group, see [11 Operations and Testing](../concepts/kernels-and-ops.md)). The 199-test suite assumes a single process and deterministic single-device numerics. Pipeline parallelism here is a *documented* technique, not a TODO.
 
 ---
 
@@ -331,6 +331,8 @@ Gradient accumulation: `is_opt_step = (micro_step + 1) % gradient_accumulation_s
 
 ---
 
-> **Next:** [[Docs/08_Training_Pipeline]] — the actual single-GPU pretrain loop, AdamW, μP LR scaling, NaN guard, and atomic checkpointing.
+## References
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+- [DeepSeek-V3 Technical Report](https://arxiv.org/abs/2412.19437) — §1.3.2 DualPipe, §2.3.4 all-to-all dispatch
+- [Training](../training.md) — the single-GPU loop that stands in for pipelining here
+- [MoE & MTP](../concepts/moe-mtp.md) — expert routing that DualPipe would dispatch across nodes

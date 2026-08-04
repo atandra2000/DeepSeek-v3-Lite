@@ -1,7 +1,7 @@
-# G4 — Benchmarking DeepSeek-v3-Lite on a GPU
+# DeepSeek-v3-Lite — Benchmarking
 
 > **Status:** guide · **Applies to:** anyone who quotes a throughput, VRAM, or MFU number
-> **Depends on:** [[Docs/11_Operations_and_Testing]], [[Docs/08_Training_Pipeline]] · **Read next:** [G2 — μP & LR tuning](G2_mup_and_lr_tuning.md), [G3 — Triton development](G3_triton_development.md)
+> **Depends on:** [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md), [Training Pipeline](../training.md) · **Read next:** [G2 — μP & LR Tuning](G2_mup_and_lr_tuning.md), [G3 — Triton Development](G3_triton_development.md)
 
 ## 60-Second Summary
 
@@ -227,7 +227,7 @@ Rules, in order of importance:
 3. **Every perf claim cites its script**: anchor the tool that produced it (`scripts/step_time_a100.py:main` for MFU, `scripts/microbench_a100.py:main` for VRAM, `utils/logging.py:TrainingLogger.log` for tps). No script, no claim.
 4. **Parameter counts stay `[COUNTED]`** via `models/transformer.py:count_parameters` — 411.6M / 418.7M is not a benchmark and never gets relabeled.
 
-Where the numbers live today, and what to touch after the first run: the "13–15 h / 35–40% MFU" comment in `configs/pretrain_a100_422m.yaml` and the `scripts/launch_a100.sh` echoes (both `[ESTIMATE]`, §1.3 says they are wrong); the VRAM budget section of `docs/11_Operations_and_Testing.md` (the estimator walkthrough lives in `../reference/R8_utils_api.md`); the budget tables in `docs/02_Model_Architecture.md`; and this guide's §1.2 table.
+Where the numbers live today, and what to touch after the first run: the "13–15 h / 35–40% MFU" comment in `configs/pretrain_a100_422m.yaml` and the `scripts/launch_a100.sh` echoes (both `[ESTIMATE]`, §1.3 says they are wrong); the VRAM budget section of `concepts/kernels-and-ops.md` (the estimator walkthrough lives in `../references/R8_utils_api.md`); the budget tables in `concepts/foundations.md`; and this guide's §1.2 table.
 
 ## 9. Pitfalls (Consolidated)
 
@@ -248,4 +248,10 @@ Where the numbers live today, and what to touch after the first run: the "13–1
 2. **Q:** `sum(p.numel() for p in model.parameters())` on the canonical config reports ~488M params. Where does the error come from? **A:** The tied output head shares the embedding tensor, so `parameters()` yields it twice; `count_parameters` dedups by tensor id (§3.2).
 3. **Q:** You measure 62,000 tok/s on the logger during a real run. What is the MFU? **A:** $6 \times 334\,818\,432 \times 62\,000 / (312 \times 10^{12}) \approx 40\%$, before accounting for MTP's extra FLOPs — and only if TF32 + compile were on and recorded (§6.3).
 
-<!-- docs:verified 2026-08-04 · 59aeef3 -->
+## References
+
+- [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) — VRAM budget, test suite
+- [Training Pipeline](../training.md) — loop semantics behind step-time numbers
+- [R8 — Utils API](../references/R8_utils_api.md) - `estimate_model_memory_gb` estimator walkthrough
+- [G2 — μP & LR tuning](../guides/G2_mup_and_lr_tuning.md) / [G3 - Triton development](../guides/G3_triton_development.md)
+- Scripts: `scripts/microbench_a100.py`, `scripts/step_time_a100.py`, `scripts/e2e_test_gpu.py`

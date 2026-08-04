@@ -36,7 +36,7 @@ split-K) and can reason about HBM bandwidth vs compute trade-offs.
   trick, YaRN scaling (gated by `rope_factor > 1.0`; canonical config uses
   `rope_factor=1.0` so YaRN is dormant), KV cache. **`attn_impl` supports
   `"sdpa"`, `"manual"`, and `"triton"`** (the Triton path delegates to
-  `models/mla_triton.py`). **Technical deep-dive in `docs/03_Multi_Head_Latent_Attention.md`.**
+  `models/mla_triton.py`). **Technical deep-dive in `docs/concepts/attention-and-precision.md`.**
 - `models/mla_triton.py` — fused FA2-style MLA attention: on-the-fly
   K_nope / V materialisation from the latent + `wkv_b`, RoPE applied
   inside the kernel, online softmax. Backward via re-compute (FA2
@@ -105,9 +105,9 @@ workspace umbrella; this project imports it via `sys.path` in
 `data/prepare_data.py` — it is not vendored here). Mixture: FineWeb-Edu
 0.5 / FineWeb 0.2 / the-stack-python 0.15 / OpenMathInstruct-2 0.10 / arxiv
 0.05. Tokenized with `deepseek-ai/deepseek-coder-v2-lite` tokenizer (vocab
-100,018). See `data/DATA_PIPELINE.md` (redirects to `docs/09_Data_Pipeline.md`).
+100,018). See `docs/training.md` (data pipeline) and `docs/concepts/data-pipeline.md`.
 
-**Doc routing:** implementation questions → `models/*.py` first; theory → `docs/<component>.md`; API reference (signatures, shape contracts, defaults) → `docs/reference/R<n>_*.md`; operational procedures → `docs/guides/G<n>_*.md`; invariants → `tests/` + `docs/11_Operations_and_Testing.md`. MLA deep-dive → `docs/03_Multi_Head_Latent_Attention.md`. Doc↔code alignment is machine-checked by `tests/test_doc_refs.py` (every code-symbol citation — file path + class/method — must resolve; line anchors and JIT-kernel citations are banned) and `scripts/check_docs.py` (links, paths, stale patterns) — both run in CI; stale docs fail the build.
+**Doc routing:** implementation questions → `models/*.py` first; theory → `docs/<component>.md`; API reference (signatures, shape contracts, defaults) → `docs/references/R<n>_*.md`; operational procedures → `docs/guides/G<n>_*.md`; invariants → `tests/` + `docs/concepts/kernels-and-ops.md`. MLA deep-dive → `docs/concepts/attention-and-precision.md`. Doc↔code alignment is machine-checked by `tests/test_doc_refs.py` (every code-symbol citation — file path + class/method — must resolve; line anchors and JIT-kernel citations are banned) and `scripts/check_docs.py` (links, paths, stale patterns) — both run in CI; stale docs fail the build.
 
 **Configs:** `configs/pretrain_a100_422m.yaml` (canonical 422M A100 recipe).
 Two new optional config keys: `attn_impl` (default `"sdpa"`, set to
@@ -127,7 +127,7 @@ passing (189 pass + 10 GPU-gated skips) without any CUDA dependency.
    - **MoE routed-expert dispatch** — `models/moe_triton.py`.
    - **MLA attention materialisation** — `models/mla_triton.py`.
    No other component gets a custom kernel without updating this file
-   and `docs/12_Triton_Kernels.md`.
+   and `docs/concepts/kernels-and-ops.md`.
 2. **Hardware Optimization:** Maximize hardware utilization. For the
    two sanctioned Triton paths, target ≥ 1.5× speedup over the
    raw-PyTorch path in `scripts/microbench_a100.py`; below that, do
@@ -136,7 +136,7 @@ passing (189 pass + 10 GPU-gated skips) without any CUDA dependency.
    `update_bias` runs out-of-band in Python every `bias_update_every`
    steps; the Triton MoE kernel only fuses the forward. Do not move
    the bias into the kernel.
-4. **Always** read `docs/03_Multi_Head_Latent_Attention.md` before answering MLA questions — it is the
+4. **Always** read `docs/concepts/attention-and-precision.md` before answering MLA questions — it is the
    authoritative reference for theory and this-repo implementation. The Triton MLA kernel re-expresses
    the same math; the doc still describes the algebra.
 5. **Always** verify the embedding dim matches `vocab_size` (100,018)
