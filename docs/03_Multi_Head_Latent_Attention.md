@@ -52,7 +52,7 @@
 
 ## Abstract
 
-**Multi-Head Latent Attention (MLA)** is the attention mechanism introduced in DeepSeek-V2 (May 2024) and refined in DeepSeek-V3 (Dec 2024). Its central innovation is **low-rank joint compression of keys and values**: instead of caching full per-head K/V tensors during autoregressive generation (the standard "KV cache"), MLA compresses them into a small latent vector and reconstructs them on the fly. This yields a **~7× reduction in KV-cache memory at the 422M scale** (up to ~30× at DeepSeek-V3's 671B scale) at no quality loss, making long-context inference dramatically more memory-efficient.
+**Multi-Head Latent Attention (MLA)** is the attention mechanism introduced in DeepSeek-V2 (May 2024) and refined in DeepSeek-V3 (Dec 2024). Its central innovation is **low-rank joint compression of keys and values**: instead of caching full per-head K/V tensors during autoregressive generation (the standard "KV cache"), MLA compresses them into a small latent vector and reconstructs them on the fly. This yields a **~7× reduction in KV-cache memory at the 411.6M scale** (up to ~30× at DeepSeek-V3's 671B scale) at no quality loss, making long-context inference dramatically more memory-efficient.
 
 MLA achieves this through four interlocking mechanisms:
 
@@ -1187,7 +1187,7 @@ MLA matches MHA perplexity while GQA and MQA incur measurable degradation.
 
 ## V3-Lite Architecture Deep Dives
 
-The following sections provide concrete numerical analysis and step-by-step derivations specific to the DeepSeek-V3-Lite (422M) configuration. They complement the conceptual sections above with worked calculations.
+The following sections provide concrete numerical analysis and step-by-step derivations specific to the DeepSeek-V3-Lite (422m) configuration. They complement the conceptual sections above with worked calculations.
 
 ### KV Cache Problem Analysis
 

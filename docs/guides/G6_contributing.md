@@ -5,7 +5,7 @@
 
 ## 60-Second Summary
 
-Contributing to this repo is a checklist discipline, not a free-form exercise. Every change — a new test, a kernel edit, a doc paragraph — is checked by machine gates: `scripts/check_docs.py` lints prose hygiene, `tests/test_doc_refs.py:test_doc_anchors_resolve` proves every code anchor in the docs resolves against real symbols, and the pytest suite (196 nodes: 186 pass + 10 GPU-gated skips on a laptop) exercises the real `Transformer`/`Pretrainer`/`CheckpointManager` at toy scale, CPU-only. Above the gates sit the AGENTS.md hard rules — exactly two sanctioned Triton paths, the aux-loss-free bias-update mechanism, re-stack-every-forward expert weights, weight-tying dedup — and the workspace git policy (all commits authored by Atandra Bharati, never a `Co-Authored-By:` trailer). This guide walks each contract, gives the commands, and ends with checklists.
+Contributing to this repo is a checklist discipline, not a free-form exercise. Every change — a new test, a kernel edit, a doc paragraph — is checked by machine gates: `scripts/check_docs.py` lints prose hygiene, `tests/test_doc_refs.py:test_doc_anchors_resolve` proves every code anchor in the docs resolves against real symbols, and the pytest suite (199 nodes: 189 pass + 10 GPU-gated skips on a laptop) exercises the real `Transformer`/`Pretrainer`/`CheckpointManager` at toy scale, CPU-only. Above the gates sit the AGENTS.md hard rules — exactly two sanctioned Triton paths, the aux-loss-free bias-update mechanism, re-stack-every-forward expert weights, weight-tying dedup — and the workspace git policy (all commits authored by Atandra Bharati, never a `Co-Authored-By:` trailer). This guide walks each contract, gives the commands, and ends with checklists.
 
 ## 1. Orientation: Where Your Change Lives
 
@@ -73,7 +73,7 @@ These are canonical; never reintroduce the old values ("422M as a param count", 
 | Params (deduped base) | 411.6M (411,632,256) — "422M" is only the config *filename* |
 | Params with MTP | 418.7M (418,713,984); MTP adds ~7.1M |
 | Active params per token | ~185M |
-| Test suite | 196 nodes = 186 pass + 10 GPU-gated skips on a laptop |
+| Test suite | 199 nodes = 189 pass + 10 GPU-gated skips on a laptop |
 | μP LR | `6.0e-4 × sqrt(757226496 / N)` → 8.138e-4 base / 8.069e-4 with MTP (rounded: 8.14e-4 / 8.07e-4) |
 | Scheduler horizon | `max_steps // gradient_accumulation_steps` — opt-step space, per the comment in `Pretrainer.__init__` (`training/pretrain.py:Pretrainer.__init__`) |
 | GPU runs | none executed — every memory/latency figure in the docs is an estimate; label it |
@@ -126,7 +126,7 @@ python tests/test_doc_refs.py
 
 ### 3.3 The pytest suite and the forward smoke test
 
-`python -m pytest tests/ -q --tb=short` runs the full 196-node suite, under 20 s on a laptop, no GPU required. `scripts/smoke_forward.py:main` then builds the canonical 411.6M-param `Transformer` from `configs/pretrain_a100_422m.yaml` (with `max_seq_len` shrunk to 16) and asserts the logits shape `(2, 16, vocab_size)` — the closest CI comes to the real model. Note that steps 3–6 run even if the suite fails, so a push cannot hide doc drift behind a test failure.
+`python -m pytest tests/ -q --tb=short` runs the full 199-node suite, under 20 s on a laptop, no GPU required. `scripts/smoke_forward.py:main` then builds the canonical 411.6M-param `Transformer` from `configs/pretrain_a100_422m.yaml` (with `max_seq_len` shrunk to 16) and asserts the logits shape `(2, 16, vocab_size)` — the closest CI comes to the real model. Note that steps 3–6 run even if the suite fails, so a push cannot hide doc drift behind a test failure.
 
 ```mermaid
 graph TD

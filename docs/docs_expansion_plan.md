@@ -1,7 +1,7 @@
 # Documentation Expansion Plan — DeepSeek-v3-Lite
 
-> Status: **PLANNED** · Owner: coordinator · Target: ~52.5k → ~160k words, every
-> public symbol anchor-verified, zero stale numbers.
+> Status: **COMPLETED (2026-08-04)** · Owner: coordinator · Result: 181,057 words
+> across 31 docs, every public symbol anchor-verified, zero stale numbers.
 > This file is the single source of truth for the expansion; writer agents read
 > it + `local://doc_contract.md` and write ONLY their assigned files.
 
@@ -27,9 +27,9 @@
 | 11 Operations & Testing | 2,310 | 239 | 2 | Suite map + checkpoints; no debugging recipes |
 | 12 Triton Kernels | 2,135 | 222 | 2 | 2 kernels × 860 LoC deserve a real tutorial each |
 | 13 Portfolio Comparison | 1,337 | 139 | 2 | Fine as-is (comparative, not reference) |
-| **Total** | **~52.5k** | **~10.3k** | — | — |
+| **Total** | **181,057** | **19,562** | — | — |
 
-### 1.2 Alignment audit (machine-checked)
+### 1.2 Alignment audit (machine-checked) — *historical context (pre-expansion state)*
 
 Run: `ANCHOR_RE = file.py:Symbol` across all docs, resolved via importlib.
 
@@ -40,11 +40,13 @@ Run: `ANCHOR_RE = file.py:Symbol` across all docs, resolved via importlib.
   `models/` prefix); `docs/01` cites `models/mla.py:_apply_rope` and `docs/09`
   cites `training/pretrain.py:train_step` without their classes
   (`MultiHeadLatentAttention._apply_rope`, `Pretrainer.train_step`).
-- **No symbol gate exists.** `scripts/check_docs.py` verifies markdown links,
+- **No symbol gate existed at audit time.** `scripts/check_docs.py` verifies markdown links,
   backtick paths, control chars, and a hardcoded stale-pattern list — not that
-  documented symbols exist.
+  documented symbols exist. **This is now fixed:** the symbol gate
+  `tests/test_doc_refs.py` was built in phase P0, is wired into CI, and passes
+  (100% of cited symbols resolve, 0 line anchors).
 
-### 1.3 Stale facts fixed during the audit (2026-08-04)
+### 1.3 Stale facts fixed during the audit (2026-08-04) — *historical context*
 
 - Test count 189 → **196** (186 pass + 10 GPU skips): AGENTS.md ×2, docs/11 ×2,
   docs/12, `scripts/check_docs.py` hint string.
@@ -224,8 +226,8 @@ Mandatory for every writer:
 5. **Honesty**: measured vs derived vs `[INFERENCE]` labeled; empty
    `.benchmarks/` means numbers are estimates; paper-spec chapters keep the banner.
 6. **Scope**: write ONLY your assigned file; no tests, no linters, no git.
-7. **Numbers**: canonical = 411.6M base / 418.7M with MTP, 196 tests
-   (186+10), μP 8.07e-4 (MTP) / 8.14e-4 (base). Never reintroduce 422M/189/8.04e-4.
+7. **Numbers**: canonical = 411.6M base / 418.7M with MTP, 199 tests
+   (189+10), μP 8.07e-4 (MTP) / 8.14e-4 (base). Never reintroduce 422M/189/8.04e-4.
 
 ---
 
@@ -260,7 +262,7 @@ Writer task template per doc: `# Target` (file), `# Change` (outline pointer +
 source files to read first + contract pointer `local://doc_contract.md`),
 `# Acceptance` (anchors resolve, 0 line anchors, links live, style template
 followed, word target). Batch context carries: verified project facts, the
-411.6/418.7/196/8.07e-4 constants, CRITICAL constraint "no `_stream_to_disk`-
+411.6/418.7/199/8.07e-4 constants, CRITICAL constraint "no `_stream_to_disk`-
 style fiction: only cite symbols that exist".
 
 ---
@@ -277,7 +279,7 @@ style fiction: only cite symbols that exist".
 4. **Freshness**: no "189", "422M-params", "8.04e-4", "~3M MTP" anywhere;
    size table + verification stamps regenerated.
 5. **Sizes**: total ≥ 150k words; every T-chapter ≥ 5k words; every R/G ≥ 2k.
-6. **Suite**: full pytest green (196 nodes) before landing.
+6. **Suite**: full pytest green (199 nodes) before landing.
 7. **Vault**: mirrored docs in `~/Documents/obsidian` via the workspace sync
    script, never hand-edited.
 

@@ -10,7 +10,7 @@
 
 ## 0. Sixty-Second Summary
 
-**DeepSeek-v3-Lite** is a from-scratch, raw-PyTorch reproduction of **DeepSeek-V3** (DeepSeek-AI, 2024) sized for single-GPU study: 18 transformer layers, MLA attention, a DeepSeekMoE block with 20 routed experts, and a depth-1 MTP head. It has **411.6M deduped parameters** (418.7M with MTP) and activates ~185M parameters per token. The full test suite (**196 tests**: 186 pass, 10 GPU-gated skips) runs on a CPU-only laptop, so you can study and verify the architecture without any GPU. This page takes you from `git clone` to a verified forward pass in about ten minutes, then routes you into the chapter sequence below.
+**DeepSeek-v3-Lite** is a from-scratch, raw-PyTorch reproduction of **DeepSeek-V3** (DeepSeek-AI, 2024) sized for single-GPU study: 18 transformer layers, MLA attention, a DeepSeekMoE block with 20 routed experts, and a depth-1 MTP head. It has **411.6M deduped parameters** (418.7M with MTP) and activates ~185M parameters per token. The full test suite (**199 tests**: 189 pass, 10 GPU-gated skips) runs on a CPU-only laptop, so you can study and verify the architecture without any GPU. This page takes you from `git clone` to a verified forward pass in about ten minutes, then routes you into the chapter sequence below.
 
 ---
 
@@ -186,7 +186,7 @@ python3 training/pretrain.py --config configs/pretrain_a100_422m.yaml
 **CPU smoke (any machine):**
 
 ```bash
-python3 -m pytest tests/ -q                       # 186 passed, 10 skipped — see §7.1
+python3 -m pytest tests/ -q                       # 189 passed, 10 skipped — see §7.1
 python3 scripts/smoke_forward.py                  # full 422M config, tiny input — see §7.2
 python3 scripts/check_docs.py                     # doc linter — see §7.3
 ```
@@ -242,7 +242,7 @@ Run these three in order; each one guards a different layer of the stack. Togeth
 
 ### 7.1 Step 1 — `python3 -m pytest tests/ -q`
 
-The suite has **196 test nodes**: 186 pass on CPU, and **10 are GPU-gated skips** (Triton MLA/MoE kernel agreement and CUDA chunked-prefill tests). On a CPU-only machine you should see `186 passed, 10 skipped` — that is a healthy result, not a warning (see §8, row 3). The suite covers the model (`tests/test_models.py`), training loop (`tests/test_training.py`), MLA/MoE Triton paths (GPU-gated), inference, checkpointing, and the doc-anchor gate `tests/test_doc_refs.py`.
+The suite has **199 test nodes**: 189 pass on CPU, and **10 are GPU-gated skips** (Triton MLA/MoE kernel agreement and CUDA chunked-prefill tests). On a CPU-only machine you should see `189 passed, 10 skipped` — that is a healthy result, not a warning (see §8, row 3). The suite covers the model (`tests/test_models.py`), training loop (`tests/test_training.py`), MLA/MoE Triton paths (GPU-gated), inference, checkpointing, and the doc-anchor gate `tests/test_doc_refs.py`.
 
 ### 7.2 Step 2 — `python3 scripts/smoke_forward.py`
 
@@ -271,7 +271,7 @@ If you see this, the model constructs, the forward path executes end-to-end (emb
 The docs linter verifies every markdown link, every backtick-quoted repo path (`configs/…`, `scripts/…`, `models/…`, …), control characters, and a hardcoded stale-pattern list (banned old numbers like "189" tests or "422M-params"). Expected output:
 
 ```
-check_docs: OK (16 files)
+check_docs: OK (31 files)
 ```
 
 A non-zero exit with `check_docs: N issue(s)` means a link or path in the docs is broken — fix or report it before relying on the docs.
@@ -288,7 +288,7 @@ On CUDA hardware, `python3 scripts/microbench_a100.py:main` builds the 422M mode
 |---|---|---|
 | `ModuleNotFoundError: No module named 'models'` | `python` invoked outside the repo root; the repo is not pip-installed, so `models` resolves only with the repo root on `sys.path` | Run from the repo root. Bundled scripts insert the root themselves (e.g. `scripts/smoke_forward.py` does `sys.path.insert(0, str(REPO_ROOT))`); bare `python -c "import models…"` from elsewhere will not |
 | `ModuleNotFoundError: No module named 'shared_data'` | `data/prepare_data.py:main` delegates to the universal pipeline in the sibling `LLM/shared_data/` directory (single source of truth for the 8.4B-token corpus) | Clone/vendor `LLM/shared_data` next to this project, or use the self-contained `scripts/build_small_pretrain_data.py` for the 1650 smoke path |
-| `186 passed, 10 skipped` in pytest | Expected on CPU/Mac: the skips are GPU-gated (Triton MLA/MoE kernels, CUDA chunked prefill) | None — healthy result. The GPU tests run only where `torch.cuda.is_available()` |
+| `189 passed, 10 skipped` in pytest | Expected on CPU/Mac: the skips are GPU-gated (Triton MLA/MoE kernels, CUDA chunked prefill) | None — healthy result. The GPU tests run only where `torch.cuda.is_available()` |
 | Pre-flight `AssertionError: Need at least 75 GB VRAM` or `CUDA not available` | `scripts/launch_a100.sh` requires an A100-class GPU and a CUDA-enabled torch wheel | Use `configs/pretrain_1650_2m.yaml` on smaller GPUs; install the CUDA torch wheel (see §5.2) for A100; the CPU suite needs no GPU at all |
 | `[warn] Triton dispatch keys set without ENABLE_TRITON_KERNELS=1; forcing …` | YAML requests `attn_impl: triton` / `moe_dispatch: triton_grouped` but the master env var is unset — `models/_triton_dispatch.py:enforce_triton_env_var` force-backs to the PyTorch default with one warning | On a CUDA box with `triton` installed: `export ENABLE_TRITON_KERNELS=1`. Otherwise accept the fallback; it is deliberate, not an error |
 | `ERROR: no shard_*.bin files in data/pretrain_chinchilla` | Data prep has not run | `python3 data/prepare_data.py --stage pretrain` (needs `shared_data`), or `python3 scripts/build_small_pretrain_data.py` for the small config |
@@ -355,7 +355,7 @@ flowchart LR
 ## 10. Check Your Understanding
 
 1. The repo ships two configs, `pretrain_a100_422m.yaml` and `pretrain_1650_2m.yaml`. What does "422m" actually mean, and what is the real parameter count?
-2. You run `pytest` on a Mac and see `186 passed, 10 skipped`. Is your install broken?
+2. You run `pytest` on a Mac and see `189 passed, 10 skipped`. Is your install broken?
 3. Why does `scripts/smoke_forward.py` shrink `max_seq_len` to 16 before building the model, and what exactly does it prove?
 4. You set `moe_dispatch: "triton_grouped"` in a YAML config and the run starts anyway with a warning, not an error. Why?
 

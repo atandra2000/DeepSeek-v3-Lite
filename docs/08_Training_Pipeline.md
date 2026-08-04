@@ -33,7 +33,7 @@
 21. [train_step — Pseudocode with Tensor Shapes](#train_step--pseudocode-with-tensor-shapes)
 22. [Checkpoint Format — File-by-File](#checkpoint-format--file-by-file)
 23. [NaN Guard — State Machine](#nan-guard--state-machine)
-24. [Worked Example — One Optimiser Step at 422M](#worked-example--one-optimiser-step-at-422m)
+24. [Worked Example — One Optimiser Step at the 422m Config](#worked-example--one-optimiser-step-at-the-422m-config)
 25. [torch.compile Interaction with MTP and MoE](#torchcompile-interaction-with-mtp-and-moe)
 26. [Appendix A — Train loop state diagram](#appendix-a--train-loop-state-diagram)
 27. [Appendix B — FAQ](#appendix-b--faq)
@@ -626,7 +626,7 @@ new_lr = mup_lr_reference × (mup_lr_reference_params / total_params)^0.5
 - Total counted **after** MTP wrap (includes MTP head params): 418.7M
 - Result: **~8.07e-4**
 
-**Why sqrt?** μP theory: optimal LR scales inversely with sqrt(width) for width-dependent init schemes. The reference model was tuned at 757M; this formula transfers that tuning to 422M.
+**Why sqrt?** μP theory: optimal LR scales inversely with sqrt(width) for width-dependent init schemes. The reference model was tuned at 757M; this formula transfers that tuning to this repo's 411.6M base / 418.7M with MTP.
 
 `test_mup_lr_scaling` verifies the computation.
 
@@ -1387,7 +1387,7 @@ Each save at step `N` produces three files under `checkpoints/pretrain/`:
 
 ---
 
-## Worked Example — One Optimiser Step at 422M
+## Worked Example — One Optimiser Step at the 422m Config
 
 **Config recap:** `micro_batch=8`, `grad_accum=4`, `seq_len=2048`, `lr≈8.07e-4` (μP).
 

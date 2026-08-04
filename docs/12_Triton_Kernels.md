@@ -19,7 +19,7 @@
 | Triton force-back guard | `models/_triton_dispatch.py` | ✅ always-on | — |
 | FP8 GEMM | — | ❌ not implemented (paper-spec) | — |
 
-The kernels are **opt-in**: a config may request `attn_impl: triton` or `moe_dispatch: triton_grouped`, but unless the environment variable `ENABLE_TRITON_KERNELS=1` is set, `models/_triton_dispatch.py:enforce_triton_env_var` silently rewrites those keys to their PyTorch defaults (`sdpa`, `stacked`) with a single warning. This is what keeps the pytest suite green (186 passed + 10 GPU-gated skips on a laptop) — Triton is Linux+CUDA-only, and the test box has neither.
+The kernels are **opt-in**: a config may request `attn_impl: triton` or `moe_dispatch: triton_grouped`, but unless the environment variable `ENABLE_TRITON_KERNELS=1` is set, `models/_triton_dispatch.py:enforce_triton_env_var` silently rewrites those keys to their PyTorch defaults (`sdpa`, `stacked`) with a single warning. This is what keeps the pytest suite green (189 passed + 10 GPU-gated skips on a laptop) — Triton is Linux+CUDA-only, and the test box has neither.
 
 ### Which kernel runs at which config?
 

@@ -2,7 +2,7 @@
 
 > **Canonical** for DeepSeek-v3-Lite's checkpoints: the three-file-per-step layout, the atomic-write mechanics that make a checkpoint crash-safe, shared-tensor dedup under weight tying, the two resume paths, and the disaster-recovery playbook. Procedural guide — the surrounding theory lives in [[Docs/08_Training_Pipeline]] and [[Docs/11_Operations_and_Testing]].
 
-> **Status:** the checkpoint machinery is implemented and covered by the CPU test suite (196 nodes: 186 pass + 10 GPU-gated skips, see [[Docs/11_Operations_and_Testing]]), but **no GPU training run has ever executed** — `checkpoints/` is empty, so every file-size figure below is a derived estimate, not a measurement.
+> **Status:** the checkpoint machinery is implemented and covered by the CPU test suite (199 nodes: 189 pass + 10 GPU-gated skips, see [[Docs/11_Operations_and_Testing]]), but **no GPU training run has ever executed** — `checkpoints/` is empty, so every file-size figure below is a derived estimate, not a measurement.
 
 **Depends on:** [[Docs/08_Training_Pipeline]] · [[Docs/11_Operations_and_Testing]] · **Read next:** [[guides/G1_debugging_playbook]] (NaN rollback), [[guides/G6_contributing]] (doc/test expectations)
 

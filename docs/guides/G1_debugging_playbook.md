@@ -2,7 +2,7 @@
 
 > **Canonical** for "something is wrong" in DeepSeek-v3-Lite: how the NaN guard trips and rolls back, the shape contracts that produce the classic `RuntimeError`s, the two distinct Triton-fallback mechanisms (and why the canonical config always uses the PyTorch MoE path), the KV-cache lifecycle traps, and decision trees for "loss not decreasing" and "divergence". Procedural guide — the surrounding theory lives in [[Docs/08_Training_Pipeline]], [[Docs/11_Operations_and_Testing]], and the API references [[reference/R7_training_api|R7]] / [[reference/R3_mla_api|R3]] / [[reference/R6_triton_api|R6]].
 
-> **Status:** everything below is implemented and covered by the CPU test suite (196 nodes: 186 pass + 10 GPU-gated skips, see [[Docs/11_Operations_and_Testing]]), but **no GPU training run has ever executed** — `checkpoints/` is empty, so any timing, memory, or loss-curve figure quoted here as "expected" is an estimate, not a measurement.
+> **Status:** everything below is implemented and covered by the CPU test suite (199 nodes: 189 pass + 10 GPU-gated skips, see [[Docs/11_Operations_and_Testing]]), but **no GPU training run has ever executed** — `checkpoints/` is empty, so any timing, memory, or loss-curve figure quoted here as "expected" is an estimate, not a measurement.
 
 **Depends on:** [[Docs/08_Training_Pipeline]] · [[Docs/11_Operations_and_Testing]] · **Read next:** [[guides/G2_mup_and_lr_tuning]] (the LR side of a NaN), [[guides/G5_checkpoint_ops]] (what rollback restores), [[guides/G3_triton_development]] (kernel-side fallbacks)
 

@@ -771,7 +771,7 @@ self.optimizer = AdamW([
 ], lr=config.lr, betas=(config.beta1, config.beta2), fused=torch.cuda.is_available())
 ```
 
-Two details worth noting. First, `all_params` is *deduplicated by tensor id* before the split — this is what makes weight tying safe: `head.weight` and `embed.weight` are the same tensor, and without the dedup the tied weight would be registered twice in the optimizer and updated twice per step (see §16.2). Second, `fused=torch.cuda.is_available()` switches to the fused CUDA kernel on GPU; on a CPU laptop (where this repo's test suite runs) it silently falls back to the eager path — the 196-test suite (186 pass + 10 GPU-gated skips) exercises the eager path.
+Two details worth noting. First, `all_params` is *deduplicated by tensor id* before the split — this is what makes weight tying safe: `head.weight` and `embed.weight` are the same tensor, and without the dedup the tied weight would be registered twice in the optimizer and updated twice per step (see §16.2). Second, `fused=torch.cuda.is_available()` switches to the fused CUDA kernel on GPU; on a CPU laptop (where this repo's test suite runs) it silently falls back to the eager path — the 199-test suite (189 pass + 10 GPU-gated skips) exercises the eager path.
 
 ### 10.7 Gradient clipping in code
 
