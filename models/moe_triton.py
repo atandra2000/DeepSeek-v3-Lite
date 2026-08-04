@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any, Tuple
 
 import torch
 
+from ._triton_dispatch import next_pow2 as _next_pow2
+
 if TYPE_CHECKING:
     import triton  # type: ignore[import-not-found]
     import triton.language as tl  # type: ignore[import-not-found]
@@ -374,12 +376,6 @@ if HAS_TRITON:
                     + i_off[None, :] * stride_dw2_i,
                     dw2_local, mask=mask_2d,
                 )
-
-
-def _next_pow2(n: int) -> int:
-    if n <= 1:
-        return 1
-    return 1 << (n - 1).bit_length()
 
 
 def _check_dim_limits(I: int, D: int) -> None:

@@ -33,7 +33,6 @@ def cfg() -> Dict:
         "mscale":              1.0,
         "mtp_depth":           1,
         "mtp_loss_weight":     0.3,
-        "dtype":               "bf16",
         "attn_impl":           "sdpa",
         "weight_tying":        True,
     }
@@ -64,7 +63,6 @@ def small_cfg() -> Dict:
         "mscale":              1.0,
         "mtp_depth":           1,
         "mtp_loss_weight":     0.3,
-        "dtype":               "bf16",
         "attn_impl":           "sdpa",
         "weight_tying":        True,
     }

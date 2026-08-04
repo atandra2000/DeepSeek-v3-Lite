@@ -37,7 +37,6 @@ model:
   mscale:              1.0
   mtp_depth:           1
   mtp_loss_weight:     0.3
-  dtype:               bf16
   attn_impl:           "sdpa"
   moe_dispatch:         "stacked"
   weight_tying:        true
@@ -50,8 +49,6 @@ training:
   lr:                            8.0e-4
   min_lr_ratio:                  0.05
   weight_decay:                  0.1
-  beta1:                         0.9
-  beta2:                         0.95
   grad_clip:                     1.0
   grad_checkpoint:               true
   compile:                       true

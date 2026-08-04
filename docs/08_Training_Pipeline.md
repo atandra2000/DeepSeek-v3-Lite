@@ -169,7 +169,6 @@ Notice the defaults are **not** the 422M recipe. The defaults are a conservative
 | `training.lr` (`8.0e-4`) | `lr` | float | AdamW (possibly overwritten by μP) |
 | `training.min_lr_ratio` (`0.05`) | `min_lr_ratio` | float | scheduler floor |
 | `training.weight_decay` (`0.1`) | `weight_decay` | float | AdamW decay group |
-| `training.beta1` / `beta2` (`0.9` / `0.95`) | `beta1`, `beta2` | float | AdamW betas |
 | `training.grad_clip` (`1.0`) | `max_grad_norm` | float | `clip_grad_norm_` |
 | `model.mtp_loss_weight` (`0.3`) | `mtp_weight` | float | MTP engagement + loss |
 | `training.bias_update_speed` (`0.001`) | `bias_update_speed` | float | `update_gate_bias` |
@@ -1750,7 +1749,6 @@ Preserves all architectural invariants (MLA, aux-loss-free MoE, MTP) at tiny sca
 | `mscale` | 1.0 | MLA | Attention temp scale |
 | `mtp_depth` | 1 | MultiTokenPrediction | MTP heads |
 | `mtp_loss_weight` | 0.3 | Pretrainer, compute_loss | λ for MTP loss |
-| `dtype` | bf16 | Documentation | Training precision |
 | `attn_impl` | sdpa | MLA | sdpa / manual / triton |
 | `moe_dispatch` | stacked | DeepSeekMoE | stacked / triton_grouped |
 | `weight_tying` | true | Transformer | Share embed/head |

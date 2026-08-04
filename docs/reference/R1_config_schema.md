@@ -119,7 +119,6 @@ the file.
 | `mscale` | float | `1.0` | 1.0 | 1.0 | `models/mla.py:MultiHeadLatentAttention.__init__` — attention softmax scale |
 | `mtp_depth` | int | `0` (trainer) / `1` (`MultiTokenPrediction`) | 1 | 1 | `training/pretrain.py:Pretrainer.__init__`; `models/mtp.py:MultiTokenPrediction.__init__` |
 | `mtp_loss_weight` | float | `0.0` (trainer) / `0.3` (MTP module) | 0.3 | 0.3 | `training/pretrain.py:main` → `TrainingConfig.mtp_weight`; `models/mtp.py:MultiTokenPrediction.compute_loss` |
-| `dtype` | str | *(no reader)* | `bf16` | `bf16` | **None — inert documentation key** (see §5) |
 | `attn_impl` | str | `"sdpa"` | `"sdpa"` | `"sdpa"` | `models/mla.py:MultiHeadLatentAttention.__init__`, `models/mla.py:MultiHeadLatentAttention.forward`; `models/_triton_dispatch.py:enforce_triton_env_var` |
 | `moe_dispatch` | str | `"stacked"` | `"stacked"` | `"stacked"` | `models/moe.py:DeepSeekMoE.__init__`, `models/moe.py:DeepSeekMoE.forward`; `models/_triton_dispatch.py:enforce_triton_env_var` |
 | `weight_tying` | bool | `False` | `true` | `true` | `models/transformer.py:Transformer.__init__`; `training/pretrain.py:Pretrainer.save_checkpoint` (drops the duplicate `head.weight` from the state dict) |

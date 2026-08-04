@@ -62,7 +62,7 @@ Plain `@dataclass` (`field`/`asdict` imported), 29 fields. It is the *runtime* v
 | `TrainingConfig.lr` | `float` | `2.2e-4` | `training.lr` | overwritten in place by μP scaling when `mup_lr` is true |
 | `TrainingConfig.min_lr_ratio` | `float` | `0.1` | `training.min_lr_ratio` | cosine floor; canonical 0.05 |
 | `TrainingConfig.weight_decay` | `float` | `0.1` | `training.weight_decay` | applied only to `dim() >= 2` params |
-| `TrainingConfig.beta1` | `float` | `0.9` | — (dataclass default only) | `main()` does **not** map `training.beta1`; the YAML keys exist in both configs but are currently ignored by the CLI |
+| `TrainingConfig.beta1` | `float` | `0.9` | — (dataclass default only) | `main()` does **not** map `training.beta1`; the key was removed from the YAMLs in the cleanup — the dataclass default applies |
 | `TrainingConfig.beta2` | `float` | `0.95` | — (dataclass default only) | same caveat as `beta1` |
 | `TrainingConfig.max_grad_norm` | `float` | `1.0` | `training.grad_clip` | `clip_grad_norm_` once per optimizer step |
 | `TrainingConfig.mtp_weight` | `float` | `0.0` | `training.mtp_loss_weight` | MTP active iff `> 0.0` **and** `model.mtp_depth > 0`; canonical 0.3 |

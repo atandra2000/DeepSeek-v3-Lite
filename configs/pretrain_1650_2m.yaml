@@ -29,7 +29,6 @@ model:
   mscale:              1.0
   mtp_depth:           1
   mtp_loss_weight:     0.3
-  dtype:               bf16
   attn_impl:           "sdpa"
   moe_dispatch:         "stacked"   # stacked is the PyTorch default; triton is the
                                    # kernel hot-path (requires CUDA, gated by env var)
@@ -43,8 +42,6 @@ training:
   lr:                            1.0e-3
   min_lr_ratio:                  0.05
   weight_decay:                  0.1
-  beta1:                         0.9
-  beta2:                         0.95
   grad_clip:                     1.0
   grad_checkpoint:               false   # tiny model, no need
   compile:                       false   # compilation can OOM on 4GB; PyTorch eager
