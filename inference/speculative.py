@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 sys.path.append(str(Path(__file__).parent.parent))
 from models.mtp import MTPModule
+from models.transformer import Transformer
 
 
 class SpeculativeDecoder:
@@ -17,10 +18,12 @@ class SpeculativeDecoder:
         self.threshold = acceptance_threshold
 
     @torch.inference_mode()
-    def generate_step(self, last_token: torch.Tensor, start_pos: int) -> Tuple[torch.Tensor, torch.Tensor, bool]:
+    def generate_step(self, last_token: torch.Tensor, start_pos: int, temperature: float = 1.0) -> Tuple[torch.Tensor, torch.Tensor, bool]:
         main_logits = self.main_model(last_token, start_pos=start_pos, use_cache=True)
         main_probs = torch.softmax(main_logits[:, -1, :], dim=-1)
-        token_main = main_probs.argmax(dim=-1)
+        # Sample the main token with temperature (argmax when temperature == 0);
+        # the draft stays greedy (its most-likely continuation is what we verify).
+        token_main = Transformer._sample(main_logits[:, -1, :], temperature, top_p=1.0, top_k=0).squeeze(0)
         t1_pos = start_pos + 1
         _, hidden = self.main_model.forward_with_hidden(token_main.unsqueeze(0), start_pos=t1_pos, use_cache=True)
         hidden_last = hidden[:, -1:, :]
@@ -28,6 +31,7 @@ class SpeculativeDecoder:
         draft_logits, _ = self.mtp(hidden_last, token_main_emb)
         draft_probs = torch.softmax(draft_logits[:, -1, :], dim=-1)
         token_draft = draft_probs.argmax(dim=-1)
+        # Acceptance compares raw (unscaled) probabilities of the draft token.
         p_main_of_draft = main_probs[0, token_draft[0]].item()
         p_draft_of_draft = draft_probs[0, token_draft[0]].item()
         return token_main, token_draft, p_main_of_draft >= self.threshold * max(p_draft_of_draft, 1e-12)
@@ -43,7 +47,7 @@ class SpeculativeDecoder:
         while n_generated < max_new_tokens:
             start_pos = output.size(1) - 1
             last_token = output[:, -1:]
-            token_main, token_draft, was_accepted = self.generate_step(last_token, start_pos=start_pos)
+            token_main, token_draft, was_accepted = self.generate_step(last_token, start_pos=start_pos, temperature=temperature)
             output = torch.cat([output, token_main.unsqueeze(0)], dim=1)
             n_generated += 1
             if eos_token_id is not None and token_main.item() == eos_token_id:

@@ -62,6 +62,28 @@ class TestSpeculativeDecoder:
         assert token_draft.shape == (1,), f"Expected (1,), got {token_draft.shape}"
         assert isinstance(was_accepted, bool)
 
+    def test_draft_without_head_raises_and_attach_after_load_works(self, small_cfg, device):
+        """Regression: interactive --use_speculative crashed because the draft
+        module's output_head was never attached. A module with no head must
+        raise RuntimeError; attaching the shared head after (weight) load must
+        make generate work — the exact sequence inference/generate.py follows."""
+        model = _make_model(small_cfg, device)
+        mtp_module = MTPModule(small_cfg, depth=1).to(device)
+        decoder = SpeculativeDecoder(model, mtp_module)
+
+        prompt = _make_prompt(small_cfg, length=4, device=device)
+        _ = model(prompt, start_pos=0, use_cache=True)
+        last_token = prompt[:, -1:]
+
+        with pytest.raises(RuntimeError, match="output_head"):
+            decoder.generate_step(last_token, start_pos=3)
+
+        # Attach the shared head after construction/load (as generate.py now
+        # does) — the next step must not raise.
+        mtp_module.set_output_head(model.head)
+        token_main, token_draft, _ = decoder.generate_step(last_token, start_pos=3)
+        assert token_main.shape == (1,) and token_draft.shape == (1,)
+
     def test_generate_step_cache_written(self, small_cfg, device):
         """After generate_step, the KV cache has grown by at least 1 position."""
         model = _make_model(small_cfg, device)

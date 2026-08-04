@@ -140,7 +140,7 @@ class Pretrainer:
             torch.set_float32_matmul_precision("high")
             torch.backends.cudnn.benchmark = True
 
-        init_logging(config.log_every, seq_len=config.max_seq_len)
+        init_logging(config.log_every, seq_len=config.max_seq_len, batch_size=config.batch_size)
         self.logger = get_logger()
 
         self._log("Initialising model...")
@@ -191,7 +191,13 @@ class Pretrainer:
             {"params": no_decay_params, "weight_decay": 0.0},
         ], lr=config.lr, betas=(config.beta1, config.beta2), fused=torch.cuda.is_available())
 
-        lr_lambda = make_warmup_cosine_lambda(warmup_steps=config.warmup_steps, total_steps=config.max_steps, min_lr_ratio=config.min_lr_ratio)
+        # The LR schedule lives in optimizer-step space: the loop budget
+        # `max_steps` counts micro-batches, so the cosine horizon (and the
+        # run's final LR) is `max_steps // gradient_accumulation_steps`.
+        # Without this, the canonical run would traverse only the first
+        # quarter of the cosine arc and never reach min_lr_ratio.
+        opt_steps = max(1, config.max_steps // config.gradient_accumulation_steps)
+        lr_lambda = make_warmup_cosine_lambda(warmup_steps=config.warmup_steps, total_steps=opt_steps, min_lr_ratio=config.min_lr_ratio)
         self.scheduler = LambdaLR(self.optimizer, lr_lambda)
         self.amp_dtype = torch.bfloat16
         self.ckpt_manager = CheckpointManager(config.checkpoint_dir)
@@ -202,7 +208,7 @@ class Pretrainer:
         print(msg)
 
     def _amp_context(self):
-        return autocast("cuda", dtype=self.amp_dtype)
+        return autocast(self.device.type, dtype=self.amp_dtype)
 
     def _update_moe_bias(self) -> None:
         for moe in self.raw_model.moe_layers():
@@ -218,7 +224,11 @@ class Pretrainer:
     def _log_per_component_params(self, model) -> None:
         from collections import defaultdict
         comps: defaultdict[str, int] = defaultdict(int)
+        seen_ids: set = set()
         for name, p in model.named_parameters():
+            if id(p) in seen_ids:
+                continue  # tied head.weight == embed.weight — count once
+            seen_ids.add(id(p))
             if "embed" in name:
                 comps["embedding"] += p.numel()
             elif "head" in name:
@@ -255,7 +265,7 @@ class Pretrainer:
             targets = targets.to(torch.long)
         with self._amp_context():
             if self.mtp_wrapper is not None:
-                main_logits, mtp_pairs = self.model(tokens, start_pos=0)
+                main_logits, mtp_pairs = self.model(tokens)
                 total_loss, main_loss, mtp_loss = self.mtp_wrapper.compute_loss(main_logits, targets, mtp_pairs)
                 # Defer host round-trip to the logger (avoids per-step GPU sync).
                 _ce_loss_val = main_loss.detach()

@@ -24,6 +24,8 @@ jobs:
         run: python -c "import models.transformer; import models.mla; import models.moe; import models.mtp"
       - name: Check documentation
         run: python scripts/check_docs.py
+      - name: Check doc-code symbol anchors
+        run: python -m pytest tests/test_doc_refs.py -q --tb=short
       - name: Run test suite
         run: python -m pytest tests/ -q --tb=short
       - name: Model forward smoke test

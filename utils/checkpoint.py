@@ -74,15 +74,16 @@ class CheckpointManager:
             raise
 
     def _atomic_save_safetensors(self, state: dict, path: Path) -> None:
+        # True dedup: a shared tensor (weight tying) must appear once. The
+        # duplicate key is dropped; load_state_dict(strict=False) restores
+        # it through the surviving shared storage.
         seen_ptrs: set = set()
         deduped: dict = {}
         for k, v in state.items():
-            ptr = v.data_ptr()
-            if ptr in seen_ptrs:
-                deduped[k] = v.contiguous().clone()
-            else:
-                seen_ptrs.add(ptr)
-                deduped[k] = v.contiguous()
+            if v.data_ptr() in seen_ptrs:
+                continue
+            seen_ptrs.add(v.data_ptr())
+            deduped[k] = v.contiguous()
         with self._atomic_write(path, ".safetensors.tmp") as tmp:
             save_file(deduped, tmp)
 

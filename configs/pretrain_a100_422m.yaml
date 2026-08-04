@@ -1,6 +1,8 @@
 # configs/pretrain_a100_422m.yaml
-# DeepSeek-V3-Lite ~422M param Chinchilla-optimal pre-training.
-# Designed for 1x A100 80GB SXM. Target: ~13-15 h at 35-40% MFU.
+# DeepSeek-V3-Lite ~412M param Chinchilla-optimal pre-training.
+# (411.6M deduped base; 418.7M with MTP. The "422m" filename is the
+#  historical nominal — the actual deduped count is 411,632,256.)
+# Designed for 1x A100 80GB SXM. Target: ~30-45 h at 35-40% MFU (estimated; unverified).
 #
 # Architecture: dim=768, 18 layers (2 dense + 16 MoE × 20 experts),
 #               4 activated experts, 8.4B Chinchilla-optimal tokens.

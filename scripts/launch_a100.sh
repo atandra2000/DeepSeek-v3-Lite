@@ -10,7 +10,7 @@
 # Usage:
 #   bash scripts/launch_a100.sh
 #
-# Estimated wall: 13-15 h on A100 80GB (35-40% MFU).
+# Estimated wall: ~30-45 h on A100 80GB (35-40% MFU) — unverified budget.
 #
 # To resume:
 #   python training/pretrain.py --config configs/pretrain_a100_422m.yaml --resume <step>
@@ -61,7 +61,7 @@ echo "Log: $LOG_FILE"
 # ── Launch ──────────────────────────────────────────────────────────────────
 echo
 echo "=== Launching 422M Chinchilla pre-training ==="
-echo "Estimated wall: 13-15 hours on A100 80GB"
+echo "Estimated wall: ~30-45 hours on A100 80GB (budget, not measured)"
 echo "Estimated peak VRAM: ~30-35 GB / 80 GB"
 echo
 

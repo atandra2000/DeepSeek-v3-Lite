@@ -7,9 +7,10 @@ import torch
 class TrainingLogger:
     """Step-driven logger: prints a rolling-window summary every log_interval steps; optionally forwards to WandB."""
 
-    def __init__(self, log_interval: int = 10, seq_len: int = 1024):
+    def __init__(self, log_interval: int = 10, seq_len: int = 1024, batch_size: int = 1):
         self.log_interval = log_interval
         self.seq_len = seq_len
+        self.batch_size = batch_size
         self._start = time.time()
         self._step_start = time.time()
         self._loss_window: list[float] = []
@@ -29,7 +30,7 @@ class TrainingLogger:
             return
         avg_loss = sum(self._loss_window) / len(self._loss_window)
         elapsed = max(time.time() - self._step_start, 1e-6)
-        tokens_per_sec = (self.log_interval * self.seq_len) / elapsed
+        tokens_per_sec = (self.log_interval * self.seq_len * self.batch_size) / elapsed
         ppl = torch.tensor(avg_loss).exp().item()
         parts = [f"step={step:>7}", f"loss={avg_loss:.4f}", f"ppl={ppl:.2f}", f"lr={lr:.2e}", f"tps={tokens_per_sec:,.0f}"]
         if metrics:
@@ -50,9 +51,9 @@ class TrainingLogger:
 _logger: Optional[TrainingLogger] = None
 
 
-def init_logging(log_interval: int = 10, seq_len: int = 1024) -> None:
+def init_logging(log_interval: int = 10, seq_len: int = 1024, batch_size: int = 1) -> None:
     global _logger
-    _logger = TrainingLogger(log_interval=log_interval, seq_len=seq_len)
+    _logger = TrainingLogger(log_interval=log_interval, seq_len=seq_len, batch_size=batch_size)
 
 
 def get_logger() -> TrainingLogger:

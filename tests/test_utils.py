@@ -113,6 +113,29 @@ class TestCheckpointManagerSaveLoad:
             assert torch.allclose(model.state_dict()[key], initial_state[key])
         assert meta["step"] == 2
 
+    def test_shared_tensor_saved_once_and_reload_restores(self, small_cfg, tmp_ckpt_dir):
+        """A tied embed/head pair in the state dict is saved once; reload
+        restores both through the surviving shared storage."""
+        from safetensors.torch import load_file
+
+        ckpt = CheckpointManager(str(tmp_ckpt_dir))
+        model = Transformer(small_cfg, use_checkpoint=False)
+        state = model.state_dict()
+        assert state["embed.weight"].data_ptr() == state["head.weight"].data_ptr(), \
+            "precondition: weight tying shares storage"
+        opt = torch.optim.AdamW(model.parameters(), lr=1e-4, fused=False)
+
+        ckpt.save(model, opt, step=5, state_dict=state)
+        weights = load_file(str(tmp_ckpt_dir / "model_step_5.safetensors"))
+        assert "embed.weight" in weights
+        assert "head.weight" not in weights, "duplicate shared key must be dropped"
+
+        model2 = Transformer(small_cfg, use_checkpoint=False)
+        ckpt.load(model2, step=5, device="cpu", strict=False)
+        assert model2.embed.weight.data_ptr() == model2.head.weight.data_ptr()
+        assert torch.allclose(model2.embed.weight, model.embed.weight)
+        assert torch.allclose(model2.head.weight, model.head.weight)
+
     def test_atomicity_temp_file_cleaned(self, small_cfg, tmp_ckpt_dir):
         """Temporary files are cleaned up if save fails mid-way."""
         ckpt = CheckpointManager(str(tmp_ckpt_dir))

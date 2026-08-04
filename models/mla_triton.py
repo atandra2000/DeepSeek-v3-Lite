@@ -33,6 +33,8 @@ def mla_attention_reference(
     wkv_b_k: torch.Tensor,       # (H, D_nope, R)
     wkv_b_v: torch.Tensor,       # (H, D_v, R)
     softmax_scale: float,
+    is_causal: bool = False,
+    q_start: int = 0,
 ) -> torch.Tensor:
     """Returns (B, S_q, H, D_v)."""
     B, H, S_q, D_nope = q_nope.shape
@@ -48,7 +50,13 @@ def mla_attention_reference(
     K_full = torch.cat([K_nope, K_rope.expand(B, H, S_kv, D_rope)], dim=-1)
 
     scores = torch.einsum("bhqd,bhkd->bhqk", Q_full, K_full) * softmax_scale
-    if S_q == S_kv:
+    if is_causal:
+        q_idx = torch.arange(S_q, device=scores.device)[:, None] + q_start
+        k_idx = torch.arange(S_kv, device=scores.device)[None, :]
+        mask = torch.where(q_idx >= k_idx, torch.zeros((), dtype=scores.dtype, device=scores.device),
+                           torch.full((), float("-inf"), dtype=scores.dtype, device=scores.device))
+        scores = scores + mask
+    elif S_q == S_kv:
         mask = torch.triu(
             torch.full((S_q, S_kv), float("-inf"), device=scores.device, dtype=scores.dtype),
             diagonal=1,
@@ -71,6 +79,7 @@ if HAS_TRITON:
         wkv_b_k_ptr, wkv_b_v_ptr,
         out_ptr,
         B, H, S_q, S_kv, R, D_nope, D_rope, D_v,
+        q_start,
         stride_qn_b, stride_qn_h, stride_qn_s, stride_qn_d,
         stride_qp_b, stride_qp_h, stride_qp_s, stride_qp_d,
         stride_kv_b, stride_kv_s, stride_kv_r,
@@ -153,7 +162,7 @@ if HAS_TRITON:
                        + tl.dot(q_pe_tile, tl.trans(k_pe))) * softmax_scale
 
             if is_causal:
-                causal_mask = (s_q_off[:, None] >= k_off[None, :])
+                causal_mask = (s_q_off[:, None] + q_start >= k_off[None, :])
                 s_block = tl.where(causal_mask, s_block, float("-inf"))
             s_block = tl.where(k_mask[None, :], s_block, float("-inf"))
 
@@ -180,10 +189,9 @@ def _next_pow2(n: int) -> int:
     return 1 << (n - 1).bit_length()
 
 
-def _check_mla_dim_limits(
-    S_q: int, S_kv: int, R: int, D_nope: int, D_rope: int, D_v: int,
-) -> None:
-    """Hard-fail if any dim exceeds 256 (register budget)."""
+def _check_mla_dim_limits(R: int, D_nope: int, D_rope: int, D_v: int) -> None:
+    """Hard-fail if a register-budget dim exceeds 256. S_q/S_kv are tiled
+    (BLOCK_Q/BLOCK_N) and need no cap."""
     for name, val in [
         ("R", R), ("D_nope", D_nope), ("D_rope", D_rope), ("D_v", D_v),
     ]:
@@ -212,6 +220,7 @@ if HAS_TRITON:
             wkv_b_v: torch.Tensor,        # (H, D_v, R)
             softmax_scale: float,
             is_causal: bool,
+            q_start: int,
         ) -> torch.Tensor:
             B, H, S_q, D_nope = q_nope.shape
             S_kv = ctx_kv.size(1)
@@ -219,7 +228,7 @@ if HAS_TRITON:
             D_rope = q_pe.shape[-1]
             D_v = wkv_b_v.size(1)
 
-            _check_mla_dim_limits(S_q, S_kv, R, D_nope, D_rope, D_v)
+            _check_mla_dim_limits(R, D_nope, D_rope, D_v)
 
             BLOCK_Q = 64
             BLOCK_N = 64
@@ -237,6 +246,7 @@ if HAS_TRITON:
                 wkv_b_k, wkv_b_v,
                 out,
                 B, H, S_q, S_kv, R, D_nope, D_rope, D_v,
+                q_start,
                 q_nope.stride(0), q_nope.stride(1), q_nope.stride(2), q_nope.stride(3),
                 q_pe.stride(0), q_pe.stride(1), q_pe.stride(2), q_pe.stride(3),
                 ctx_kv.stride(0), ctx_kv.stride(1), ctx_kv.stride(2),
@@ -259,6 +269,7 @@ if HAS_TRITON:
             ctx.save_for_backward(q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v)
             ctx.softmax_scale = softmax_scale
             ctx.is_causal = is_causal
+            ctx.q_start = q_start
             ctx.B, ctx.H, ctx.S_q, ctx.S_kv = B, H, S_q, S_kv
             ctx.R, ctx.D_nope, ctx.D_rope, ctx.D_v = R, D_nope, D_rope, D_v
             return out
@@ -272,13 +283,15 @@ if HAS_TRITON:
             # backward. See `docs/12_Triton_Kernels.md` §4.
             dout = grad_outputs[0]
             if dout is None:
-                return (None,) * 7
+                return (None,) * 9
             q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v = ctx.saved_tensors
             out_ref = mla_attention_reference(
                 q_nope=q_nope, q_pe=q_pe,
                 ctx_kv=ctx_kv, ctx_pe=ctx_pe,
                 wkv_b_k=wkv_b_k, wkv_b_v=wkv_b_v,
                 softmax_scale=ctx.softmax_scale,
+                is_causal=ctx.is_causal,
+                q_start=ctx.q_start,
             )
             grads = torch.autograd.grad(
                 out_ref,
@@ -293,7 +306,7 @@ if HAS_TRITON:
                 grads[3] if grads[3] is not None else torch.zeros_like(ctx_pe),
                 grads[4] if grads[4] is not None else torch.zeros_like(wkv_b_k),
                 grads[5] if grads[5] is not None else torch.zeros_like(wkv_b_v),
-                None, None,
+                None, None, None,
             )
 
 
@@ -306,10 +319,13 @@ def triton_mla_attention(
     wkv_b_v: torch.Tensor,
     softmax_scale: float,
     is_causal: bool = False,
+    q_start: int = 0,
 ) -> torch.Tensor:
     """Fused MLA attention. Returns (B, S_q, H, D_v).
 
-    Raises ImportError if triton is not installed.
+    `q_start` offsets the query positions in the KV context so a cached
+    mid-sequence prefill stays causal. Raises ImportError if triton is
+    not installed.
     """
     if not HAS_TRITON:
         raise ImportError(
@@ -319,5 +335,5 @@ def triton_mla_attention(
         )
     return _TritonMlaAttentionFunction.apply(
         q_nope, q_pe, ctx_kv, ctx_pe,
-        wkv_b_k, wkv_b_v, softmax_scale, is_causal,
+        wkv_b_k, wkv_b_v, softmax_scale, is_causal, q_start,
     )

@@ -281,6 +281,33 @@ class TestPretrainerConstruction:
         assert abs(trainer.config.lr - expected_lr) < 1e-10, \
             f"Expected LR {expected_lr:.6e}, got {trainer.config.lr:.6e}"
 
+    def test_scheduler_horizon_is_optimizer_steps(self, small_cfg, tmp_ckpt_dir):
+        """The cosine horizon must be max_steps // grad_accum (optimizer-step
+        space), not the micro-step loop budget — otherwise the canonical run
+        never decays to min_lr_ratio."""
+        config = _build_training_config(small_cfg, str(tmp_ckpt_dir))
+        config.max_steps = 8
+        config.gradient_accumulation_steps = 2
+        config.warmup_steps = 0
+        config.mup_lr = False
+        config.nan_guard = False
+        with patch("training.pretrain.AdamW", lambda *a, **kw: torch.optim.AdamW(*a, **{**kw, "fused": False})):
+            trainer = Pretrainer(config)
+        tokens = torch.randint(0, config.vocab_size, (config.batch_size, config.max_seq_len))
+        targets = tokens.clone()
+        for micro in range(config.max_steps):
+            trainer.train_step(tokens, targets, micro)
+        # 8 micro-steps @ grad_accum 2 = 4 optimizer steps; LambdaLR evaluates
+        # lambda(last_epoch) with last_epoch = steps taken = 4, and since the
+        # horizon is 8//2 = 4, the run must END at min_lr_ratio (full decay).
+        lr = trainer.scheduler.get_last_lr()[0]
+        assert abs(lr - config.lr * config.min_lr_ratio) < 1e-12, \
+            f"expected full decay to {config.lr * config.min_lr_ratio:.3e}, got {lr:.3e}"
+        # And it must be strictly below the old (micro-step-horizon) value.
+        old = make_warmup_cosine_lambda(warmup_steps=0, total_steps=config.max_steps,
+                                        min_lr_ratio=config.min_lr_ratio)(4)
+        assert lr < config.lr * old, "scheduler horizon was not scaled by grad_accum"
+
 
 # Checkpoint roundtrip
 class TestCheckpointRoundtrip:

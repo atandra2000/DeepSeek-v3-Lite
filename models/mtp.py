@@ -83,7 +83,7 @@ class MultiTokenPrediction(nn.Module):
         for mtp in self.mtp_modules:
             mtp.set_output_head(shared_head)
 
-    def forward(self, tokens: torch.Tensor, start_pos: int = 0) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
+    def forward(self, tokens: torch.Tensor) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
         """Returns (main_logits, mtp_pairs) where each pair is (logits, targets) already length-aligned."""
         if tokens.dim() < 2:
             raise ValueError(f"Expected (bsz, seq) tokens, got {tokens.shape}")

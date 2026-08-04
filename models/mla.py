@@ -44,7 +44,7 @@ class MultiHeadLatentAttention(nn.Module):
         # The mscale factor is used to scale the softmax in attention.
         mscale_raw = config.get("mscale", 1.0)
         if self.rope_factor > 1.0:
-            self.mscale = 0.1 * mscale_raw * math.log(self.rope_factor)
+            self.mscale = 0.1 * mscale_raw * math.log(self.rope_factor) + 1.0
         else:
             self.mscale = mscale_raw
         if self.max_seq_len > 4096:
@@ -143,11 +143,12 @@ class MultiHeadLatentAttention(nn.Module):
         q_nope_proj = q_nope_proj_h.reshape(h, bsz, seqlen_q, self.kv_lora_rank).permute(1, 2, 0, 3).contiguous()
 
         if self.attn_impl == "triton":
-            # Try to use the fused triton kernel for MLA attention. If unavailable, fall back to SDPA.
+            # Try the fused triton kernel. If unavailable, fall back to SDPA
+            # (one-time, then stick to it for this model).
             try:
                 return self._forward_triton(
                     q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v,
-                    bsz, seqlen, h, mask,
+                    bsz, seqlen, h, mask, start_pos, use_cache,
                 )
             except (ImportError, ValueError) as exc:
                 if not getattr(self, "_triton_fallback_warned", False):
@@ -155,8 +156,7 @@ class MultiHeadLatentAttention(nn.Module):
                           f"({type(exc).__name__}: {exc}); "
                           f"falling back to 'sdpa' for this model.")
                     self._triton_fallback_warned = True
-                # Fall through to SDPA below
-                pass
+                self.attn_impl = "sdpa"
         if self.attn_impl == "sdpa":
             seqlen_k = ctx_kv.size(1)
             ctx_kv_bmm = ctx_kv.reshape(bsz * seqlen_k, self.kv_lora_rank).unsqueeze(0).expand(h, -1, -1)
@@ -201,6 +201,8 @@ class MultiHeadLatentAttention(nn.Module):
         seqlen: int,
         h: int,
         mask: Optional[torch.Tensor],
+        start_pos: int,
+        use_cache: bool,
     ) -> torch.Tensor:
         """Fused MLA materialise+RoPE+attn path. See models/mla_triton.py.
         Re-arranges the input tensors to match the expected layout of the triton kernel, and calls it."""
@@ -209,8 +211,10 @@ class MultiHeadLatentAttention(nn.Module):
         # Kernel layout: q_nope (B, H, S_q, D_nope), q_pe (B, H, S_q, D_rope)
         q_nope_k = q_nope.permute(0, 2, 1, 3).contiguous()
         q_pe_k = q_pe.permute(0, 2, 1, 3).contiguous()
-        # Causal mask: only applies if the query length equals the context length (i.e., no KV cache).
-        is_causal = (mask is not None) and (seqlen == ctx_kv.size(1))
+        # Causal within the current block: queries are offset by `start_pos`
+        # in the KV context, so pass it as q_start (0 for cache-free).
+        is_causal = mask is not None
+        q_start = start_pos if (is_causal and use_cache) else 0
         out = triton_mla_attention(
             q_nope=q_nope_k,
             q_pe=q_pe_k,
@@ -220,6 +224,7 @@ class MultiHeadLatentAttention(nn.Module):
             wkv_b_v=wkv_b_v,
             softmax_scale=self.softmax_scale,
             is_causal=is_causal,
+            q_start=q_start,
         )
         # out: (B, S_q, H, D_v) — flatten to (B, S_q, H*D_v) for wo.
         return self.wo(out.flatten(2))

@@ -30,6 +30,7 @@ ALLOW_MISSING_PATHS = {
     "models/swiglu_triton.py",
     "models/norm_triton.py",
     "models/__init__.py",
+    "tests/test_doc_refs.py",
 }
 
 STALE_PATTERNS: list[tuple[str, str]] = [
@@ -41,7 +42,7 @@ STALE_PATTERNS: list[tuple[str, str]] = [
     (r"\\r\\right", "corrupted \\right)"),
     (r"\\n\\nabla", "double nabla"),
     (r"643-line", "stale MLA line count"),
-    (r"\b28 tests?\b", "stale test count (use 189)"),
+    (r"\b28 tests?\b", "stale test count (use 196)"),
 ]
 
 SIZE_TABLE_START = "## Doc size reference"
@@ -74,7 +75,8 @@ def git_short_head() -> str:
 
 
 def iter_doc_files() -> list[Path]:
-    return sorted(DOC_DIR.glob("*.md"))
+    # rglob: reference/ and guides/ subfolders are linted too.
+    return sorted(DOC_DIR.rglob("*.md"))
 
 
 def check_control_chars(path: Path, text: str) -> list[Issue]:

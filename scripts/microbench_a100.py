@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import torch, yaml
-from models.transformer import Transformer
+from models.transformer import Transformer, count_parameters
 from utils.memory import estimate_model_memory_gb, assert_fits_in_available_gpu
 
 
@@ -15,7 +15,7 @@ def main() -> None:
     print(f"Building 422M model from {cfg_path} ...")
     print(f"  micro_batch_size = {bs}\n  max_seq_len      = {seq}")
     m = Transformer(cfg, use_checkpoint=True).cuda()
-    n_p = sum(p.numel() for p in m.parameters())
+    n_p, _ = count_parameters(m)
     print(f"  parameters       = {n_p:,}  ({n_p/1e6:.1f} M)")
     est = estimate_model_memory_gb(m, seq_len=seq, batch_size=bs, grad_checkpoint=True)
     print(f"  estimated peak   = {est:.2f} GB")

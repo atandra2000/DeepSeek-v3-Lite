@@ -92,6 +92,23 @@ class TestTransformer:
         )
         assert any_cache, "KV cache should be populated after use_cache=True"
 
+    @pytest.mark.parametrize("attn_impl", ["sdpa", "manual"])
+    def test_chunked_prefill_matches_full_forward(self, small_cfg, attn_impl):
+        """Cached mid-sequence prefill (start_pos>0, seqlen>1) must equal a
+        full forward: the causal mask spans the whole KV context."""
+        cfg = dict(small_cfg, attn_impl=attn_impl)
+        m = Transformer(cfg, use_checkpoint=False)
+        m.eval()
+        torch.manual_seed(0)
+        toks = torch.randint(0, cfg["vocab_size"] - 1, (2, 16))
+        with torch.no_grad():
+            full = m(toks, start_pos=0, use_cache=False)
+            m.reset_cache()
+            _ = m(toks[:, :8], start_pos=0, use_cache=True)
+            chunk2 = m(toks[:, 8:], start_pos=8, use_cache=True)
+        assert torch.allclose(full[:, 8:], chunk2, atol=1e-5), \
+            f"attn_impl={attn_impl}: cached chunked prefill differs from full forward"
+
     def test_dense_and_moe_layers(self, small_cfg, device):
         """First n_dense_layers are SwiGLUFFN, remaining are MoE."""
         m = Transformer(small_cfg, use_checkpoint=False).to(device)
@@ -714,11 +731,11 @@ class TestMLAAdditional:
         assert abs(attn.softmax_scale - expected) < 1e-6
 
     def test_mscale_yarn(self, cfg, device):
-        """rope_factor > 1.0: mscale = 0.1 * mscale_raw * log(rope_factor)."""
+        """rope_factor > 1.0: mscale = 0.1 * mscale_raw * log(rope_factor) + 1.0 (paper formula)."""
         new_cfg = dict(cfg, rope_factor=4.0, mscale=1.0)
         attn = MultiHeadLatentAttention(new_cfg, layer_idx=0).to(device)
         import math
-        expected = 0.1 * 1.0 * math.log(4.0)
+        expected = 0.1 * 1.0 * math.log(4.0) + 1.0
         assert abs(attn.mscale - expected) < 1e-6
 
     def test_mscale_no_scaling(self, cfg, device):
@@ -813,7 +830,7 @@ class TestMTPAdditional:
         main = Transformer(new_cfg, use_checkpoint=False).to(device)
         mtp = MultiTokenPrediction(new_cfg, main).to(device)
         tokens = torch.randint(0, new_cfg["vocab_size"] - 1, (1, 16), device=device)
-        main_logits, mtp_pairs = mtp(tokens, start_pos=0)
+        main_logits, mtp_pairs = mtp(tokens)
         assert main_logits.shape == (1, 16, new_cfg["vocab_size"])
         assert len(mtp_pairs) == 2
 
@@ -843,7 +860,7 @@ class TestMTPGradientFlow:
         main = Transformer(cfg, use_checkpoint=False).to(device)
         mtp = MultiTokenPrediction(cfg, main).to(device)
         tokens = torch.randint(0, cfg["vocab_size"] - 1, (2, 8), device=device)
-        main_logits, mtp_pairs = mtp(tokens, start_pos=0)
+        main_logits, mtp_pairs = mtp(tokens)
         total, _, _ = mtp.compute_loss(main_logits, tokens, mtp_pairs)
         # Zero grads (the head is shared, so it gets a gradient from both paths).
         for p in mtp.parameters():

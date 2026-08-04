@@ -105,6 +105,9 @@ def main():
     if args.use_speculative:
         mtp_module = MTPModule(model_cfg, depth=1).to(args.device)
         mtp_module.eval()
+        # Without the shared head, MTPModule.forward raises on the first
+        # draft step ("output_head not set").
+        mtp_module.set_output_head(model.head)
         weight_path = Path(ckpt_dir) / f"model_step_{step}.safetensors"
         if weight_path.exists():
             from safetensors.torch import load_file

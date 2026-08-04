@@ -56,14 +56,23 @@ class Transformer(nn.Module):
         if self.weight_tying:
             self.head.weight = self.embed.weight
         self._mask_cache: Optional[torch.Tensor] = None
-        self._mask_seqlen: int = 0
+        self._mask_key: Optional[Tuple[int, int, int, torch.device]] = None
 
-    def _build_causal_mask(self, seqlen: int, device: torch.device) -> torch.Tensor:
-        """Additive causal mask (1,1,S,S). Cached by seqlen+device."""
-        if self._mask_cache is None or seqlen != self._mask_seqlen or self._mask_cache.device != device:
-            mask = torch.triu(torch.full((seqlen, seqlen), float("-inf"), device=device), diagonal=1)
+    def _build_causal_mask(self, seqlen: int, kv_len: int, start_pos: int, device: torch.device) -> torch.Tensor:
+        """Additive causal mask (1,1,S_q,S_kv), causal by global position.
+
+        `kv_len` is the number of attended keys (`end_pos` when a KV cache
+        spans the past, `seqlen` otherwise); `start_pos` offsets the query
+        positions so a cached mid-sequence prefill cannot attend its own
+        future. Cached by (seqlen, kv_len, start_pos, device).
+        """
+        key = (seqlen, kv_len, start_pos, device)
+        if self._mask_cache is None or key != self._mask_key:
+            q = torch.arange(seqlen, device=device)[:, None] + start_pos
+            k = torch.arange(kv_len, device=device)[None, :]
+            mask = torch.where(q >= k, torch.zeros((), device=device), torch.full((), float("-inf"), device=device))
             self._mask_cache = mask.unsqueeze(0).unsqueeze(0)
-            self._mask_seqlen = seqlen
+            self._mask_key = key
         return self._mask_cache
 
     def _run_layers(self, h: torch.Tensor, start_pos: int, mask: Optional[torch.Tensor], use_cache: bool) -> torch.Tensor:
@@ -94,16 +103,28 @@ class Transformer(nn.Module):
             tokens = tokens.to(torch.long)
         bsz, seqlen = tokens.shape
         h = self.embed(tokens)
-        mask = self._build_causal_mask(seqlen, tokens.device) if seqlen > 1 else None
+        end_pos = start_pos + seqlen
+        if seqlen > 1:
+            kv_len = end_pos if use_cache else seqlen
+            mask = self._build_causal_mask(seqlen, kv_len, start_pos if use_cache else 0, tokens.device)
+        else:
+            mask = None
         h = self._run_layers(h, start_pos, mask, use_cache)
         return self.head(self.norm(h))
 
     def forward_with_hidden(self, tokens: torch.Tensor, start_pos: int = 0, use_cache: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
         """Returns (logits, h). h is the pre-norm trunk hidden (V3 feeds this
         to MTP blocks, which apply their own norms); logits use the normed h."""
+        if tokens.dtype != torch.long:
+            tokens = tokens.to(torch.long)
         bsz, seqlen = tokens.shape
         h = self.embed(tokens)
-        mask = self._build_causal_mask(seqlen, tokens.device) if seqlen > 1 else None
+        end_pos = start_pos + seqlen
+        if seqlen > 1:
+            kv_len = end_pos if use_cache else seqlen
+            mask = self._build_causal_mask(seqlen, kv_len, start_pos if use_cache else 0, tokens.device)
+        else:
+            mask = None
         h = self._run_layers(h, start_pos, mask, use_cache)
         return self.head(self.norm(h)), h
 
