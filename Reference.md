@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-A from-scratch, raw-PyTorch reproduction of the **DeepSeek-V3 architecture** at Chinchilla-optimal scale — **~422 M total / ~280 M active parameters per token** — built to be fully inspectable (no HuggingFace Trainer, no Lightning). It implements the four architectural pillars of DeepSeek-V3 at a scale that fits on one A100 80 GB:
+A from-scratch, raw-PyTorch reproduction of the **DeepSeek-V3 architecture** at Chinchilla-optimal scale — **~412 M total / ~185 M active parameters per token** (411.6M deduped; 418.7M with MTP) — built to be fully inspectable (no HuggingFace Trainer, no Lightning). It implements the four architectural pillars of DeepSeek-V3 at a scale that fits on one A100 80 GB:
 
 1. **Multi-Head Latent Attention (MLA)** — low-rank KV compression with decoupled RoPE and the matrix-absorption trick.
 2. **DeepSeekMoE with auxiliary-loss-free load balancing** — fine-grained routed experts + a shared expert, balanced by a control-theory bias update rather than an auxiliary loss.
@@ -21,7 +21,7 @@ FP8 mixed precision and DualPipe bidirectional pipeline parallelism are DeepSeek
 
 | Parameter / Feature | Canonical Value |
 |---|---|
-| **Total / Active params** | **~422 M nominal / 411.6 M deduped (weight-tied) · ~280 M active per token** |
+| **Total / Active params** | **~422 M nominal / 411.6 M deduped (weight-tied) · ~185 M active per token** |
 | **Compute target** | 8.4 B tokens (Chinchilla-optimal for 422 M) · 512 000 steps |
 | **Topology** | 18 layers = **2 dense + 16 MoE** · `d_model = 768` |
 | **Attention heads** | 12 query heads · `d_head_nope = 48` · `d_head_rope = 24` · `d_v = 64` |

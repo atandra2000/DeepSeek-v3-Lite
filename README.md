@@ -7,13 +7,13 @@
 
 > **Status:** Architecture, training pipeline, and inference paths are implemented and smoke-tested; the Chinchilla-optimal 8.4B-token pretraining run has not yet started.
 
-> Conceptual notes extracted from the source tree live in [`docs/`](docs/README.md); the authoritative MLA deep-dive is [`docs/03_Multi_Head_Latent_Attention.md`](docs/03_Multi_Head_Latent_Attention.md).
+> Conceptual notes extracted from the source tree live in [`docs/`](docs/README.md); the authoritative MLA deep-dive is [`docs/03_Multi_Head_Latent_Attention.md`](docs/03_Multi_Head_Latent_Attention.md). Symbol-anchored API references live in [`docs/reference/`](docs/reference/R1_config_schema.md) and operational guides in [`docs/guides/`](docs/guides/G1_debugging_playbook.md); every code-symbol citation (path + class/method) is machine-verified by `tests/test_doc_refs.py`.
 
-A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, designed for Chinchilla-optimal training on a single **A100 80GB SXM** (projected **~13-15 hours** wall time).
+A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, designed for Chinchilla-optimal training on a single **A100 80GB SXM** (projected **~30-45 hours** wall time — unverified estimate).
 
 | Config | Parameters | Tokens | GPU | Wall time | Peak VRAM | Status |
 |---|---|---|---|---|---|---|
-| `configs/pretrain_a100_422m.yaml` | ~422M | 8.4B | A100 80GB SXM | ~13-15 h | ~35 GB | Code complete |
+| `configs/pretrain_a100_422m.yaml` | ~412M | 8.4B | A100 80GB SXM | ~30-45 h (est.) | ~35 GB | Code complete |
 | `configs/pretrain_1650_2m.yaml` | ~2M | 50K vocab (GPT-2) | GTX 1650 4GB | minutes | <1 GB | Smoke-test config — see [docs/README.md](docs/README.md#configs) |
 
 Two configurations ship in `configs/`:
@@ -145,7 +145,7 @@ Input tokens (vocab = 100,018)
 
 ### Multi-Head Latent Attention (MLA)
 
-MLA projects keys and values into a low-rank latent space (`kv_lora_rank=192`), then recovers full multi-head K and V via up-projection. The **absorption trick** folds the K up-projection into the query weight at inference, so only the compressed latent is cached — a ~5× KV-cache reduction. RoPE is applied to a decoupled 24-dim subspace, keeping the content keys rotation-free.
+MLA projects keys and values into a low-rank latent space (`kv_lora_rank=192`), then recovers full multi-head K and V via up-projection. The **absorption trick** folds the K up-projection into the query weight at inference, so only the compressed latent is cached — a ~7× KV-cache reduction (216 vs 1536 floats/token/layer). RoPE is applied to a decoupled 24-dim subspace, keeping the content keys rotation-free.
 
 ### DeepSeekMoE
 
@@ -170,7 +170,7 @@ Configured for **Chinchilla-optimal** training: ~20 tokens per parameter = 8.4B 
 - Balanced data mix: `fineweb` (1.0), `smollm` (0.6), `code` (0.3), `cosmo` (0.2), `math` (0.1), `openmath` (0.1)
 - 512K micro-steps (128K optimizer steps at grad_accum=4)
 - TF32 matmul precision, cuDNN benchmark, `torch.compile(mode="max-autotune")`
-- µP LR auto-scaling: reference LR `6e-4` at 757M params → scales to ~8.07e-4 for 422M
+- µP LR auto-scaling: reference LR `6e-4` at 757M params → ~8.07e-4 (418.7M with MTP; 8.14e-4 for the 411.6M base)
 - Weight tying: head.weight shares embed.weight storage (saves ~77M params)
 - Gradient checkpointing, FP32 AdamW master weights, Safetensors checkpoints
 - Automatic pre-flight checks: ≥75 GB VRAM, data validation
@@ -215,13 +215,13 @@ pip install -r requirements.txt
 
 ### Launch Sequence (A100 80GB)
 
-See **[docs/00_Getting_Started.md](docs/02_Model_Architecture.md)** §8–9 for the full workflow: CPU tests → GPU microbench → data prep → `launch_a100.sh`.
+See **[docs/00_Getting_Started.md](docs/00_Getting_Started.md)** §4 for quickstart and **[docs/11_Operations_and_Testing.md](docs/11_Operations_and_Testing.md)** §4 for the launch sequence: CPU tests → GPU microbench → data prep → `launch_a100.sh`.
 
 ```bash
 python -m pytest tests/ -q                    # CPU correctness
 python scripts/microbench_a100.py             # VRAM headroom (CUDA)
 python3 data/prepare_data.py --stage pretrain # once
-bash scripts/launch_a100.sh                   # ~13–15 h on A100 80GB
+bash scripts/launch_a100.sh                   # ~30–45 h on A100 80GB (estimated)
 ```
 
 ---
@@ -315,7 +315,7 @@ data:
   tokenizer_path:       "deepseek-ai/deepseek-coder-v2-lite"
 ```
 
-**~422M params** (embedding: 76.8M, non-embedding: ~345M). Chinchilla-optimal at 8.4B tokens (20:1 ratio).
+**~412M params** (embedding: 76.8M, non-embedding: ~335M). Chinchilla-optimal at 8.4B tokens (20:1 ratio).
 
 ---
 
@@ -323,7 +323,7 @@ data:
 
 | Decision | Rationale |
 |---|---|
-| 422M scale on A100 80GB | Chinchilla-optimal data fits in 13-15 h at 35-40% MFU |
+| ~412M scale on A100 80GB | Chinchilla-optimal data fits in ~30-45 h at 35-40% MFU (est.) |
 | MLA over GQA | 5× KV-cache reduction; absorption trick removes key expansion at decode |
 | Aux-loss-free MoE balancing | Bias updates don't contaminate task loss gradient |
 | 20 routed experts, 4 active | 20% sparsity — close to DeepSeek-V3 design ratio (12.5-25%) |

@@ -4,7 +4,7 @@
 
 
 > **Project:** `LLM/DeepSeek-v3-Lite/` · **Type:** faithful V3 reproduction
-> **Scale:** ~422M params · 8.4B tokens (planned) · 13–15h on A100 80GB
+> **Scale:** ~412M params (411.6M deduped base / 418.7M with MTP) · 8.4B tokens (planned) · ~30–45h on A100 80GB (estimated; unverified)
 > **Stack:** PyTorch 2.x, TF32, `torch.compile(max-autotune)`, FA2, **custom Triton kernels for MoE dispatch + MLA attention**, dataclasses
 
 Faithful from-scratch reimplementation of the **full DeepSeek-V3 architecture**:
@@ -44,8 +44,10 @@ split-K) and can reason about HBM bandwidth vs compute trade-offs.
   in `models/mla.py` if `triton` is missing or `attn_impl != "triton"`.
 - `models/moe.py` — `AuxLossFreeGate` + `DeepSeekMoE`: 20 routed (top-4) +
   1 shared, stacked bmm dispatch, dynamic bias updates. **`moe_dispatch`
-  supports `"stacked"`, `"grouped"`, and `"triton_grouped"`** (the
-  Triton path delegates to `models/moe_triton.py`).
+  supports `"stacked"` (default, PyTorch) and `"triton_grouped"` (opt-in;
+  the Triton path delegates to `models/moe_triton.py`)**. Any other value
+  falls back to `stacked`. Expert weights are re-stacked every forward —
+  never cache `_stacked_w*` across optimizer steps.
 - `models/moe_triton.py` — fused grouped-GEMM SwiGLU kernel over the
   sorted-token layout: one launch handles all 20 routed experts per
   layer. Replaces the `for e in range(E): … index_add …` Python loop.
@@ -84,7 +86,7 @@ split-K) and can reason about HBM bandwidth vs compute trade-offs.
 
 **Training:**
 - TF32 + `torch.compile(max-autotune)` + FA2 + custom Triton kernels
-  (MoE dispatch, MLA attention) + μP LR scaling (8.07e-4 @ 422M).
+  (MoE dispatch, MLA attention) + μP LR scaling (8.07e-4 @ 418.7M with MTP).
 - FP32 AdamW master weights + gradient checkpointing.
 - NaN guard with checkpoint rollback.
 
@@ -105,7 +107,7 @@ workspace umbrella; this project imports it via `sys.path` in
 0.05. Tokenized with `deepseek-ai/deepseek-coder-v2-lite` tokenizer (vocab
 100,018). See `data/DATA_PIPELINE.md` (redirects to `docs/09_Data_Pipeline.md`).
 
-**Doc routing:** implementation questions → `models/*.py` first; theory → `docs/<component>.md`; invariants → `tests/` + `docs/11_Operations_and_Testing.md`. MLA deep-dive → `docs/03_Multi_Head_Latent_Attention.md`.
+**Doc routing:** implementation questions → `models/*.py` first; theory → `docs/<component>.md`; API reference (signatures, shape contracts, defaults) → `docs/reference/R<n>_*.md`; operational procedures → `docs/guides/G<n>_*.md`; invariants → `tests/` + `docs/11_Operations_and_Testing.md`. MLA deep-dive → `docs/03_Multi_Head_Latent_Attention.md`. Doc↔code alignment is machine-checked by `tests/test_doc_refs.py` (every code-symbol citation — file path + class/method — must resolve; line anchors and JIT-kernel citations are banned) and `scripts/check_docs.py` (links, paths, stale patterns) — both run in CI; stale docs fail the build.
 
 **Configs:** `configs/pretrain_a100_422m.yaml` (canonical 422M A100 recipe).
 Two new optional config keys: `attn_impl` (default `"sdpa"`, set to
@@ -113,8 +115,8 @@ Two new optional config keys: `attn_impl` (default `"sdpa"`, set to
 `"triton_grouped"` to opt in). Master kill-switch env-var:
 `ENABLE_TRITON_KERNELS=0` (default, no Triton) or `=1` (allow per-config
 opt-in). Tests on CPU/Mac run with the env-var unset and the default
-`attn_impl` / `moe_dispatch` values, so the **189** pytest tests keep
-passing without any CUDA dependency.
+`attn_impl` / `moe_dispatch` values, so the **196** pytest tests keep
+passing (186 pass + 10 GPU-gated skips) without any CUDA dependency.
 
 **Hard rules:**
 1. **Raw PyTorch by default; custom Triton kernels are first-party for
@@ -183,8 +185,15 @@ passing without any CUDA dependency.
   `ENABLE_TRITON_KERNELS=1`.   A100 benchmark validation (≥1.5× MoE speedup,
   ≥25% full-step reduction) is still open. `tests/test_mla_triton.py` covers
   MLA kernel reference + GPU numerics; full-model `test_sdpa_and_triton_agree`
-  is still TODO. All **189** tests pass on the default
-  `attn_impl="sdpa"`, `moe_dispatch="stacked"` config without Triton.
+  is GPU-gated in `tests/test_mla_triton.py`. All **196** tests pass on the
+  default `attn_impl="sdpa"`, `moe_dispatch="stacked"` config without Triton.
+- **The Triton MoE kernel cannot run the canonical config** (`moe_inter_dim=384`,
+  `dim=768` exceed the 256 register cap; `triton_grouped` raises `ValueError`
+  and auto-falls back to `stacked`). The ≥1.5× MoE benchmark target is therefore
+  blocked at canonical dims until the kernel is extended past I=384/D=768 —
+  it is only validated at smoke-config dims (I, D ≤ 256).
+- Actual deduped param count is **411.6M base / 418.7M with MTP** — the "422M"
+  in the config filename is historical nominal.
 - Triton requires SM_80+ (A100, H100, RTX 4090, etc.) and Linux.
   macOS and Windows are unsupported for the Triton paths; the
   `HAS_TRITON = False` fallback keeps the codebase importable and

@@ -90,12 +90,12 @@ new_lr = mup_lr_reference * (mup_lr_reference_params / total) ** 0.5
 python -c "
 # Reference: 6e-4 at 757,226,496 params. Scale = sqrt(ref / total).
 ref_lr, ref_params = 6.0e-4, 757_226_496
-target = 422_000_000
+target = 411_632_256   # real deduped count of the 422M config (base, no MTP)
 scale = (ref_params / target) ** 0.5
 print(f'μP scale: {scale:.3f}')
 print(f'μP LR:    {ref_lr * scale:.3e}')
 "
-# Expected: μP scale ≈ 1.34, μP LR ≈ 8.04e-4 at 422M params.
+# Expected: μP scale ≈ 1.356, μP LR ≈ 8.14e-4 (base); 8.07e-4 with MTP (418.7M).
 ```
 
 ## Skill 6: Add a new data source to the mixture
@@ -116,13 +116,13 @@ The mixture weights must sum to 1.0. To override per-project, pass
 
 | Question | Start here |
 |---|---|
-| Run smoke tests / first training | [docs/00_Getting_Started.md](docs/02_Model_Architecture.md) |
-| Tune YAML | [docs/11_Operations_and_Testing.md](docs/08_Training_Pipeline.md) |
+| Run smoke tests / first training | [docs/00_Getting_Started.md](docs/00_Getting_Started.md) |
+| Tune YAML | [docs/08_Training_Pipeline.md](docs/08_Training_Pipeline.md) |
 | MLA dimensions / absorption | [docs/03_Multi_Head_Latent_Attention.md](docs/03_Multi_Head_Latent_Attention.md) + `models/mla.py` |
 | MoE bias / routing | [docs/04_DeepSeekMoE.md](docs/04_DeepSeekMoE.md) + `models/moe.py` |
-| Checkpoints / VRAM | [docs/11_Operations_and_Testing.md](docs/08_Training_Pipeline.md) |
-| Invariants / what tests prove | [docs/11_Operations_and_Testing.md](docs/08_Training_Pipeline.md) |
-| Enable Triton | [docs/12_Triton_Kernels.md](docs/08_Training_Pipeline.md) + `ENABLE_TRITON_KERNELS=1` |
+| Checkpoints / VRAM | [docs/11_Operations_and_Testing.md](docs/11_Operations_and_Testing.md) |
+| Invariants / what tests prove | [docs/11_Operations_and_Testing.md](docs/11_Operations_and_Testing.md) |
+| Enable Triton | [docs/12_Triton_Kernels.md](docs/12_Triton_Kernels.md) + `ENABLE_TRITON_KERNELS=1` |
 
 ## Pitfalls (cross-cutting)
 - **NaN guard** is `nan_guard_max_consecutive=5` — after 5 consecutive NaN

@@ -1,10 +1,41 @@
 # 01 — Architectural Foundations
 
-> **Canonical** for the from-scratch primitives every other chapter assumes: causal LM objective, pre-norm residuals, attention, RoPE, KV caching, Chinchilla scaling, μP. Educational textbook chapter.
+> **Canonical** for the from-scratch primitives every other chapter assumes: causal LM objective, pre-norm residuals, attention, RoPE, KV caching, Chinchilla scaling, μP, mixed precision, and the numerical tools you need to read the rest of the docs. Educational textbook chapter.
 
 > The conceptual base layer. DeepSeek lineage (V1 → V2 → V3) plus the mathematical primitives that every later chapter builds on. Read this before [[Docs/02_Model_Architecture]], [[Docs/03_Multi_Head_Latent_Attention]], or [[Docs/08_Training_Pipeline]] — each of those cites sections here by number.
 
 **Depends on:** [[Docs/00_Getting_Started]] · **Read next:** [[Docs/02_Model_Architecture]], [[Docs/03_Multi_Head_Latent_Attention]]
+
+---
+
+## Table of Contents
+
+1. [The DeepSeek evolutionary lineage](#1-the-deepseek-evolutionary-lineage)
+2. [Causal language modeling & cross-entropy loss](#2-causal-language-modeling--cross-entropy-loss)
+3. [Pre-norm residual blocks & RMSNorm](#3-pre-norm-residual-blocks--rmsnorm)
+4. [SwiGLU feed-forward network](#4-swiglu-feed-forward-network)
+5. [Multi-head attention — the standard baseline](#5-multi-head-attention--the-standard-baseline)
+6. [Rotary position embeddings (RoPE)](#6-rotary-position-embeddings-rope)
+7. [Attention scaling & causal masking](#7-attention-scaling--causal-masking)
+8. [The residual stream & information flow](#8-the-residual-stream--information-flow)
+9. [The training loss — CE plus the MTP auxiliary](#9-the-training-loss--ce-plus-the-mtp-auxiliary)
+10. [Optimization — AdamW, warmup-cosine, gradient clipping](#10-optimization--adamw-warmup-cosine-gradient-clipping)
+11. [KV caching — the inference bottleneck](#11-kv-caching--the-inference-bottleneck)
+12. [The Chinchilla token budget & compute accounting](#12-the-chinchilla-token-budget--compute-accounting)
+13. [μP — maximal-update parameterization](#13-μp--maximal-update-parameterization)
+14. [Mixed precision — BF16 training](#14-mixed-precision--bf16-training)
+15. [Gradient checkpointing](#15-gradient-checkpointing)
+16. [Weight tying](#16-weight-tying)
+17. [Tokenization — BPE and the DeepSeek tokenizer](#17-tokenization--bpe-and-the-deepseek-tokenizer)
+18. [The matrix calculus you need](#18-the-matrix-calculus-you-need)
+19. [Weight initialization](#19-weight-initialization)
+20. [Worked example — one forward pass at 411.6M scale](#20-worked-example--one-forward-pass-at-4116m-scale)
+21. [The loss landscape & training dynamics](#21-the-loss-landscape--training-dynamics)
+22. [Practice problems (with answers)](#22-practice-problems-with-answers)
+23. [Core notation & glossary](#23-core-notation--glossary)
+24. [Load-bearing invariants](#24-load-bearing-invariants)
+25. [Check your understanding](#25-check-your-understanding)
+26. [References](#26-references)
 
 ---
 
@@ -27,17 +58,48 @@ DeepSeek-V3 (2024)
       • DualPipe bidirectional pipeline parallelism                  [paper-spec in this repo]
 ```
 
-> [!NOTE] **Lineage numbers are the paper's, not this repo's.** The V2/V3 rows above describe the *published* DeepSeek models. This reproduction (DeepSeek-**v3-Lite**) is a 422 M-param single-GPU model: `d_c = 192`, 20 routed experts (4 active) + 1 shared, BF16. See [[Reference]] for the canonical spec. Don't conflate the paper's 14 B / 64-expert numbers with this repo's 422 M / 20-expert numbers — they are different scales of the same architecture.
+> [!NOTE] **Lineage numbers are the paper's, not this repo's.** The V2/V3 rows above describe the *published* DeepSeek models. This reproduction (DeepSeek-**v3-Lite**) is a ~412 M-param single-GPU model: `d_c = 192`, 20 routed experts (4 active) + 1 shared, BF16. The canonical config (`configs/pretrain_a100_422m.yaml` — "422m" is the *filename*, a historical nominal) instantiates **411,632,256** deduped parameters (411.6 M) without MTP and **418,713,984** (418.7 M) with the MTP module. Don't conflate the paper's 14 B / 64-expert numbers with this repo's 411.6 M / 20-expert numbers — they are different scales of the same architecture.
+
+The lineage matters because each V3 component is the *answer to a specific failure*. Read the chapter through that lens:
+
+| V3 component | Failure it answers | Chapter |
+|---|---|---|
+| **MLA** (§3 of [[Docs/03_Multi_Head_Latent_Attention]]) | KV-cache memory dominates long-context inference | §5, §6, §11 here |
+| **DeepSeekMoE, aux-loss-free** | Dense FFN cost scales with capacity; aux-loss gradient contaminates the task loss | §4, §12 |
+| **MTP** | One next-token target per position under-supervises the trunk | §9 |
+| **μP LR transfer** | LR tuned at one width fails at another | §13 |
+
+### 1.1 How to read this chapter
+
+Each of the next twenty sections is a *from-scratch* derivation of one primitive, in the order a transformer needs them: first the objective (§2), then the building blocks of the trunk (§3–§8), then training-time machinery (§9–§15), then the vocabulary machinery (§16–§17), then the numerical tools (§18–§19), then two worked passes (§20–§21) and the reference tables (§22–§26). Every code claim is anchored to a real symbol in `models/` or `training/` — you can open the file and find the exact line by searching for the symbol name. Where a number is an estimate rather than a measurement, it is labelled as such; no GPU training run has been executed in this repo, so every memory and latency figure is a budget estimate `[INFERENCE]` derived from the config, not a measurement.
 
 ---
 
 ## 2. Causal language modeling & cross-entropy loss
 
+### 2.1 The autoregressive decomposition
+
 A language model assigns probability to a token sequence $\mathbf{x} = (x_1, \ldots, x_T)$ by factorizing the joint into conditionals (autoregressive decomposition):
 
 $$p_\theta(\mathbf{x}) = \prod_{t=1}^{T} p_\theta(x_t \mid x_{<t})$$
 
-The model outputs a distribution over the vocabulary at each position. We train by maximizing the likelihood of the data, equivalently **minimizing the cross-entropy** of the predicted next-token distribution against the observed token:
+This is just the chain rule of probability, applied left-to-right. It converts "model the whole sequence" into "model each next token given the past" — which is why the architecture is causal and why a single training objective on all positions doubles as a definition of the model. No independence assumption is made; the conditionals share parameters through the trunk.
+
+### 2.2 From logits to probabilities
+
+The model does not output probabilities directly; it outputs **logits** $z \in \mathbb{R}^{V}$ (unnormalized scores), one per vocabulary item. The **softmax** turns them into a valid distribution:
+
+$$p_i = \frac{e^{z_i}}{\sum_{j=1}^{V} e^{z_j}}$$
+
+Three properties to internalize:
+
+1. **Softmax is invariant to adding a constant to all logits** — $p$ is unchanged if $z \to z + c$. Only *differences* of logits matter. This is why a "temperature" $\tau$ is applied as $z_i / \tau$: scaling logits changes their spread, sharpening ($\tau < 1$) or flattening ($\tau > 1$) the distribution. The repo implements temperature (plus top-k/top-p) in `models/transformer.py:Transformer._sample`, used by `models/transformer.py:Transformer.generate` at inference.
+2. **Softmax is a smooth argmax.** It returns near-one-hot distributions when logits are widely separated and near-uniform when they are close.
+3. **The gradient of the cross-entropy through softmax is beautifully simple** (§2.4) — this is why classification heads use logits + softmax rather than direct probability regression.
+
+### 2.3 The objective
+
+We train by maximizing the likelihood of the data, equivalently **minimizing the cross-entropy** of the predicted next-token distribution against the observed token:
 
 $$\mathcal{L}_{\text{CE}}(\theta) = -\sum_{t=1}^{T} \log p_\theta(x_t \mid x_{<t})$$
 
@@ -45,53 +107,247 @@ $$\mathcal{L}_{\text{CE}}(\theta) = -\sum_{t=1}^{T} \log p_\theta(x_t \mid x_{<t
 Cross-entropy is *negative log-likelihood* — it is the number of bits (in nats) the model "needs" to encode the true token under its distribution. A perfect model assigns probability 1 to the right token (loss 0); a uniform-over-vocab model assigns $1/V$ (loss $\log V$). The gradient $\nabla_\theta \mathcal{L}_{\text{CE}}$ flows only through the position being predicted, which is why the causal mask (§7) is essential: without it, position $t$ could "see" $x_t$ and the loss would be trivially zero.
 `─────────────────────────────────────────────────`
 
-In code (`training/pretrain.py`), this is one line on the flattened logits:
+The connection to information theory: cross-entropy decomposes as
+
+$$\text{CE}(p_{\text{data}}, p_\theta) = H(p_{\text{data}}) + D_{\mathrm{KL}}(p_{\text{data}} \,\|\, p_\theta)$$
+
+where $H$ is the (fixed) entropy of the data distribution and $D_{\mathrm{KL}}$ is the Kullback–Leibler divergence the model is actually minimizing. The entropy term is a constant the model can't affect, so minimizing CE is *exactly* minimizing the KL divergence between the data and the model — i.e., learning the data distribution. This "compression" framing is why lower CE ⇒ the model compresses the corpus better.
+
+### 2.4 The softmax-minus-target gradient
+
+Write $p = \text{softmax}(z)$ and let the loss at one position be $\mathcal{L} = -\log p_y$ (the true token is $y$). Then:
+
+$$\frac{\partial \mathcal{L}}{\partial z_i} = p_i - \mathbf{1}[i = y]$$
+
+**"Softmax output minus one-hot target."** This single identity is why logits-softmax-CE is the workhorse: the gradient is a *difference of distributions*, it costs nothing extra to compute (the softmax probabilities are already in hand), and it is bounded in $[-1, 1]$ per element — numerically benign compared to, say, the squared-error gradient through a sigmoid, which saturates.
+
+The derivation is two lines and worth doing once. Write $\mathcal{L} = -z_y + \log \sum_j e^{z_j}$. Then $\partial \mathcal{L}/\partial z_i = -\mathbf{1}[i=y] + e^{z_i}/\sum_j e^{z_j} = p_i - \mathbf{1}[i=y]$. Note also that $\sum_i \partial \mathcal{L}/\partial z_i = 1 - 1 = 0$: the gradient is always **zero-mean**, which reflects the shift-invariance of softmax (§2.2) — the model can only learn *differences* between logits, never their absolute level. If you ever see a logit-gradient that does not sum to zero, there is a bug.
+
+### 2.5 Numerical stability
+
+Naively computing $e^{z_i}$ overflows when $z_i$ is large (e.g. $e^{100}$ exceeds float range). The stable form subtracts the row max $m = \max_j z_j$:
+
+$$p_i = \frac{e^{z_i - m}}{\sum_j e^{z_j - m}}$$
+
+Since softmax is shift-invariant (§2.2), this is mathematically identical. PyTorch's `F.cross_entropy` fuses log-softmax + NLL for exactly this reason — never implement CE as `log(softmax(...))` in training code; it both wastes memory and risks overflow.
+
+### 2.6 Perplexity
+
+**Perplexity** is the standard scalar report of LM quality:
+
+$$\mathrm{PPL} = \exp(\mathcal{L}_{\text{CE}})$$
+
+Intuitively it is the **effective branching factor**: how many tokens the model is, on average, choosing uniformly among at each step.
+
+| Loss (nats) | PPL | Interpretation |
+|---|---|---|
+| $\log V \approx 11.5$ | $\approx 100000$ | Uniform over the 100K vocab (random init) |
+| 4.0 | 54.6 | Learned subword structure |
+| 2.8 | 16.4 | Mid-training ~412M |
+| 2.0 | 7.4 | Very good small LM |
+
+In code, `TrainingLogger` prints `ppl = exp(avg_loss)` (`utils/logging.py:TrainingLogger.log`). A PPL equal to $V$ means the model has learned nothing; every factor of $e$ reduction in loss halves the branching factor. Because nats and bits are related by a constant ($1$ nat $= 1/\ln 2 \approx 1.44$ bits), a loss of 2.8 nats is about 4.0 bits per token — both appear in the literature; this repo logs nats.
+
+### 2.7 In this repo
+
+`targets` is `tokens` shifted by one position — predict $x_{t+1}$ from $x_{\le t}$. The loss is one line on the flattened logits (`training/pretrain.py`):
+
 ```python
 main_loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=-100)
 ```
-`targets` is `tokens` shifted by one position — predict $x_{t+1}$ from $x_{\le t}$.
+
+`ignore_index=-100` is the standard mask sentinel: padded positions (if any) are labelled $-100$ and contribute no gradient. Label smoothing is **not** used here — the model trains on hard one-hot targets.
+
+### 2.8 Teacher forcing
+
+Notice what the objective does *not* do: at every training step the model predicts $x_{t+1}$ from the **ground-truth** prefix $x_{\le t}$, never from its own previously sampled tokens. This is **teacher forcing**: the "teacher" (the true text) is fed in, and the model is only ever asked to score the correct continuation one position ahead.
+
+Why is this the right thing for pretraining? The alternative — feeding the model its own samples ("free-running") — has two fatal problems:
+
+1. **The sampled token is discrete.** A sampled token $x_{t+1}$ has no gradient w.r.t. the model parameters (an `argmax` or `multinomial` is not differentiable), so a free-running model cannot be trained by backprop through its own outputs without additional machinery (e.g., REINFORCE-style estimators, which are high-variance).
+2. **Errors compound.** If the model feeds its own mistakes forward, the training distribution drifts further from the true text the deeper the rollout goes, and the learning signal becomes noise.
+
+Teacher forcing sidesteps both: the forward pass is a pure differentiable function of the input tokens, and every position is supervised against the true next token. The price is **exposure bias** — at inference the model free-runs on its own samples (see `models/transformer.py:Transformer.generate`), so the input distribution shifts from ground truth to model output. For causal LMs this is largely absorbed by the fact that each step is a *local* correction (one token at a time, with the KV cache), and it is the standard training regime for every model in this repo and in the DeepSeek lineage.
+
+### 2.9 The loss is a mean over positions and batches
+
+The flattened `F.cross_entropy` call reduces over *all* positions in the batch: with micro-batch 8 and sequence 2048, that is 16,384 positions per micro-step, and the returned scalar is the mean per-position loss. Two consequences:
+
+- **The gradient is an average too.** `∂L/∂θ` is the mean over 16,384 positions of the per-position gradient. This keeps the gradient scale independent of sequence length and batch size — if the loss summed instead of averaged, doubling the sequence would double every gradient.
+- **`ignore_index` renormalizes.** PyTorch's `cross_entropy` with `ignore_index=-100` excludes ignored positions from *both* the numerator and the denominator, so the mean is over valid positions only. In packed pretraining (see [[Docs/09_Data_Pipeline]]) padding is rare, so `-100` is mostly a safety sentinel — but the semantics matter the day you mix padded and packed batches.
+
+The repo divides by the gradient-accumulation factor before backprop (`training/pretrain.py:Pretrainer.train_step`), so four micro-steps of 16,384 positions each accumulate into one optimizer step whose gradient is the mean over 65,536 positions:
+
+```python
+loss = main_loss / self.config.gradient_accumulation_steps
+```
+
+### 2.10 What "good" looks like at this scale
+
+The uniform baseline is $\log V = \log 100018 \approx 11.51$ nats. Anything below ~6 nats means the model has learned token statistics; below ~4 nats it has learned subword and syntactic structure; below ~3 nats (PPL < 20) it is a functioning small LM. There is no GPU run in this repo yet, so the "mid-training 2.8" row in the §2.6 table is a planning target, not a measurement `[INFERENCE]`. The practical way to watch the loss in this repo is `utils/logging.py:TrainingLogger.log`, which prints `loss`, `ppl`, `lr`, and tokens/sec every `log_interval` steps.
 
 ---
 
 ## 3. Pre-norm residual blocks & RMSNorm
 
+### 3.1 The residual block
+
 Every transformer layer is a **residual block** with a pre-norm:
 
 $$h \leftarrow h + f(\text{RMSNorm}(h))$$
 
-where $f$ is attention or the FFN. Two properties matter:
+where $f$ is attention or the FFN. The residual connection is not a convenience — it is what makes deep training possible. Without it, the gradient at layer $\ell$ would be the product of many layer-wise Jacobians; with it, the Jacobian of the block is $I + J_f$ (identity plus a correction), so gradients flow through the identity term essentially unattenuated. This is the "residual highway" that lets gradients reach the embedding at depth 18+.
 
-1. **Pre-norm (not post-norm):** the normalization is applied to the *input* of the sublayer, so the residual stream $h$ is never normalized away. This makes deep models trainable — gradients flow through the un-normalized residual path. Post-norm (original Transformer) normalizes the output and is unstable past ~12 layers.
-2. **RMSNorm (not LayerNorm):** RMSNorm drops the mean-subtraction of LayerNorm, keeping only the root-mean-square scaling:
+### 3.2 Pre-norm vs post-norm
 
-$$\text{RMSNorm}(x) = \frac{x}{\sqrt{\tfrac{1}{d}\sum_i x_i^2 + \epsilon}} \cdot \gamma$$
+- **Pre-norm:** the normalization is applied to the *input* of the sublayer, so the residual stream $h$ is never normalized away. Post-norm (original Transformer) normalizes the output of each sublayer, which re-scales the signal before it re-enters the residual path; this is empirically unstable past ~12 layers and requires careful init/LR.
+- **Consequence:** with pre-norm, the *final* residual is unnormalized, so a final `RMSNorm` must be applied before the LM head (`self.head(self.norm(h))` in `models/transformer.py:Transformer.forward`). The repository does exactly this.
 
-LayerNorm computes $\frac{x - \mu}{\sigma}$; RMSNorm computes $\frac{x}{\text{RMS}(x)}$. The mean shift is removed because for activations centred near zero it contributes little, and removing it cuts a reduction + broadcast per norm — cheaper, marginally better gradient flow. Every DeepSeek (and LLaMA/Mamba) block uses `nn.RMSNorm(dim, eps=1e-6)`.
+### 3.3 LayerNorm vs RMSNorm
+
+**LayerNorm** (Ba, Kiros & Hinton, 2016) normalizes with both a learned mean-shift and scale:
+
+$$\text{LayerNorm}(x) = \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}} \odot \gamma + \beta, \qquad \mu = \tfrac{1}{d}\sum_i x_i,\; \sigma^2 = \tfrac{1}{d}\sum_i (x_i - \mu)^2$$
+
+**RMSNorm** (Zhang & Sennrich, 2019) keeps only the root-mean-square scaling, dropping the mean subtraction *and* the bias:
+
+$$\text{RMSNorm}(x) = \frac{x}{\sqrt{\tfrac{1}{d}\sum_i x_i^2 + \epsilon}} \odot \gamma$$
+
+| | LayerNorm | RMSNorm |
+|---|---|---|
+| Mean subtraction | Yes | No |
+| Learned scale $\gamma$ | Yes | Yes |
+| Learned bias $\beta$ | Yes | No |
+| Params per norm | $2d$ | $d$ |
+| Scale-invariant ($x \to c x$) | Yes | Yes (up to sign) |
+| Translation-invariant ($x \to x + c$) | Yes | **No** |
+
+The key property is **scale-invariance**: $\text{RMSNorm}(c x) = \operatorname{sgn}(c)\,\text{RMSNorm}(x)$, so the norm resets the magnitude of the stream regardless of how large it has grown — this is what stabilizes the residual stream. LayerNorm additionally subtracts the mean; RMSNorm argues this re-centering is unnecessary for transformers, where activations sit near zero anyway, and that removing it cuts a reduction + broadcast per norm (a real speed win at hundreds of norm layers) with marginally better gradient flow. Every DeepSeek (and LLaMA/Mamba) block uses `nn.RMSNorm(dim, eps=1e-6)`.
+
+**Why `eps=1e-6`?** The epsilon is a numerical floor against dividing by a near-zero RMS. This repo (and DeepSeek) use $10^{-6}$, tighter than the $10^{-5}$ many LLaMA implementations use — allowing the norm to be "more aggressive" when the RMS is small, at the cost of requiring initialization that keeps activations away from zero (§19).
+
+### 3.4 The canonical block
 
 The repo's `TransformerBlock` (`models/transformer.py`) is the canonical form:
+
 ```python
-def forward(self, x, start_pos=0, mask=None, use_cache=True):
+def forward(self, x: torch.Tensor, start_pos: int = 0, mask: Optional[torch.Tensor] = None, use_cache: bool = True) -> torch.Tensor:
     x = x + self.attn(self.attn_norm(x), start_pos, mask, use_cache)
     x = x + self.ffn(self.ffn_norm(x))
     return x
 ```
+
 Two residual additions, two pre-norms — attention then FFN. The residual stream `x` carries information; the sublayers *add corrections* to it.
+
+### 3.5 RMSNorm, derived from scratch
+
+**What normalization must do.** Deep networks suffer from "internal covariate shift"-adjacent problems: the scale of activations is not controlled by anything, so a slightly-too-large weight at layer 5 can compound into saturated or vanishing signals by layer 18. Normalization forces each layer to see an input with a *fixed, known scale* — the layer then only has to learn the shape, not the magnitude.
+
+**Why drop the mean.** The mean subtraction in LayerNorm exists to re-center activations. In a transformer with pre-norm residuals, the input to every norm is a sum of corrections written into the residual stream; with symmetric initialization these sums hover near zero mean already, and any constant offset is a *bias-like* signal the model can learn to use or ignore. RMSNorm's bet is that the mean carries no information worth a dedicated per-layer estimate — the win is one fewer reduction and one fewer broadcast per norm, plus one fewer set of parameters ($d$ instead of $2d$).
+
+**The forward pass.** Define the mean square $m(x) = \tfrac{1}{d}\sum_i x_i^2$ and the RMS $r(x) = \sqrt{m(x) + \epsilon}$. Then
+
+$$y_i = \frac{x_i}{r(x)} \qquad\text{(then } \tilde{y}_i = \gamma_i y_i\text{)}$$
+
+The output has RMS $\approx 1$ (up to $\epsilon$): $\frac{1}{d}\sum_i y_i^2 = \frac{m(x)}{m(x)+\epsilon} \to 1$. The learned gain $\gamma \in \mathbb{R}^d$ (initialized to ones by `nn.RMSNorm`) then rescales each channel to whatever variance the following layer wants.
+
+**Scale-invariance, proved.** For $c > 0$: $m(cx) = c^2 m(x)$, so $r(cx) = c\, r(x)$, and $y(cx)_i = cx_i/(c\,r(x)) = y(x)_i$. For $c < 0$ the sign flips: $y(cx) = \operatorname{sgn}(c)\,y(x)$. Two consequences: (1) the norm output is insensitive to the absolute scale of the stream — the stream can grow or shrink across depth without the sublayers noticing; (2) the *norm's input scale* is not a learnable signal, which is precisely why the residual stream needs no per-layer rescaling.
+
+**The gradient.** Let $g = \partial \mathcal{L}/\partial y$ be the upstream gradient. Differentiate $y_i = x_i / r$:
+
+$$\frac{\partial y_i}{\partial x_j} = \frac{\delta_{ij}}{r} - \frac{x_i}{r^2}\frac{\partial r}{\partial x_j}, \qquad \frac{\partial r}{\partial x_j} = \frac{x_j}{d\, r}$$
+
+Chaining with $g$ and pulling the sum through:
+
+$$\frac{\partial \mathcal{L}}{\partial x_j} = \frac{1}{r}\left( g_j - x_j \cdot \frac{\langle g, x\rangle}{d\, r^2} \right), \qquad \langle g, x\rangle = \sum_i g_i x_i$$
+
+Read this as: **"upstream gradient minus its projection onto the input, divided by the RMS."** The first term is the direct path; the second subtracts the component of $g$ parallel to $x$ — the norm "explains away" any gradient that would simply change the overall magnitude, because magnitude changes are invisible to the next layer (scale-invariance). With the learned gain, $g$ is first multiplied by $\gamma$; PyTorch's `nn.RMSNorm` computes exactly $y = (x/\sqrt{\text{mean}(x^2)+\epsilon}) \cdot \gamma$ and leaves the backward to autograd. The gradient is $O(1)$ in the input magnitude (the $1/r$ factor), which is what makes the norm numerically benign compared to saturating nonlinearities.
+
+### 3.6 Code walkthrough — where the norms live
+
+Every normalization in this repo is `nn.RMSNorm(dim, eps=1e-6)`. At the canonical config the instances are:
+
+| Location | Instance | Count |
+|---|---|---|
+| `models/transformer.py:TransformerBlock.__init__` | `attn_norm`, `ffn_norm` — one pair per layer | $18 \times 2 = 36$ |
+| `models/transformer.py:Transformer.__init__` | `self.norm` — final norm before the LM head | 1 |
+| `models/mla.py:MultiHeadLatentAttention.__init__` | `kv_norm` — normalizes the KV latent | 18 |
+| `models/mtp.py:MTPBlock.__init__` + `models/mtp.py:MTPModule.__init__` | `norm_h`, `norm_e`, `norm_attn`, `norm_ffn`, `norm` | 5 |
+
+That is 37 norms in the trunk alone (the "37+" figure) and 60 total once MLA and MTP are counted. The trunk construction is visible in `models/transformer.py:TransformerBlock.__init__`:
+
+```python
+self.attn_norm = nn.RMSNorm(self.dim, eps=1e-6)
+self.attn = MultiHeadLatentAttention(config, layer_id)
+self.ffn_norm = nn.RMSNorm(self.dim, eps=1e-6)
+self.ffn = SwiGLUFFN(self.dim, config["inter_dim"]) if layer_id < self.n_dense_layers else DeepSeekMoE(config)
+```
+
+MLA adds two more normalization sites — `q_norm` (only when `q_lora_rank > 0`, so *absent* at the canonical config where `q_lora_rank: 0`) and `kv_norm` (always present, normalizing the compressed latent before it is written to cache or expanded):
+
+```python
+self.kv_norm = nn.RMSNorm(self.kv_lora_rank, eps=1e-6)
+```
+
+The `kv_norm` placement is deliberate and load-bearing: the cache stores the *normalized* latent, so a change to the norm would invalidate cached values — see §11.5 and [[Docs/03_Multi_Head_Latent_Attention]].
+
+### 3.7 RMSNorm pitfalls
+
+- **eps too large flattens small activations.** With `eps=1e-6` the norm faithfully rescales even RMS-0.01 activations; with `1e-5` (a common LLaMA value) a 0.01-RMS signal would be pulled toward $1/\sqrt{1+100\epsilon}$-ish distortion. Consistency across the 60 norms matters: mixing eps values changes the effective scale of the residual stream per layer.
+- **RMSNorm is not translation-invariant.** An input $x + c\mathbf{1}$ changes the output (unlike LayerNorm). This is why the embedding is initialized with a tiny std (0.006, §19): a large DC offset at the stream's birth would be amplified by the first norm.
+- **Under autocast, norms stay in FP32.** PyTorch's `autocast` casts matmul-heavy ops to BF16 but keeps normalization (and softmax) in FP32 — the RMS reduction is a sum of $d$ squares, which is exactly the kind of reduction that loses precision in BF16. Don't "optimize" by forcing the norm into BF16.
+- **The final norm is the head's only scale control.** With weight tying (§16), the LM head *is* the embedding matrix; the final `RMSNorm` in `models/transformer.py:Transformer.forward` (`self.head(self.norm(h))`) is what keeps logits from exploding as the stream grows across 18 layers.
 
 ---
 
 ## 4. SwiGLU feed-forward network
 
-The FFN is a **SwiGLU** — a gated linear unit with a Swish (SiLU) gate:
+### 4.1 The vanilla FFN and its problem
+
+The classic transformer FFN is two matrices with a pointwise nonlinearity in between: $\text{FFN}(x) = W_2\, \phi(W_1 x)$ with $\phi = \text{ReLU}$ or $\text{GELU}$. This is a per-position, channel-mixing computation: it transforms each token independently (unlike attention, which mixes across positions). Its capacity is limited by how expressive a single fixed nonlinearity can be.
+
+### 4.2 Gating: the SwiGLU idea
+
+**SwiGLU** (Shazeer, 2020) replaces the single path with a **gated** path — two parallel projections, one acting as a value, the other as a smooth gate:
 
 $$\text{SwiGLU}(x) = W_2\big(\text{silu}(W_1 x) \odot (W_3 x)\big)$$
 
-Three weight matrices: $W_1, W_3$ project up to `inter_dim`, the SiLU gate selects, $W_2$ projects back down. The elementwise product $\text{silu}(W_1 x) \odot (W_3 x)$ is the gating — $W_3 x$ provides a "value" and $\text{silu}(W_1 x)$ a smooth "gate" that lets the model pass or suppress each hidden dimension. SwiGLU beats the vanilla two-matrix FFN (ReLU/GELU) at equal parameter count because the gate adds a multiplicative nonlinearity.
+Three weight matrices: $W_1, W_3$ project up to `inter_dim`, the SiLU gate selects, $W_2$ projects back down. The elementwise product $\text{silu}(W_1 x) \odot (W_3 x)$ is the gating — $W_3 x$ provides a "value" and $\text{silu}(W_1 x)$ a smooth "gate" that lets the model pass or suppress each hidden dimension.
+
+**SiLU (a.k.a. Swish)** is $\sigma(x) \cdot x$ — the sigmoid times the input:
+
+- **Smooth and monotonic**, unlike ReLU.
+- **Bounded below, unbounded above** — the negative branch saturates to 0 but never exactly 0 (no dead neurons).
+- Its gradient is $\sigma(x) + x\,\sigma(x)(1 - \sigma(x))$, which is **non-zero almost everywhere** — every channel learns throughout training, whereas ReLU can pin channels to zero gradient forever.
+
+SwiGLU beats the vanilla two-matrix FFN (ReLU/GELU) at equal parameter count because the gate adds a *multiplicative* nonlinearity: the effective function is a *product* of two learnable transformations, which is strictly more expressive than a single nonlinearity applied to one transformation. Empirically (T5/PaLM-era ablations) SwiGLU wins at fixed FLOPs and fixed parameter counts alike.
+
+### 4.3 Parameter and FLOP accounting
+
+$$\text{Params} = 3\,d\,I, \qquad \text{FLOPs/token} \approx 6\,d\,I$$
+
+where $I$ is the intermediate width. The three matrices are $W_1: d \to I$, $W_3: d \to I$, $W_2: I \to d$; the "6" is the three matmuls, each with a multiply and an add per element (forward; backward is another $2\times$ on top, see §12.3).
+
+At the canonical 411.6M scale, dense layers use $d=768$, $I=1536$ → **3.5M params / ~7.1 MFLOPs per token per layer**. Each MoE expert is a smaller SwiGLU with $I=384$ (see [[Docs/04_DeepSeekMoE]]).
+
+### 4.4 SwiGLU in code, annotated
+
+The repo's dense FFN is exactly the formula above (`models/transformer.py:SwiGLUFFN.forward`):
 
 ```python
-class SwiGLUFFN(nn.Module):
-    def forward(self, x): return self.w2(F.silu(self.w1(x)) * self.w3(x))
+def forward(self, x: torch.Tensor) -> torch.Tensor:
+    return self.w2(F.silu(self.w1(x)) * self.w3(x))
 ```
-Dense layers (0–1 in the 422 M config) use `SwiGLUFFN`; MoE layers (2–17) replace it with `DeepSeekMoE`, where each *expert* is itself a SwiGLU (see [[Docs/04_DeepSeekMoE]]).
+
+Read the line right-to-left: `w1(x)` is the *gate* path (silu-activated), `w3(x)` is the *value* path, the `*` is the elementwise gating product, and `w2` is the down-projection. Every MoE expert is the same three-matrix structure with a smaller intermediate width (`models/moe.py:Expert`), so everything in this section applies to experts too — the only difference is which tokens flow through which expert (see [[Docs/04_DeepSeekMoE]]).
+
+**The gated backward.** Because the forward is a product $h = \text{silu}(a) \odot b$ with $a = W_1 x$, $b = W_3 x$, the backward splits cleanly by the product rule:
+
+$$\frac{\partial \mathcal{L}}{\partial b} = \frac{\partial \mathcal{L}}{\partial h} \odot \text{silu}(a), \qquad \frac{\partial \mathcal{L}}{\partial a} = \frac{\partial \mathcal{L}}{\partial h} \odot b \odot \text{silu}'(a)$$
+
+Each channel receives the *other* channel's forward value as a coefficient. This is where the gate's multiplicative structure shows up in gradients: the gate path is modulated by the value path and vice versa, so the two projections co-adapt. The same identity is what the fused Triton grouped-MoE kernel has to reproduce in its `dx`/`dw` passes (see [[Docs/12_Triton_Kernels]]).
+
+**Pitfall — no biases anywhere.** Every FFN and expert `Linear` in this repo is `bias=False`. Biases are omitted in the DeepSeek lineage because the gating product + norms make them redundant, and dropping them removes a class of update-scale problems. If you add a bias "to be safe," you are introducing a deviation from every documented parameter count in [[Docs/02_Model_Architecture]].
 
 ---
 
@@ -99,43 +355,272 @@ Dense layers (0–1 in the 422 M config) use `SwiGLUFFN`; MoE layers (2–17) re
 
 Standard Multi-Head Attention (MHA) is what MLA compresses. Recap it here so the compression in [[Docs/03_Multi_Head_Latent_Attention]] has a reference point.
 
+### 5.1 Projections and scaled dot-product attention
+
 For each head $h$, project queries/keys/values and compute scaled dot-product attention:
 
 $$Q_h = x W_h^Q, \quad K_h = x W_h^K, \quad V_h = x W_h^V \in \mathbb{R}^{T \times d_h}$$
 
 $$\text{Attn}_h = \text{softmax}\!\left(\frac{Q_h K_h^\top}{\sqrt{d_h}}\right) V_h$$
 
-Heads run in parallel and are concatenated, then projected by $W^O$. The cost: at inference, every head stores **full** $K_h$ and $V_h$ for every past token. With $H$ heads and sequence length $T$:
+Think of attention as a **soft dictionary lookup**: the queries "ask", the keys are the "index" of every stored entry, and the values are the "content" retrieved. The softmax turns the similarity scores $\langle q, k\rangle$ into retrieval weights; the output is a weighted average of the values. Attention is a *data-dependent* weighted average — the weights depend on the input, which is what lets tokens route information to the tokens that need it.
 
-$$\text{KV cache (MHA)} = O(T \cdot L \cdot H \cdot d_h)$$
+### 5.2 Why scale by $\sqrt{d_h}$
 
-This is the memory MLA attacks — at long context, this cache dominates GPU memory (see §11).
+The dot product $\langle q, k\rangle$ of two vectors whose coordinates are roughly $\mathcal{N}(0, 1)$ has mean 0 and variance $d_h$ (sum of $d_h$ independent products). So scores grow with dimension, and unscaled scores push softmax into a near-one-hot regime where gradients vanish (§7.1). Dividing by $\sqrt{d_h}$ holds the variance at 1. This is the same argument as §7.
+
+### 5.3 Multi-head: parallel subspaces
+
+Split $d$ into $H$ heads of dimension $d_h = d/H$. Each head has independent projections:
+
+$$\text{head}_h = \text{Attention}(\mathbf{Q}_h, \mathbf{K}_h, \mathbf{V}_h), \quad \mathbf{O} = \mathbf{W}_O [\text{head}_1; \ldots; \text{head}_H]$$
+
+**Why multiple heads?** A single attention pattern is one learned similarity function. Different heads learn *different* similarity functions in parallel — syntax, coreference, long-range dependencies — then $W_O$ mixes them. Intuitively, heads are an ensemble of retrieval mechanisms sharing the same tokens. At the canonical scale, $H=12$, $d_h = 64$ (for values) — a sweet spot for small models.
+
+**Note for later:** standard MHA appears in this repo only inside the MTP blocks (`models/mtp.py:MTPBlock`). The main trunk uses **MLA**, a compressed variant ([[Docs/03_Multi_Head_Latent_Attention]]).
+
+### 5.4 Complexity
+
+- **Time:** $O(T^2 d)$ — the $QK^\top$ product is $O(T^2 d_h)$ per head.
+- **Memory (naive):** the score matrix $QK^\top$ is $O(T^2)$ per head — this is what FlashAttention/SDPA eliminate (§7.3).
+- **KV cache (inference):** $O(T \cdot L \cdot H \cdot d_h)$ — every head stores full $K_h$ and $V_h$ for every past token (§11). This is the memory MLA attacks.
+
+### 5.5 Attention from first principles
+
+Before the matrix machinery, build attention as a *mechanism*. Suppose token $i$ needs information that lives at other positions. Three questions, in order:
+
+1. **What is token $i$ looking for?** A query vector $q_i \in \mathbb{R}^{d_h}$.
+2. **What does each candidate position $j$ offer?** Two vectors: a key $k_j$ that answers "how relevant am I to this query" and a value $v_j$ that is the actual content to be retrieved.
+3. **How do we combine them?** Score each candidate by similarity $s_{ij} = q_i \cdot k_j$, convert scores to non-negative weights summing to 1 via softmax, and output the weighted average $\sum_j w_{ij} v_j$.
+
+A concrete two-token example makes the "soft retrieval" concrete. Let $d_h = 2$:
+
+$$q_0 = (1, 0),\quad k_0 = (1, 0),\quad k_1 = (0, 1),\quad v_0 = (2, 0),\quad v_1 = (0, 2)$$
+
+Token 0's scores are $s_{00} = 1$, $s_{01} = 0$; $\text{softmax}(1, 0) = (0.731, 0.269)$; the output is $0.731 \cdot (2,0) + 0.269 \cdot (0,2) = (1.462, 0.538)$. Token 0 mostly retrieved its own value but pulled a quarter of token 1's. If token 1's key had pointed *at* token 0 (say $k_1 = (1, 0)$), the retrieval weight would have shifted — that data-dependence is the whole point: **the weights are a function of the inputs, not a fixed pattern.**
+
+The batched form is what the code computes: stack queries and keys into matrices and write the attention as
+
+$$\text{Attn}(Q, K, V) = \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d_h}}\right) V$$
+
+One pass of $QK^\top$ computes all $T^2$ pair scores; one multiplication by $V$ produces all outputs. This is the operation `F.scaled_dot_product_attention` implements under the hood (with the $O(T^2)$ score matrix kept in SRAM — §7.3).
+
+### 5.6 Why multiple heads — the representation argument
+
+One head computes one quadratic form $\langle q_i, k_j\rangle = x_i^\top W_Q^\top W_K x_j$ — a *single* learned similarity function over pairs of tokens. A single function cannot simultaneously track "is $j$ the verb that $i$ modifies," "is $j$ the antecedent of the pronoun at $i$," and "is $j$ a nearby token in the same sentence" — those are different notions of similarity. Heads are how the model gets several similarity functions in parallel: head 1 may specialize in local syntactic relations, head 2 in long-range coreference, and so on, each with its own $W_Q^h, W_K^h, W_V^h$. The output projection $W_O$ then mixes the per-head retrievals into the token's final representation.
+
+The parameter cost is *not* multiplicative: each head uses $3 d_h d$ parameters and the total is $3 d^2$ regardless of how you split it (since $\sum_h d_h = d$). What changes with $H$ is the *number of independently learned similarity functions* and the per-head dimension $d_h$ (which sets the expressiveness of each retrieval and the scale of the scores, §5.2). At $H = 12$, $d_h = 64$, the model has 12 retrieval mechanisms per layer.
+
+### 5.7 From MHA to MLA — why compress
+
+At inference, MHA must remember, for every past token and every layer, all per-head keys and values: $H \cdot (d_k + d_v)$ floats per token per layer. At the canonical config that is $12 \times (72 + 64) = 1632$ floats per token per layer — 3264 bytes in BF16. The full table is in §11.3; the takeaway is that the KV cache is the dominant memory cost of long-context decoding.
+
+**MLA's bet:** the per-head keys and values are *redundant*. They are produced by an up-projection from a shared, lower-dimensional representation, so instead of caching the expanded K and V, cache the small latent $c$ (192 dims) and a tiny position-only key (24 dims) — 216 floats per token per layer, a ~7.6× reduction — and re-expand per-head K, V on the fly at attention time via the shared matrix `wkv_b`. The expansion happens *inside* `models/mla.py:MultiHeadLatentAttention.forward`, which materializes `K_nope`, `K_rope`, and `V` from the cached latent with two batched matmuls before calling SDPA. This is the compression that [[Docs/03_Multi_Head_Latent_Attention]] derives in full; §11 here quantifies why it is worth it.
 
 ---
 
 ## 6. Rotary position embeddings (RoPE)
 
+### 6.1 The problem
+
+Attention is permutation-invariant: $\text{softmax}(QK^\top)V$ doesn't know the *order* of the tokens unless positions are injected. Position information must be added to queries and keys.
+
+### 6.2 The rotation
+
 RoPE encodes **relative position** by rotating query/key pairs in 2-D subspaces. For dimension pair $(d_{2i}, d_{2i+1})$ at position $t$, apply a rotation by angle $t \cdot \theta_i$:
 
 $$\begin{pmatrix} q_{2i}' \\ q_{2i+1}' \end{pmatrix} = \begin{pmatrix} \cos(t\theta_i) & -\sin(t\theta_i) \\ \sin(t\theta_i) & \cos(t\theta_i) \end{pmatrix} \begin{pmatrix} q_{2i} \\ q_{2i+1} \end{pmatrix}, \qquad \theta_i = \theta^{-2i/d}$$
 
-The frequency $\theta_i$ decreases with dimension index, so high dims rotate slowly (capture long-range relations) and low dims rotate fast (capture local relations). The magic: because $Q$ and $K$ are rotated by the *same* angle schedule, the dot product $Q \cdot K$ depends only on the **relative** position $t - s$, not the absolute positions — attention scores are translation-equivariant.
+Because the rotation is block-diagonal over $d/2$ pairs, the whole transformation is a **rotation matrix** $R(t\theta)$ of the $d$-dim space. The frequency schedule $\theta_i = \text{base}^{-2i/d}$ is *geometric*: dimension 0 rotates fastest (period $2\pi$), and the highest dimension rotates slowest (period $2\pi \cdot \text{base}^{(d-2)/d}$, which for $\text{base}=10^4$, $d=24$ is enormous). Slow rotations preserve long-range structure; fast rotations encode fine local offsets — the frequency schedule is what makes RoPE multi-scale.
+
+### 6.3 Why it encodes *relative* position — the key lemma
+
+Rotations compose: rotating by angle $m\theta$ then *undoing* $n\theta$ gives a rotation by $(m-n)\theta$. In matrix form, $R(m\theta)^\top R(n\theta) = R((n-m)\theta)$. Then:
+
+$$\langle \text{RoPE}(q, m), \text{RoPE}(k, n) \rangle = q^\top R(m\theta)^\top R(n\theta)\, k = q^\top R((n-m)\theta)\, k$$
+
+The dot product of two rotated vectors depends only on the **relative** position $n - m$ — absolute positions cancel. This is the entire magic: attention scores become translation-equivariant, and the model can generalize to positions it never trained on (length generalization follows from the same property).
 
 `★ Insight ─────────────────────────────────────`
 RoPE is a *multiplicative* position encoding, injected into Q and K (not V). The rotation is applied *before* the dot product, so relative position falls out of $QK^\top$ for free. This is why DeepSeek can do **decoupled RoPE** in MLA: a small dedicated RoPE subspace (`d_R = 24` dims) is rotated separately from the content subspace, so the position information — which cannot be absorbed into the latent — stays outside the compressed cache. See [[Docs/03_Multi_Head_Latent_Attention]] §Decoupled RoPE.
 `─────────────────────────────────────────────────`
 
-The repo builds the rotation table as complex exponentials and applies them via complex multiplication (`models/mla.py:_apply_rope`), with the frequency base `rope_theta = 10000` and a `rope_factor` knob for decode-time YaRN scaling (off in training, `rope_factor = 1.0`).
+### 6.4 Implementation via complex numbers
+
+A rotation in 2D is a multiplication by a unit complex number: $(x, y) \mapsto (x + iy) \cdot e^{i\theta}$. So RoPE can be applied to the whole vector at once by viewing it as a complex tensor and multiplying by a precomputed table of phasors:
+
+```
+freqs_cis[t, i] = cos(t·θ_i) + i·sin(t·θ_i)     # shape (max_seq_len, d_rope/2), complex64
+x_c = view_as_complex(x.reshape(..., d/2, 2))
+out = view_as_real(x_c * freqs_cis[...]).flatten(-2)
+```
+
+This is exactly what `models/mla.py:MultiHeadLatentAttention._apply_rope` does: one complex multiply instead of $d/2$ 2×2 matrix multiplies. The `freqs_cis` table is computed once (and grown lazily by `_extend_rope`) and reused across forwards — cheaper than reconstructing cos/sin per step.
+
+### 6.5 Beyond training length — interpolation, extrapolation, YaRN
+
+- **Extrapolation** (using a model at contexts longer than trained) degrades because the model has never seen large absolute positions — the fast-rotating dimensions alias and the attention-density statistics change.
+- **YaRN** (Peng et al., 2023) *stretches* the frequency schedule by a factor $s$ ($\theta_i / s$) — **interpolation** rather than extrapolation — and corrects the softmax temperature with a **mscale** factor to compensate for the changed attention-score statistics.
+
+In this repo: `rope_factor` is the YaRN stretch factor, **off at training** (`rope_factor = 1.0`). The base is `rope_theta = 10000`. The mscale machinery exists for future 8K/16K fine-tuning but is dormant at the canonical 2048 context; the exact formulas are in `models/mla.py:MultiHeadLatentAttention.__init__` (§6.8).
+
+### 6.6 Deriving the rotation schedule
+
+**Why block-diagonal rotations?** A rotation of the full $d$-dim vector would mix every coordinate, destroying the per-coordinate semantics the projections learned. Instead RoPE rotates *pairs* of coordinates $(x_{2i}, x_{2i+1})$ by independent angles $t\theta_i$ — a block-diagonal rotation matrix with $d/2$ blocks:
+
+$$R(t\theta) = \begin{pmatrix} R(t\theta_0) & & \\ & \ddots & \\ & & R(t\theta_{d/2-1}) \end{pmatrix}, \qquad R(\phi) = \begin{pmatrix} \cos\phi & -\sin\phi \\ \sin\phi & \cos\phi \end{pmatrix}$$
+
+A rotation is an **orthogonal** transformation ($R^\top R = I$), so RoPE preserves norms: $\|\text{RoPE}(x)\| = \|x\|$. This matters twice: attention scores are dot products (norm-preserving rotations leave their *distribution* alone), and the backward pass through a rotation is numerically well-behaved ($R^\top$ is the inverse).
+
+**Why the geometric schedule?** With a single frequency $\theta$, all pairs would rotate at the same speed: position $t$ and $t + 2\pi/\theta$ would produce identical embeddings — aliasing. The geometric schedule $\theta_i = \text{base}^{-2i/d}$ makes the pairs rotate at *different* rates, so the trajectory of a token's position embedding is a helix-like curve that doesn't repeat until enormous offsets. For $d=24$, $\text{base}=10^4$:
+
+$$\theta_i = 10000^{-2i/24} = 10^{-i/3} \quad\Rightarrow\quad \theta_0 = 1,\; \theta_1 \approx 0.464,\; \theta_3 = 0.1,\; \theta_6 = 0.01,\; \theta_{11} \approx 2.15\times 10^{-4}$$
+
+The period of pair $i$ is $2\pi/\theta_i$: pair 0 completes a full rotation every $2\pi \approx 6.3$ positions (fine-grained local offsets), while pair 11 needs $2\pi \cdot 4642 \approx 29\,160$ positions (essentially a global, position-invariant bias over the 2048-token window). The model can use fast pairs for exact offsets and slow pairs for rough distance bands — a multi-scale position code.
+
+### 6.7 RoPE in code — the complex-multiply walkthrough
+
+The table is built lazily and grown geometrically (`models/mla.py:MultiHeadLatentAttention._extend_rope`):
+
+```python
+def _extend_rope(self, seq_len: int, device: torch.device) -> None:
+    if seq_len <= self._rope_seq_len:
+        return
+    dim = self.qk_rope_head_dim
+    inv_freq = 1.0 / (self.rope_theta ** (torch.arange(0, dim, 2, dtype=torch.float32, device=device) / dim))
+    grow_to = max(seq_len, self._rope_seq_len * 2, 64)
+    grow_to = min(grow_to, self.max_seq_len)
+    t = torch.arange(grow_to, dtype=torch.float32, device=device)
+    freqs = torch.outer(t, inv_freq)
+    self.freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
+    self._rope_seq_len = grow_to
+```
+
+Line by line:
+
+- `inv_freq` is $1/\theta_i = \text{rope\_theta}^{i/(d/2)}$ computed over the $d/2 = 12$ even indices — exactly the $\theta_i = \text{base}^{-2i/d}$ schedule of §6.2.
+- `torch.outer(t, inv_freq)` builds the angle matrix $\Phi_{t,i} = t\,\theta_i$ for all positions $0 \le t < \text{grow\_to}$.
+- `torch.polar(1, Φ)` turns angles into unit complex numbers $e^{i\Phi}$ — the phasor table `freqs_cis`, dtype `complex64`.
+- Growth is geometric (`_rope_seq_len * 2`), capped at `max_seq_len`; the cap is what makes an over-long sequence fail loudly in `forward` rather than silently building an out-of-bounds table.
+
+The application (`models/mla.py:MultiHeadLatentAttention._apply_rope`):
+
+```python
+def _apply_rope(self, x: torch.Tensor, start_pos: int, seqlen: int) -> torch.Tensor:
+    dtype = x.dtype
+    x_c = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
+    freqs = self.freqs_cis[start_pos: start_pos + seqlen].view(1, seqlen, 1, -1)
+    return torch.view_as_real(x_c * freqs).flatten(-2).to(dtype)
+```
+
+Line by line:
+
+- `x.float()` upcasts to FP32 (complex multiply in BF16 would lose the mantissa); the `reshape(..., -1, 2)` groups coordinates into pairs; `view_as_complex` reinterprets each pair $(x_{2i}, x_{2i+1})$ as the complex number $x_{2i} + i\,x_{2i+1}$.
+- `freqs_cis[start_pos : start_pos + seqlen]` picks the rows for **absolute** positions `start_pos … start_pos+seqlen-1` — this is how a cached mid-sequence prefill gets globally-correct positions (the local offset $i$ inside the chunk maps to global position $\text{start\_pos} + i$).
+- `x_c * freqs` multiplies each complex coordinate by $e^{i t\theta_i} = \cos + i\sin$: by Euler's formula this is exactly the 2×2 rotation of §6.2 applied to the pair. `view_as_real` recovers the two rotated coordinates; `flatten(-2)` reassembles the $d$-dim vector; `.to(dtype)` casts back to the input dtype (BF16 under autocast).
+
+The multiplication is a *rotation in the complex plane*: $z \cdot e^{i\phi}$ preserves $|z|$, mirroring the orthogonality of the matrix form. The whole operation is one fused complex multiply per position instead of $d/2$ matrix-vector products.
+
+### 6.8 Frequencies in this repo — and the dormant YaRN path
+
+At the canonical config the RoPE subspace is $d_R = 24$ (`qk_rope_head_dim: 24`) with `rope_theta: 10000`, `rope_factor: 1.0`, `mscale: 1.0`, `max_seq_len: 2048`. The softmax scale is set in `models/mla.py:MultiHeadLatentAttention.__init__`:
+
+```python
+mscale_raw = config.get("mscale", 1.0)
+if self.rope_factor > 1.0:
+    self.mscale = 0.1 * mscale_raw * math.log(self.rope_factor) + 1.0
+else:
+    self.mscale = mscale_raw
+if self.max_seq_len > 4096:
+    self.softmax_scale = (self.qk_head_dim ** -0.5) * (self.mscale ** 2)
+else:
+    self.softmax_scale = self.qk_head_dim ** -0.5
+```
+
+Two branches to internalize:
+
+- **Canonical (`max_seq_len ≤ 4096`):** `softmax_scale = 72^{-1/2}` — the standard $\sqrt{d_k}$ scaling of §7.1, with $d_k = qk\_head\_dim = 48 + 24 = 72$ (content + rope). YaRN is fully dormant: `rope_factor = 1.0` so `mscale = 1.0` and the rope table is built at un-stretched frequencies.
+- **Long-context path (`max_seq_len > 4096`, future 8K/16K runs):** the frequencies are stretched by the YaRN factor inside `_extend_rope` (via `rope_factor`), and the softmax scale is corrected by `mscale²` to compensate for the changed score statistics under interpolation.
+
+**Pitfall — `d_R` is not a free knob.** The rope head dim appears in three coupled places: the `qk_head_dim` used for `softmax_scale`, the split `q_nope/q_pe` in `forward`, and the size of `pe_cache`. Changing `qk_rope_head_dim` without touching all three silently corrupts either the scores or the cache layout.
 
 ---
 
 ## 7. Attention scaling & causal masking
 
-The softmax denominator needs the $\frac{1}{\sqrt{d_h}}$ scale to keep dot products in a sensible range: random unit vectors of dim $d_h$ have dot product $\sim \mathcal{N}(0, d_h)$, so unscaled scores grow with dimension and saturate softmax to one-hot. Dividing by $\sqrt{d_h}$ holds variance at 1.
+### 7.1 Why the $\frac{1}{\sqrt{d_h}}$ scale
 
-The **causal mask** prevents position $t$ from attending to positions $> t$: an additive $-\infty$ above the diagonal of the $T \times T$ score matrix. The repo builds it once and caches it by sequence length (`Transformer._build_causal_mask`). At inference with a KV cache, only the *new* token's queries attend to all cached keys, so the mask collapses to "attend to everything up to me" — no masking needed during decode, only during prefill/training when query length equals key length.
+For two independent vectors $q, k \in \mathbb{R}^{d_h}$ with coordinates $\sim \mathcal{N}(0,1)$, the dot product is a sum of $d_h$ independent terms, so:
 
-For long context (`max_seq_len > 4096`), MLA applies a **YaRN mscale** correction to the softmax scale to counteract the density loss of stretched RoPE frequencies (`mla.py` line 50–53). At the canonical 2048 context this path is inactive.
+$$\mathbb{E}[\langle q, k\rangle] = 0, \qquad \text{Var}[\langle q, k\rangle] = d_h$$
+
+Unscaled scores grow with dimension: for $d_h = 64$, typical score magnitude is $\sqrt{64} = 8$. Feeding scores with variance $d_h$ into softmax pushes them into the saturation region where one entry dominates and the gradient (a difference of near-0/1 probabilities, §2.4) vanishes. Dividing by $\sqrt{d_h}$ holds score variance at 1 — the softmax operates in its sensitive, high-gradient regime.
+
+The scale shows up explicitly in MLA as `softmax_scale` (§6.8), passed to `F.scaled_dot_product_attention` in `models/mla.py:MultiHeadLatentAttention.forward` — the repo never hardcodes the $\sqrt{d}$ inside the attention call; it is a computed attribute of the config.
+
+### 7.2 The causal mask
+
+The **causal mask** prevents position $t$ from attending to positions $> t$: an additive $-\infty$ above the diagonal of the $T \times T$ score matrix.
+
+```
+     pos:  0    1    2    3
+  0        0   -inf -inf -inf
+  1        0    0   -inf -inf
+  2        0    0    0   -inf
+  3        0    0    0    0
+```
+
+**Why additive $-\infty$, not a multiplicative 0/1?** Softmax exponentiates the scores, so masking must zero out the *exponentiated* weights. An additive $-\infty$ becomes $e^{-\infty} = 0$ in the numerator — exactly "do not attend". A multiplicative 0/1 mask on raw scores would instead leave $e^{0} = 1$ entries, which is wrong. This is why additive $-\infty$ masks are the universal convention.
+
+The repo builds it once and caches it keyed by `(seqlen, kv_len, start_pos, device)` (`models/transformer.py:Transformer._build_causal_mask`). The mask is causal by global position: with a KV cache spanning the past, a cached mid-sequence prefill still cannot attend its own future. At inference decode, only the *new* token's queries attend to all cached keys, so the mask collapses to "attend to everything up to me" — **no masking needed during decode**, only during prefill/training when query length equals key length. The `seqlen == 1` fast path skips the mask entirely.
+
+### 7.3 FlashAttention and SDPA
+
+Naive attention materialises the score matrix $\mathbf{A} \in \mathbb{R}^{S \times S}$ per head in HBM. At $S=2048$, $H=12$, BF16: that's $\approx 100$ MB/layer just for the intermediate scores — and it's written and re-read three times (scores → softmax → output).
+
+**FlashAttention** (Dao et al., 2022) tiles the computation along the key axis and keeps the running $(m, \ell, o)$ online-softmax accumulators *in SRAM*:
+
+1. Load a query block into SRAM.
+2. For each key block: load it, compute partial scores in SRAM, update the running max $m$, normalizer $\ell$, and output accumulator $o$ (online softmax — rescaling as the running max grows).
+3. Only the output block is written back.
+
+The $O(S^2)$ score matrix **never touches HBM**: memory traffic drops from $O(S^2)$ to $O(S)$ while FLOPs stay $O(S^2)$. This is why `F.scaled_dot_product_attention` (PyTorch's wrapper — FlashAttention-2 on CUDA, memory-efficient or math kernels elsewhere) is the default attention backend in this repo (`attn_impl: "sdpa"`), and why the custom MLA Triton kernel (§docs/12) is FA2-style.
+
+For long context (`max_seq_len > 4096`), MLA applies a **YaRN mscale** correction to the softmax scale to counteract the density loss of stretched RoPE frequencies (`models/mla.py:MultiHeadLatentAttention.__init__`). At the canonical 2048 context this path is inactive.
+
+### 7.4 The mask in code — three geometries, one function
+
+The mask construction (`models/transformer.py:Transformer._build_causal_mask`) is worth reading in full because it encodes the whole KV-cache geometry in one comparison:
+
+```python
+def _build_causal_mask(self, seqlen: int, kv_len: int, start_pos: int, device: torch.device) -> torch.Tensor:
+    """Additive causal mask (1,1,S_q,S_kv), causal by global position.
+    ...
+    """
+    key = (seqlen, kv_len, start_pos, device)
+    if self._mask_cache is None or key != self._mask_key:
+        q = torch.arange(seqlen, device=device)[:, None] + start_pos
+        k = torch.arange(kv_len, device=device)[None, :]
+        mask = torch.where(q >= k, torch.zeros((), device=device), torch.full((), float("-inf"), device=device))
+        self._mask_cache = mask.unsqueeze(0).unsqueeze(0)
+        self._mask_key = key
+    return self._mask_cache
+```
+
+- **Query rows are global positions:** `q = arange(seqlen) + start_pos` — a query at local offset $i$ occupies global position $\text{start\_pos} + i$.
+- **Key columns are cached positions:** `k = arange(kv_len)` runs $0 \ldots \text{kv\_len}-1$, which is exactly the set of global positions in the cache (positions $0 \ldots \text{end\_pos}-1$, since `kv_len = end_pos` when caching).
+- **The rule:** query $p$ may attend to key $j$ iff $p \ge j$ — additive `0` (allowed) or `-inf` (blocked), shaped `(1, 1, S_q, S_kv)` and broadcast to `(bsz, H, S_q, S_kv)` by `mask.expand(...)` inside the MLA forward.
+- **The cache:** identical `(seqlen, kv_len, start_pos, device)` tuples reuse one tensor — during training the same geometry repeats every step, so the mask is built once per unique shape instead of once per step.
+
+The three geometries it covers:
+
+| Scenario | `seqlen` | `start_pos` | `kv_len` | Mask |
+|---|---|---|---|---|
+| Training / prefill | 2048 | 0 | 2048 | standard lower-triangular |
+| Cached mid-sequence prefill | > 1 | > 0 | `end_pos` | causal by **global** position |
+| Decode | 1 | $t$ | — | `None` (attend to all cached keys) |
+
+The mid-sequence row is the subtle one: without the `+ start_pos` offset, a chunk being prefilled into the cache could attend to its own future (leakage) or be blocked from the past (broken context). The `seqlen == 1` decode path skips the mask entirely because a single query may attend to every cached key by construction.
 
 ---
 
@@ -143,11 +628,35 @@ For long context (`max_seq_len > 4096`), MLA applies a **YaRN mscale** correctio
 
 Think of the transformer as a **residual stream** $h$ that each layer *reads from and writes to*. Embeddings write the token into the stream; each block adds an attention correction (mix information across positions) and an FFN correction (transform per-position); the final norm + LM head read the stream out as logits.
 
+This framing is more than a metaphor — it has two operational consequences used later:
+
+1. **The stream is the shared working memory.** Attention is the only component that moves information *between positions*; the FFN is the only component that mixes *within a position* at scale. Every token's "understanding" of the sequence is the superposition of corrections written into its stream slot by both.
+2. **Sub-modules read, not overwrite.** Because each block *adds* its correction, the stream's content at depth $\ell$ is the sum of all earlier contributions. This is why ablating or compressing an intermediate component (MLA's KV, MTP's hidden) is safe — you are trimming a correction, not destroying the signal.
+
 This framing matters for two later chapters:
 - **MLA** compresses the part of the stream that attention *reads* (keys/values) — the *residual* stream itself is untouched.
 - **MTP** feeds the *pre-norm* trunk hidden $h$ (not the logits) to the MTP block, which has its own norm — so MTP predicts from the model's internal representation, not the output. See [[Docs/05_Multi_Token_Prediction]].
 
-`Transformer.forward_with_hidden` returns both `(logits, h)` precisely so MTP can use $h$.
+`models/transformer.py:Transformer.forward_with_hidden` returns both `(logits, h)` precisely so MTP can use $h$.
+
+### 8.3 Why gradients survive depth — the residual identity
+
+The depth-robustness argument from §3.1, made precise. Stacking $L$ residual blocks gives a composed map $h_L = h_0 + \sum_\ell f_\ell(h_{\ell-1})$, and by the chain rule the gradient of the loss at the input is
+
+$$\frac{\partial \mathcal{L}}{\partial h_0} = \frac{\partial \mathcal{L}}{\partial h_L} \prod_{\ell=1}^{L} \left( I + \frac{\partial f_\ell}{\partial h_{\ell-1}} \right)$$
+
+If each block were a bare function $f_\ell$ (no skip), the gradient would be the product of $L$ Jacobians — exponentially vanishing or exploding with depth. With the identity term, expanding the product gives $I + \sum_\ell J_\ell + \sum_{\ell<\ell'} J_\ell J_{\ell'} + \cdots$: the **identity path carries the gradient through all $L$ layers unattenuated**, and the Jacobian terms are corrections on top. Pre-norm strengthens this: because each $f_\ell$ sees a normalized input, its Jacobian is bounded (the norm keeps the input in a fixed-scale region where the layer's Lipschitz constant is controlled), so the corrections stay small and the identity term dominates.
+
+The whole loop is `models/transformer.py:Transformer._run_layers`, and the bookends are visible in `models/transformer.py:Transformer.forward`:
+
+```python
+h = self.embed(tokens)
+...
+h = self._run_layers(h, start_pos, mask, use_cache)
+return self.head(self.norm(h))
+```
+
+Embedding writes into the stream; the final norm + head reads it out. Everything in between is correction.
 
 ---
 
@@ -157,51 +666,767 @@ The full training objective combines the main next-token loss with the MTP auxil
 
 $$\mathcal{L}(\theta) = \mathcal{L}_{\text{CE}} + \lambda \sum_{d=1}^{D} \mathcal{L}_{\text{MTP}}^{(d)}$$
 
-with depth $D = 1$ and weight $\lambda = 0.3$ at the 422 M config. The MTP loss is a cross-entropy on the depth-$d$ prediction target; the total is averaged across depths. The key property: the MTP term **densifies the training signal** — every token contributes to both the main prediction and a +1-ahead prediction, so the gradient per token is richer without needing more data.
+with depth $D = 1$ and weight $\lambda = 0.3$ at the canonical config. The MTP loss is a cross-entropy on the depth-$d$ prediction target; the total is averaged across depths.
 
-In `training/pretrain.py`, `MultiTokenPrediction.compute_loss` returns `(total_loss, main_loss, mtp_loss)`; only `total_loss` is backpropped, the components are detached for logging (avoiding per-step GPU syncs).
+**Why it helps.** The main head supervises each position with one target ($x_{t+1}$). The MTP head additionally supervises the *same trunk* with $x_{t+2}$ from $(h_t, e_{t+1})$. So:
+
+1. **Denser gradient per token** — every token contributes to both a $+1$ and a $+2$ prediction, so the trunk receives two supervision signals per position instead of one, without needing more data.
+2. **Shared head, shared trunk** — MTP shares the embedding and the output head with the main model, so the auxiliary loss's gradients flow through the *same* `head.weight` and *same* trunk, improving the main head too (see [[Docs/05_Multi_Token_Prediction]] §Gradient flow).
+3. **A free draft head** — the trained MTP module becomes a speculative-decoding draft model at inference, with no separate training run.
+
+**Why $\lambda = 0.3$?** Large enough to shape the trunk representation, small enough that the primary CE objective dominates. DeepSeek-V3 uses $\lambda \in [0.1, 0.3]$.
+
+### 9.1 The MTP loss in code
+
+`models/mtp.py:MultiTokenPrediction.compute_loss` returns `(total_loss, main_loss, mtp_loss)`; only `total_loss` is backpropped, the components are detached for logging (avoiding per-step GPU syncs):
+
+```python
+def compute_loss(self, main_logits: torch.Tensor, targets: torch.Tensor,
+                 mtp_pairs: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Returns (total_loss, main_loss, mtp_loss). MTP loss is mean across depths."""
+    main_loss = F.cross_entropy(main_logits.reshape(-1, main_logits.size(-1)), targets.reshape(-1), ignore_index=-100)
+    if not mtp_pairs:
+        return main_loss, main_loss, main_loss.new_zeros(())
+    depth_losses: List[torch.Tensor] = []
+    for logits, tgt in mtp_pairs:
+        if tgt.numel() == 0:
+            continue
+        depth_losses.append(F.cross_entropy(logits.reshape(-1, logits.size(-1)), tgt.reshape(-1), ignore_index=-100))
+    mtp_loss = torch.stack(depth_losses).mean() if depth_losses else main_loss.new_zeros(())
+    return main_loss + self.mtp_weight * mtp_loss, main_loss, mtp_loss
+```
+
+Note the `usable = seq_len - d - 2` length alignment: at depth $d$ the block predicts token $t + d + 1$ from hidden $h_t$ and embedding $e_{t+1}$, so the last $d+1$ positions have no target and are sliced off inside `models/mtp.py:MultiTokenPrediction.forward`. The depth-0 MTP loss therefore covers $S-2$ positions, one fewer than the main loss — a deliberate, load-bearing slice that [[Docs/05_Multi_Token_Prediction]] derives in full.
+
+In `training/pretrain.py:Pretrainer.train_step`, the MTP branch runs the wrapped model and divides the total by the accumulation factor exactly like the main loss:
+
+```python
+main_logits, mtp_pairs = self.model(tokens)
+total_loss, main_loss, mtp_loss = self.mtp_wrapper.compute_loss(main_logits, targets, mtp_pairs)
+...
+loss = total_loss / self.config.gradient_accumulation_steps
+```
 
 ---
 
 ## 10. Optimization — AdamW, warmup-cosine, gradient clipping
 
-- **AdamW** with β = (0.9, 0.95), weight decay 0.1 (applied to 2-D params only — norms/embeddings/biases excluded). The "fused" CUDA implementation is used when available.
-- **Warmup-cosine schedule** (`make_warmup_cosine_lambda`): linear warmup over 2000 steps (avoid early instability), then cosine decay to 5% of peak LR over the remaining steps. The cosine floor (not zero) keeps learning in the tail.
-- **Gradient clipping** at norm 1.0 (`clip_grad_norm_`) — a safety rail against rare large batches that would otherwise spike the update.
+### 10.1 Adam — the adaptive per-parameter step
 
-The FP32 master copy of weights lives in AdamW's state, so BF16 compute + FP32 master is the precision ladder (the same pattern FP8 would extend one notch lower, see [[Docs/06_FP8_Mixed_Precision]]).
+Adam (Kingma & Ba, 2015) maintains per-parameter running estimates of the gradient's first moment ($m$, the mean) and second moment ($v$, the mean square):
+
+$$m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t, \qquad v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2$$
+
+Because both start at zero, early estimates are biased toward 0. The **bias correction** divides by the sum of the exponential weights:
+
+$$\hat{m}_t = \frac{m_t}{1-\beta_1^{\,t}}, \qquad \hat{v}_t = \frac{v_t}{1-\beta_2^{\,t}}$$
+
+Then the update is a normalized step:
+
+$$\theta_{t+1} = \theta_t - \eta \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon}$$
+
+Each parameter moves by $\pm \eta$ in direction $m_t$, **rescaled by the inverse RMS of its own recent gradients**. This is the crucial property: Adam gives each parameter a step of roughly constant magnitude regardless of its gradient scale — it is *scale-free per parameter*, which is what makes it robust to the wildly differing gradient scales across an LLM (embedding rows vs norm gains vs expert weights).
+
+### 10.2 AdamW — decoupled weight decay
+
+**Weight decay** regularizes by shrinking weights toward zero. In L2 regularization, $\lambda\theta$ is added *into* the gradient and thus passes through the moment estimates; in **AdamW** (Loshchilov & Hutter, 2019) it is decoupled and applied directly to the weights:
+
+$$\theta_{t+1} = \theta_t - \eta \left( \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} + \lambda\, \theta_t \right)$$
+
+This matters because Adam's per-parameter rescaling *fights* L2: a weight with large moments gets a large L2 gradient but a small normalized update, so L2's effect is distorted by the adaptive step. Decoupling restores weight decay as a clean, predictable force. **This repo:** $\beta_1=0.9$, $\beta_2=0.95$, weight decay $\lambda = 0.1$ on **2-D params only** (`p.dim() >= 2`).
+
+**Why exclude 1-D params from decay?** Norm gains ($\gamma$), biases, and embeddings are low-dimensional; decaying them destabilizes training or double-penalizes the embedding. This is the standard LLM recipe (GPT-3, LLaMA). Note the MoE gate *bias* is a buffer, not a parameter, so it never sees weight decay at all (see [[Docs/04_DeepSeekMoE]]).
+
+**Why $\beta_2 = 0.95$ and not the default $0.999$?** The second moment's effective window is $1/(1-\beta_2)$ steps: 20 for 0.95 vs 1000 for 0.999. LLM gradients' scale shifts rapidly during training (warmup, schedule, expert routing), so a very long window makes $v_t$ stale and the normalized step sluggish. A shorter window adapts faster.
+
+**Fused AdamW:** the repo uses `fused=True` when CUDA is available — one fused kernel for the whole update with FP32 master weights held internally.
+
+### 10.3 Warmup-cosine LR schedule
+
+$$\text{phase 1 (warmup):}\;\; \eta_t = \eta \cdot \frac{t}{t_{\text{warm}}}, \qquad \text{phase 2 (cosine):}\;\; \eta_t = \eta_{\min} + (\eta - \eta_{\min})\cdot \tfrac{1}{2}\left(1 + \cos\!\left(\pi \cdot \frac{t - t_{\text{warm}}}{T - t_{\text{warm}}}\right)\right)$$
+
+with $\eta_{\min} = 0.05\,\eta$, `warmup_steps = 2000`, `total_steps = 512000` (`training/pretrain.py:make_warmup_cosine_lambda`).
+
+- **Why warmup?** Adam's bias correction is imperfect in the first few steps and the adaptive step can be huge when $v_t$ is tiny (early in training, before gradients accumulate statistics). Warmup lets the moments stabilize and avoids early divergence — the LR ramp is a *guard rail*, not a performance tweak.
+- **Why cosine?** Cosine decay spends meaningful time at intermediate LR values before a long, gentle tail — empirically better than linear or step decay for LLM pretraining. The **floor at 5%** (not zero) keeps the model learning through the tail; a zero floor wastes the final steps.
+
+### 10.4 Gradient clipping
+
+Global-norm clipping: if $\|g\|_2 > c$, rescale the whole gradient $g \leftarrow g \cdot \frac{c}{\|g\|_2}$. With `grad_clip = 1.0`, the update norm never exceeds 1.0 — a safety rail against rare huge batches (or MoE routing spikes) that would otherwise blow up the step. Clipping preserves the *direction* of the gradient, only capping its magnitude.
+
+### 10.5 The precision ladder
+
+The optimizer's FP32 master copy of weights is the source of truth; forward/backward compute in BF16 (see §14). The ladder "FP32 master → BF16 compute → (paper) FP8 compute" puts precision where gradients accumulate and savings where bytes move.
+
+### 10.6 The optimizer in code
+
+The decay/no-decay split and the optimizer construction happen in `training/pretrain.py:Pretrainer.__init__`:
+
+```python
+decay_params = [p for p in all_params if p.dim() >= 2]
+no_decay_params = [p for p in all_params if p.dim() < 2]
+self.optimizer = AdamW([
+    {"params": decay_params, "weight_decay": config.weight_decay},
+    {"params": no_decay_params, "weight_decay": 0.0},
+], lr=config.lr, betas=(config.beta1, config.beta2), fused=torch.cuda.is_available())
+```
+
+Two details worth noting. First, `all_params` is *deduplicated by tensor id* before the split — this is what makes weight tying safe: `head.weight` and `embed.weight` are the same tensor, and without the dedup the tied weight would be registered twice in the optimizer and updated twice per step (see §16.2). Second, `fused=torch.cuda.is_available()` switches to the fused CUDA kernel on GPU; on a CPU laptop (where this repo's test suite runs) it silently falls back to the eager path — the 196-test suite (186 pass + 10 GPU-gated skips) exercises the eager path.
+
+### 10.7 Gradient clipping in code
+
+Clipping happens once per optimizer step, after the accumulated backward and before `optimizer.step()` (`training/pretrain.py:Pretrainer.train_step`):
+
+```python
+loss.backward()
+if is_opt_step:
+    nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
+    self.optimizer.step()
+    self.scheduler.step()
+    self.optimizer.zero_grad(set_to_none=True)
+```
+
+`nn.utils.clip_grad_norm_` computes the **global** L2 norm over all parameters of the model and rescales if it exceeds `max_grad_norm = 1.0`. Because it is applied to `self.model.parameters()` (the MTP wrapper when MTP is on), the clip covers the MTP heads and the main trunk together — one gradient, one norm, one rescale. Note the order: clip, step, scheduler step, then zero. Also note the bias-update timing in the same block: `_update_moe_bias()` runs every `bias_update_every` optimizer steps (see [[Docs/04_DeepSeekMoE]]).
 
 ---
 
 ## 11. KV caching — the inference bottleneck
 
-During autoregressive generation, each new token attends to *all* past tokens. Recomputing all past keys/values every step is $O(T^2)$ total. The fix: **cache** $K$ and $V$ for past tokens and only compute the new token's contributions — $O(T)$ amortized.
+### 11.1 The problem: $O(T^2)$ recomputation
 
-The cost is **memory**: the cache grows with context. For MHA it is $O(T \cdot L \cdot H \cdot d_h)$ (§5). At $T = 2048$, $L = 18$, $H = 12$, $d_h = 72$ that is ~6 GB just for keys/values — comparable to the model weights. This is why every efficient LLM family addresses the cache: GQA shares heads, SWA windows it, SSM eliminates it, and **MLA compresses it** into a low-rank latent (see [[Docs/03_Multi_Head_Latent_Attention]] §KV cache, and [[Docs/13_Portfolio_Comparison]] §2). The repo's MLA cache stores only `kv_cache (B, T, 192)` + `pe_cache (B, T, 24)` per layer — ~0.13 GB at the same config, a ~46× reduction.
+During autoregressive generation, each new token attends to *all* past tokens. Recomputing all past keys/values every step is $O(T^2)$ total (each of $T$ generated tokens attends to up to $T$ past keys). The fix: **cache** $K$ and $V$ for past tokens and only compute the new token's contributions — amortized $O(T)$ per sequence.
+
+### 11.2 The lifecycle
+
+```
+prefill: forward(prompt, start_pos=0, use_cache=True)
+         → cache written for positions [0, prompt_len)
+decode:  forward([new_token], start_pos=t, use_cache=True)
+         → reads cache[0:t], writes cache[t:t+1], outputs 1 token
+reset:   reset_cache()  → cache=None  (required between independent generations)
+```
+
+The cache grows one slot per generated token and is capped by `max_seq_len` (exceeding it is a hard error, not silent truncation — `models/mla.py:MultiHeadLatentAttention.forward` raises `RuntimeError`). The `start_pos` argument is the cache write offset; an off-by-one here is the classic cause of "gibberish after the first token".
+
+### 11.3 The cost
+
+The cache grows with context. For MHA it is $O(T \cdot L \cdot H \cdot d_h)$ (§5). At $B=8$, $T = 2048$, $L = 18$, $H = 12$, $d_h = 72$ that is ~1 GB just for keys and values (K+V = $2 \cdot 12 \cdot 72 = 1728$ floats/token/layer) — comparable to the model weights (~0.84 GB). This is why every efficient LLM family addresses the cache: GQA shares heads, SWA windows it, SSM eliminates it, and **MLA compresses it** into a low-rank latent (see [[Docs/03_Multi_Head_Latent_Attention]] §KV cache, and [[Docs/13_Portfolio_Comparison]] §2). The repo's MLA cache stores only `kv_cache (B, T, 192)` + `pe_cache (B, T, 24)` per layer — ~0.13 GB at the same config, a ~8× reduction. All of these numbers are budget estimates from the config, not measurements `[INFERENCE]`.
+
+### 11.4 Memory bandwidth, not just capacity
+
+The deeper reason the cache matters is **bandwidth**: every decode step must read the entire cache from HBM into SRAM to compute attention scores. At 128K context, that is a multi-GB read *per generated token*. MLA's reduction of *what is cached* therefore reduces the per-step memory traffic — the actual wall-clock bottleneck of long-context decoding. This is why MLA is a throughput win, not just a memory win.
+
+### 11.5 Cache mechanics in code
+
+The cache buffer is allocated lazily and grown by doubling (`models/mla.py:MultiHeadLatentAttention._ensure_cache`):
+
+```python
+def _ensure_cache(self, bsz: int, device: torch.device, dtype: torch.dtype) -> None:
+    need_alloc = self.kv_cache is None or bsz > self._cache_batch or self.kv_cache.device != device or self.kv_cache.dtype != dtype
+    if not need_alloc:
+        return
+    new_bsz = max(bsz, self._cache_batch * 2, 16)
+    self.kv_cache = torch.zeros(new_bsz, self.max_seq_len, self.kv_lora_rank, device=device, dtype=dtype)
+    self.pe_cache = torch.zeros(new_bsz, self.max_seq_len, self.qk_rope_head_dim, device=device, dtype=dtype)
+    self._cache_batch = new_bsz
+```
+
+Three properties are load-bearing:
+
+1. **Zero-initialized, never garbage.** The buffer is `torch.zeros`, so reading a never-written slot is a silent zero, not a crash — which is also why `start_pos` bookkeeping must be exact (a stale zero slot attended to as if it were a real key produces garbage logits, not an error).
+2. **Batch size doubles.** `new_bsz = max(bsz, 2 * _cache_batch, 16)` — the allocation policy grows the batch dimension geometrically, so a batch-16 run costs one reallocation at most.
+3. **Device and dtype are part of the key.** If a subsequent forward moves to another device or dtype, the cache is reallocated rather than silently misread.
+
+Writes are detached snapshots of the *normalized* latent and the *rotated* rope key (`models/mla.py:MultiHeadLatentAttention.forward`):
+
+```python
+if use_cache:
+    self.kv_cache[:bsz, start_pos:end_pos] = kv_normed.detach()
+    self.pe_cache[:bsz, start_pos:end_pos] = k_pe.detach()
+    ctx_kv = self.kv_cache[:bsz, :end_pos]
+    ctx_pe = self.pe_cache[:bsz, :end_pos]
+```
+
+The `.detach()` is essential: during training `use_cache=False`, so this branch is inference-only — but even so, cache writes must never carry autograd graph references, or a decode-step forward would start building a graph through every past token. `models/mla.py:MultiHeadLatentAttention.reset_cache` (and `models/transformer.py:Transformer.reset_cache`, which fans out to every layer) drops the buffers entirely, so the next forward reallocates fresh — this is what `generate` calls before each generation (see `models/transformer.py:Transformer.generate`).
 
 ---
 
-## 12. The Chinchilla token budget
+## 12. The Chinchilla token budget & compute accounting
 
-**Chinchilla scaling** (Hoffmann et al. 2022): for compute-optimal training, the number of training tokens should scale ~20× the parameter count. Train a 422 M model on ~8.4 B tokens — not the "train forever" heuristic that wastes compute on too-small models.
+### 12.1 The scaling law
+
+**Chinchilla** (Hoffmann et al., 2022) fits the empirical loss as a sum of three power laws — one in parameters $N$, one in data $D$, plus a floor:
+
+$$L(N, D) = a\, N^{-\alpha} + b\, D^{-\beta} + c$$
+
+Minimizing this subject to a *fixed compute budget* $C \approx 6 N D$ (roughly, FLOPs ≈ 6 × params × tokens) yields the compute-optimal frontier: **$N$ and $D$ should grow at equal rates**. The convenient rule of thumb falls out:
 
 $$N_{\text{tokens}} \approx 20 \cdot N_{\text{params}}$$
 
-The 422 M config targets **8.4 B tokens over 512 000 steps** (micro-batch 8 × grad-accum 4 = effective batch 32, sequence 2048 → ~8.4 B tokens). The shared universal pipeline in `LLM/shared_data/` produces exactly this corpus, sharded as `uint32` memmap (see [[Docs/09_Data_Pipeline]]). Undertraining (fewer tokens) leaves the model data-hungry; overtraining wastes FLOPs that a larger model would use better.
+### 12.2 What it means for this repo
+
+Train a 411.6 M model on ~8.4 B tokens — not the "train forever" heuristic that wastes compute on too-small models (undertraining leaves the model data-hungry) and not too many epochs on too few tokens (overtraining burns FLOPs a larger model would use better).
+
+The canonical config targets **8.4 B tokens over 512,000 micro-steps** (micro-batch 8 × sequence 2048 = 16,384 tokens per micro-step, gradient accumulation 4 → effective batch 32 → 65,536 tokens per optimizer step). The shared universal pipeline in `LLM/shared_data/` produces exactly this corpus, sharded as `uint32` memmap (see [[Docs/09_Data_Pipeline]]).
+
+**Step accounting (derived from `training/pretrain.py:Pretrainer.train`).** The training loop's `global_step` counter increments once per micro-batch, so `total_steps: 512000` bounds **micro-steps**: 512,000 × 16,384 = 8.39 B token exposures — one pass over the ~8.4 B Chinchilla-optimal corpus — and 512,000 / 4 = **128,000 optimizer steps**. Two consequences worth knowing:
+
+1. **One epoch, not four.** The 8.4 B-token budget and the 512 K-micro-step budget are the *same* number; the corpus is sized so the run is exactly one pass. (A naive "512,000 steps × 65,536 tokens" product conflates micro-step count with optimizer-step token count and arrives at a spurious 4 epochs.)
+2. **The cosine schedule's denominator is the micro-step budget.** `make_warmup_cosine_lambda(..., total_steps=512000)` advances once per *optimizer* step, so after 128,000 scheduler steps the schedule has traversed only ~25% of its cosine arc — the LR decays from peak toward ~0.86 × peak and never reaches the 5% floor in a full run `[INFERENCE from config+code; flagged for [[Docs/08_Training_Pipeline]]]`. This is harmless for a first run (a gentle LR is conservative) but should be reconciled before treating the schedule as fully exercised.
+
+### 12.3 FLOP accounting and MFU
+
+**The "6N" rule:** a transformer forward+backward costs $\approx 6 \cdot N_{\text{non-embedding}}$ FLOPs per token (2 per parameter for the forward matmuls, 4 for the backward). So the training budget is:
+
+$$C \approx 6 \cdot N_{\text{non-embed}} \cdot D_{\text{tokens}}$$
+
+At the canonical 411.6 M model ($N_{\text{non-embed}} = 411\,632\,256 - 76\,813\,824 \approx 334.8$ M; the embedding is memory-bound, not FLOP-bound):
+
+| Quantity | Value |
+|---|---|
+| FLOPs/token | $\approx 2.0$ GFLOPs |
+| Tokens/opt step | 65,536 |
+| FLOPs/opt step | $\approx 1.3 \times 10^{14}$ |
+| A100 BF16 peak | 312 TFLOPS |
+
+**Model FLOPs Utilisation (MFU)** is the fraction of peak hardware throughput actually achieved:
+
+$$\mathrm{MFU} = \frac{\text{achieved FLOPs/sec}}{\text{peak BF16 FLOPs/sec}}$$
+
+At 35–40% MFU (the planning target, measured by `scripts/step_time_a100.py`), each optimizer step takes ~1.1–1.2 s, so the 128,000-step run is **~40 wall-clock hours** `[estimate — no GPU run exists]`. The config header quotes a 13–15 h target; that figure does not reproduce from the FLOP budget at 35–40% MFU (it would require ≈1.1× A100 peak), so treat every wall-clock number here as a budget estimate pending a real run. MFU < 25% usually means memory-bound (MoE dispatch, activation recomputation from grad checkpointing) or a batch too small to saturate the SMs.
+
+### 12.4 Deriving the 20× rule
+
+Where does "20 tokens per parameter" come from? Minimize the empirical loss under a compute budget. The fitted scaling law is $L(N, D) = a N^{-\alpha} + b D^{-\beta} + c$ with $\alpha \approx 0.34$, $\beta \approx 0.28$ (Chinchilla's fits; the constants vary by corpus). Holding $C = 6 N D$ fixed, use a Lagrange multiplier:
+
+$$\mathcal{L}(N, D, \lambda) = a N^{-\alpha} + b D^{-\beta} + c + \lambda\,(N D - C/6)$$
+
+Setting the $N$ and $D$ derivatives to zero and eliminating $\lambda$:
+
+$$\frac{\partial}{\partial N}: -\alpha a N^{-\alpha-1} + \lambda D = 0, \qquad \frac{\partial}{\partial D}: -\beta b D^{-\beta-1} + \lambda N = 0$$
+
+$$\frac{\alpha a\, N^{-\alpha}}{\beta b\, D^{-\beta}} = 1 \quad\Rightarrow\quad \beta \ln D - \alpha \ln N = \ln\!\frac{\beta b}{\alpha a}$$
+
+The right-hand side is a constant, so along the optimal frontier $\ln D$ and $\ln N$ are *linearly related*: doubling the model must be accompanied by a fixed multiplicative increase in tokens — the "grow them at equal rates" result. The specific constant ($D \approx 20 N$) comes from plugging the fitted $\alpha, \beta, a, b$ into that equation. Two practical readings:
+
+- **Halving loss requires 4–10× more compute** — the exponents $\alpha, \beta < 1$ mean returns diminish hard; this is why "train a bigger model longer" is rarely the efficient move for a fixed budget.
+- **Small models are data-hungry.** 411.6 M × 20 = 8.23 B tokens is a lot of text for a model that fits in ~1 GB — but the alternative (training it on 2 B tokens) leaves the power-law $b D^{-\beta}$ term dominating the loss.
 
 ---
 
 ## 13. μP — maximal-update parameterization
 
-**μP** (Yang et al. 2022) makes the optimal learning rate **transfer** across model widths. In standard training, the best LR depends on width, so you must tune it per size. μP parameterizes every weight's LR scale so that the *update magnitude per parameter* stays width-invariant, making a LR tuned on a small reference model valid on a large target.
+### 13.1 The transfer problem
 
-The repo's scaling law (`training/pretrain.py`):
+When you scale model width, naively keeping the same learning rate causes instability or under-training. The best LR depends on width, so you must re-tune it per size. **μP** (Yang et al., 2021) prescribes width-dependent *initialization* and *per-tensor LR* such that the update magnitude per parameter stays width-invariant — making a LR tuned on a small reference model valid on a large target.
+
+### 13.2 Why the naive LR breaks
+
+At initialization, a hidden preactivation $y = W x$ with $x \in \mathbb{R}^{n}$ has magnitude $\sqrt{n}$ if $W$'s entries are $\mathcal{O}(1)$ (the sum of $n$ terms). To keep activations width-independent, hidden weights are typically scaled as $\mathcal{O}(1/\sqrt{n})$ — then $y$ is $\mathcal{O}(1)$ but each *update* $\Delta W \sim \eta \cdot \nabla L$ perturbs $y$ by $\sqrt{n} \cdot \Delta W \sim \sqrt{n} \eta$, which *grows with width*. μP compensates: hidden-weight LRs scale as $1/n$, embedding/output LRs as $1$ (or as their own width rules), so the *function-level* update stays $\mathcal{O}(1)$ at every width. The result is **hyperparameter transfer**: tune on a cheap small model, deploy on the large one.
+
+### 13.3 This repo's pragmatic shortcut
+
+The repo does not implement full μP (per-tensor LR, width-dependent init everywhere). It uses the count-based **transfer rule** (`training/pretrain.py`):
+
 $$\text{lr}_{\text{target}} = \text{lr}_{\text{ref}} \cdot \left(\frac{N_{\text{ref}}}{N_{\text{target}}}\right)^{1/2}$$
-with reference $\text{lr}_{\text{ref}} = 6.0\text{e-4}$ at $N_{\text{ref}} = 757\,226\,496$ params. The 422 M config sets `mup_lr: true`, so the configured `lr: 8.0e-4` is overridden by the μP-scaled value.
+
+with reference $\text{lr}_{\text{ref}} = 6.0\text{e-4}$ at $N_{\text{ref}} = 757\,226\,496$ params. The canonical config sets `mup_lr: true`, so the configured `lr: 8.0e-4` is overridden by the μP-scaled value ($\approx 8.07\text{e-4}$ with MTP, $8.14\text{e-4}$ for the 411.6M base).
 
 `★ Insight ─────────────────────────────────────`
 The intuition: wider models have more parameters contributing to each update; if every param updates at the same LR, the aggregate update to the *function* grows with width and destabilizes training. The $\sqrt{N}$ scaling keeps the effective update magnitude stable as width grows — it is the continuous analog of averaging more independent estimates. This is why μP lets you tune hyperparameters on a cheap small model and lift them to the expensive large one, instead of retuning on the target. See [[Docs/08_Training_Pipeline]] §μP Learning Rate Scaling.
 `─────────────────────────────────────────────────`
+
+**Caveat:** the count $N$ is measured *after* the MTP wrap, so the MTP head's ~7M params inflate the denominator slightly. This is documented and locked by `test_mup_lr_scaling`.
+
+### 13.4 The real numbers in code
+
+The scaling is applied once at construction (`training/pretrain.py:Pretrainer.__init__`):
+
+```python
+if config.mup_lr:
+    new_lr = config.mup_lr_reference * (config.mup_lr_reference_params / total) ** 0.5
+    self._log(f"µP LR scaling: {config.lr:.2e} → {new_lr:.2e} (ref {config.mup_lr_reference:.2e} @ {config.mup_lr_reference_params:,} params)")
+    config.lr = new_lr
+```
+
+where `total` is the deduplicated parameter count of the *training model* — `count_parameters` on the raw transformer for the base case (411,632,256), or on the MTP wrapper when `mtp_depth > 0` (418,713,984). Working the numbers:
+
+$$\text{base:}\quad 6.0\text{e-4} \times \sqrt{\frac{757\,226\,496}{411\,632\,256}} = 6.0\text{e-4} \times 1.3563 \approx 8.14\text{e-4}$$
+
+$$\text{with MTP:}\quad 6.0\text{e-4} \times \sqrt{\frac{757\,226\,496}{418\,713\,984}} = 6.0\text{e-4} \times 1.3448 \approx 8.07\text{e-4}$$
+
+The 0.07e-4 gap between the two is the MTP head's 7,081,728 params (~7.1 M) inflating the denominator — small but real, which is why the order of operations matters: `total` must be the *final wrapped* count, and `count_parameters` must deduplicate the tied embedding (else the denominator double-counts 76.8 M and the LR comes out wrong). Both are enforced by `test_mup_lr_scaling`. Note that because `new_lr` overwrites `config.lr` in place, the *logged* and *scheduled* LR is always the μP value; the `8.0e-4` in the YAML is only the pre-scaling nominal.
+
+---
+
+## 14. Mixed precision — BF16 training
+
+### 14.1 Why not full FP32
+
+A 411.6M model in FP32 needs ~1.6 GB just for weights; AdamW's FP32 state (master weights + first + second moments, 12 bytes per parameter) adds ~4.9 GB. In BF16 the compute weights halve to ~0.8 GB, and A100 Tensor Cores run BF16 matmuls at 2× the FP32 rate. Mixed precision gets most of the speed and memory of FP16 with none of the numerical fragility. (All memory figures here are budget estimates from the parameter count, not measurements `[INFERENCE]`.)
+
+### 14.2 BF16 vs FP16
+
+| Format | Exponent | Mantissa | Range | Precision |
+|---|---|---|---|---|
+| FP32 | 8 | 23 | $\pm 3.4 \times 10^{38}$ | High |
+| FP16 | 5 | 10 | $\pm 65504$ | Medium |
+| BF16 | 8 | 7 | $\pm 3.4 \times 10^{38}$ | Lower |
+
+BF16 keeps FP32's **8 exponent bits** — the same *range* as FP32 — and sacrifices only mantissa precision. FP16 has more mantissa but a tiny range, which is why FP16 training needs loss scaling (a global multiplier to keep small gradients representable). BF16's wide range means **no loss scaling is needed**: gradients and activations rarely under/overflow, and the FP32 master weights (held in AdamW state) absorb the mantissa loss. This is why the repo uses `autocast("cuda", dtype=torch.bfloat16)` and *no* `GradScaler`.
+
+**Where precision is preserved:** the FP32 master copy of weights lives in AdamW's state; the BF16 weights used for compute are a cast. Softmax is up-cast to FP32 explicitly (`softmax(dtype=torch.float32)`) because `exp()` overflows easily in BF16. Tensor-core matmul accumulation happens in FP32 internally. This is the same principle FP8 would extend one notch lower (see [[Docs/06_FP8_Mixed_Precision]]).
+
+### 14.3 TF32 matmuls
+
+On Ampere+, `torch.backends.cuda.matmul.allow_tf32 = True` (set in `Pretrainer.__init__` on CUDA) lets FP32 matmuls run on Tensor Cores at TF32 precision (~10 mantissa bits) — roughly 8× the FP32 matmul throughput with negligible accuracy change at BF16 training scale. This, plus `torch.compile(mode="max-autotune")`, is the hardware-utilization stack.
+
+### 14.4 FP32 accumulation — where the precision actually lives
+
+The claim "BF16 forward" deserves precision: BF16 applies to *inputs and outputs* of matmuls; the *accumulation* inside a matmul happens in FP32. That distinction is the entire numerics story of mixed-precision training. Consider a dot product of length $n$ in BF16. Each product $a_i b_i$ rounds to ~8 mantissa bits, and if the running sum were kept in BF16, each addition would round again — a per-step relative error of $2^{-8}$, accumulating to $O(\sqrt{n}\, 2^{-8})$ over $n$ terms. Keeping the accumulator in FP32 ($2^{-24}$ per rounding) drops the accumulation error to $O(\sqrt{n}\, 2^{-24})$ — below the input quantization error, which is why it is "free" precision. PyTorch's `torch.bmm`/`torch.matmul`/`nn.Linear` on CUDA Tensor Cores accumulate in FP32 by construction, and the same is true inside the custom Triton kernels ([[Docs/12_Triton_Kernels]]).
+
+The other two places precision is deliberately preserved:
+
+1. **Softmax runs in FP32.** The manual attention path in `models/mla.py:MultiHeadLatentAttention.forward` computes `scores.softmax(dim=-1, dtype=torch.float32)` — the exponentiation and normalization happen in FP32, then the result is cast back to the input dtype. A BF16 softmax over 2048 keys would overflow (`e^{80}` already exceeds BF16 range) and would also lose the small probability mass that matters for gradient flow.
+2. **Normalization runs in FP32.** Under `autocast`, PyTorch keeps normalization-style ops (RMSNorm/LayerNorm) in FP32 even when the surrounding matmuls are BF16 — the RMS reduction is a sum of $d$ squares, the canonical precision-sensitive reduction.
+
+This is also why there is **no GradScaler** anywhere in this repo: scaling exists to keep *small FP16 values representable*; BF16's exponent range already covers them, and the FP32 accumulator covers the sums. A `GradScaler` with BF16 would be dead weight at best and a silent LR change at worst.
+
+### 14.5 Autocast in code
+
+The dtype is fixed once (`self.amp_dtype = torch.bfloat16`) and every training forward runs inside an autocast context (`training/pretrain.py:Pretrainer._amp_context`):
+
+```python
+def _amp_context(self):
+    return autocast(self.device.type, dtype=self.amp_dtype)
+```
+
+`autocast` is *policy-based*: it casts only the ops on its "lower-precision" list (matmuls, convolutions, embeddings' matmul-like paths) to BF16 and leaves the rest (norms, softmax, losses) in FP32 — which is exactly the division of labor §14.4 argues for. The forward/backward in `training/pretrain.py:Pretrainer.train_step` wraps the whole compute:
+
+```python
+with self._amp_context():
+    if self.mtp_wrapper is not None:
+        main_logits, mtp_pairs = self.model(tokens)
+        total_loss, main_loss, mtp_loss = self.mtp_wrapper.compute_loss(main_logits, targets, mtp_pairs)
+        ...
+        loss = total_loss / self.config.gradient_accumulation_steps
+    else:
+        logits = self.model(tokens, start_pos=0, use_cache=False)
+        main_loss = torch.nn.functional.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=-100)
+        ...
+        loss = main_loss / self.config.gradient_accumulation_steps
+```
+
+Two details in this snippet that are easy to miss:
+
+- **`use_cache=False` in the training path** — the training forward never touches the KV cache; the cache is an inference-only structure (§11), and a cache write would break gradient flow through past positions.
+- **`ignore_index=-100` in both losses** — the MTP path forwards the same sentinel through `compute_loss` (§9.1), so padded positions are excluded from the main and auxiliary losses identically.
+
+The gradient side of the ladder: `loss.backward()` runs under the same autocast context (the context is still active), so gradients are computed against BF16 activations but accumulated into FP32 gradient buffers; `clip_grad_norm_` and AdamW then operate in FP32. The FP32 master copy in AdamW's state is what actually moves the weights — the BF16 cast happens fresh each forward.
+
+### 14.6 The dtype boundary, op by op
+
+"BF16 training" is shorthand; the precise picture under `autocast` is a *per-op* policy. For the ops this repo uses:
+
+| Op | dtype under autocast | Why |
+|---|---|---|
+| `nn.Linear`, `torch.bmm`, `torch.matmul` | BF16 inputs, **FP32 accumulation** | Tensor-core path; accumulation error $O(\sqrt{n}\,2^{-24}) \ll$ input quantization |
+| `nn.Embedding` gather | BF16 (cast of the FP32 master) | The weight is cast to BF16 for the gather |
+| `nn.RMSNorm` | FP32 | Sum-of-squares reduction is precision-sensitive |
+| `softmax` (incl. attention) | FP32 | `exp()` overflows BF16; small probability mass matters for gradients |
+| `F.cross_entropy` | FP32 | Loss must be exact; it is a scalar anyway |
+| `F.silu` (pointwise) | BF16 (input dtype) | No accumulation; quantization is benign |
+
+The pattern: **any op that sums or exponentiates runs in FP32; any op that is a pointwise or tensor-core matmul runs in BF16.** This division is what makes the "no loss scaling" claim (§14.4) hold: the numerically fragile parts never see BF16. If you ever add a custom op to the training path, apply the same test — if it sums more than a handful of BF16 values or exponentiates, it belongs in FP32.
+
+---
+
+## 15. Gradient checkpointing
+
+### 15.1 The problem
+
+Backprop stores every layer's activations to compute gradients. For 18 layers × batch 8 × seq 2048 × dim 768, activation memory dominates VRAM — on the order of 10 GB with the PaLM 24× factor. Without checkpointing, the 411.6M config would not fit comfortably alongside optimizer state on the A100.
+
+### 15.2 The mechanism
+
+**Gradient checkpointing** does not store every activation — it stores only a checkpoint (the block input) at each layer and **recomputes the forward** during backward:
+
+```
+Forward:  compute layers 1..18; save only each layer's INPUT as a checkpoint
+Backward: to get layer ℓ's activations, re-run layers' forwards from the nearest checkpoint
+```
+
+In this repo every layer is checkpointed (`Transformer(use_checkpoint=True)`), and the per-layer wrap lives in `models/transformer.py:Transformer._run_layers`:
+
+```python
+def _run_layers(self, h: torch.Tensor, start_pos: int, mask: Optional[torch.Tensor], use_cache: bool) -> torch.Tensor:
+    for layer in self.layers:
+        if self.use_checkpoint and self.training:
+            h = torch.utils.checkpoint.checkpoint(
+                layer, h, start_pos, mask, use_cache, use_reentrant=False,
+            )
+        else:
+            h = layer(h, start_pos, mask, use_cache)
+    return h
+```
+
+Note the `self.training` guard: the same `_run_layers` serves inference (`generate`), where checkpointing would be pure overhead. The `use_reentrant=False` flag selects the modern, non-reentrant checkpoint API — required for `torch.compile` compatibility and the default in PyTorch 2.x.
+
+### 15.3 The trade-off
+
+$$3\times \text{activation memory savings} \iff \approx 33\%\ \text{extra backward FLOPs}$$
+
+The recomputation is a *forward* pass — roughly half the cost of the forward+backward pair — so total FLOPs rise ~33% while peak memory drops ~3×. For a memory-bound single-GPU run this is the right trade: the bottleneck is VRAM, not FLOPs. `use_reentrant=False` is the PyTorch 2.x default and keeps `torch.compile` compatibility.
+
+---
+
+## 16. Weight tying
+
+### 16.1 The dual operation
+
+The embedding maps token → vector ($E \in \mathbb{R}^{V \times d}$); the LM head maps vector → logits. These are **dual operations** — the transpose of each other's job. **Weight tying** (Inan et al., 2016; Press & Wolf, 2017) makes the output projection use the embedding matrix:
+
+$$\ell_t = E^\top \cdot \text{RMSNorm}(h_t)$$
+
+### 16.2 Why it works and what it saves
+
+- **Saves ~77M params** at the canonical scale: without tying, embedding + head = $2 \times 100018 \times 768 = 153.6$M; with tying, $100018 \times 768 = 76.8$M counted once. That is ~18% of the 411.6M model.
+- **Acts as a regularizer** — the same vectors must serve as both input features and output logits, coupling the two roles.
+- In code: `models/transformer.py:Transformer.__init__` sets `self.head.weight = self.embed.weight` (same storage), `models/transformer.py:count_parameters` deduplicates by tensor `id`, and `CheckpointManager` dedups the shared tensor on save (safetensors rejects duplicate storage).
+
+The dedup is visible in `models/transformer.py:count_parameters`:
+
+```python
+def count_parameters(model: nn.Module) -> Tuple[int, int]:
+    """(total, trainable) — deduplicated by tensor id (shared weights counted once)."""
+    seen = set()
+    total = 0
+    trainable = 0
+    for p in model.parameters():
+        pid = id(p)
+        if pid in seen:
+            continue
+        seen.add(pid)
+        n = p.numel()
+        total += n
+        if p.requires_grad:
+            trainable += n
+    return total, trainable
+```
+
+Because `head.weight` *is* `embed.weight`, iterating `model.parameters()` yields the same tensor object twice; `id(p)` dedup makes `total` come out to 411,632,256 instead of 488,446,080 — the latter being what a naive sum would report. The same dedup is used in the optimizer construction (§10.6), the per-component breakdown in `Pretrainer.__init__`, and checkpoint saving (the duplicate `head.weight` entry is dropped from the state dict).
+
+**Load-bearing:** removing tying (`weight_tying: false`) breaks generation quality and changes the parameter count the μP denominator uses — both are documented invariants (see [[Docs/11_Operations_and_Testing]]).
+
+### 16.3 Embeddings in detail
+
+The embedding is a plain `nn.Embedding(vocab_size, dim)` — 100,018 rows × 768 columns — initialized with the small-std scheme of §19 (`nn.init.normal_(self.embed.weight, std=0.006)`). Three operational facts:
+
+1. **Row count is load-bearing.** `vocab_size: 100018` must equal `len(tokenizer)` exactly; the tokenizer's `byte_fallback` guarantees any byte sequence is tokenizable, so *every* row is reachable in principle (§17). A config with 100,000 or 102,400 rows silently misaligns or crashes the embedding.
+2. **The dtype cast happens at the boundary.** `models/transformer.py:Transformer.forward` casts non-Long inputs (`tokens.to(torch.long)`) because `nn.Embedding` requires Long indices — the dataset stores `uint32` tokens (4 bytes vs 8) for memory efficiency, and the cast happens once per forward.
+3. **Tying makes the embedding the head.** With `self.head.weight = self.embed.weight`, the *same* rows serve as input features (rows of $E$, gathered by token id) and output logits (columns of $E^\top$). The gradient for a token row accumulates from both roles: the embedding gather (for tokens seen as input) and the head matmul (for tokens seen as targets). This is the "dual operation" of §16.1 made concrete — and why the embedding is the single largest parameter tensor (76.8 M of the 411.6 M) whose gradient statistics AdamW must handle (see [[Docs/08_Training_Pipeline]] for the per-component breakdown log).
+
+---
+
+## 17. Tokenization — BPE and the DeepSeek tokenizer
+
+### 17.1 The problem
+
+Neural networks operate on **discrete symbols**. Raw UTF-8 bytes are too fine-grained (256 symbols → very long sequences). Whole words are too coarse (unbounded vocabulary, no way to handle unseen words). **Subword tokenization** splits the compromise: frequent words stay whole; rare words decompose into pieces.
+
+### 17.2 Byte-Pair Encoding
+
+BPE (Sennrich et al., 2016) is an iterative merge algorithm:
+
+1. Start with a byte- or character-level vocabulary.
+2. Count all adjacent symbol pairs in the training corpus.
+3. Merge the most frequent pair into a new symbol.
+4. Repeat until the vocabulary reaches the target size $V$.
+
+The result is a **tokenizer with a fixed vocabulary** where the merge operations encode the corpus's most frequent subword patterns. The **byte_fallback** extension (used by the DeepSeek tokenizer) adds: any byte 0–255 not covered by a merge is itself a valid token — so *any* input can be tokenized, including arbitrary or non-UTF-8 bytes. This is the unusual property that makes the embedding's row count load-bearing.
+
+### 17.3 The DeepSeek tokenizer (this repo)
+
+| Property | Value | Implication |
+|---|---|---|
+| Name | `deepseek-ai/deepseek-coder-v2-lite` | Public HF tokenizer |
+| `vocab_size` | **100,018** | Embedding rows must match exactly |
+| `eos_token_id` | 100,017 | Appended at document boundaries |
+| `pad_token_id` | 100,016 | Padding (rare in packed pretrain) |
+| `byte_fallback` | yes | Tokens 0–255 may be raw bytes |
+
+**The footgun:** `vocab_size` is not a free knob. Using 100,000 or 102,400 silently misaligns or crashes the embedding (`nn.Embedding(vocab_size, dim)`). Always verify `len(tokenizer) == 100018` and that the model config matches (see [[Docs/09_Data_Pipeline]] §Tokenizer Deep Dive).
+
+### 17.4 The tokenizer in the data pipeline
+
+The pipeline configuration (`data/data_config.yaml`) fixes the three special ids the whole stack agrees on:
+
+```yaml
+vocab_size:    100018
+eos_token_id:  100017
+pad_token_id:  100016
+add_eos:       true
+```
+
+These are not arbitrary: `eos_token_id = vocab_size - 1` and `pad_token_id = vocab_size - 2` are the *last two rows* of the embedding table, and `add_eos: true` means every document gets the EOS token appended when it is packed into the token corpus (`data/prepare_data.py` routes the same constants into the shared pipeline). The EOS token therefore does double duty: it marks document boundaries in the packed stream (so the model learns "a document ends here") and it is the natural stopping condition for generation (`eos_token_id` in `models/transformer.py:Transformer.generate`).
+
+Because documents are **packed** end-to-end (EOS-separated, no padding), a training batch is a continuous token window: there is no padding structure, which is why `ignore_index=-100` (§2.7) is a rare-path safety net rather than a daily feature. The byte_fallback guarantee closes the loop on tokenization: *every* byte sequence maps to valid token ids, so the uint32 shards can never contain an id that would index past the 100,018 rows — the embedding and the tokenizer are mutually consistent by construction.
+
+---
+
+## 18. The matrix calculus you need
+
+You only need three rules to read every gradient argument in this repo. Let $y = Wx$ be a matmul and $\frac{\partial \mathcal{L}}{\partial y}$ the upstream gradient.
+
+| Operation | Forward | Gradient w.r.t. input | Gradient w.r.t. weight |
+|---|---|---|---|
+| Matmul $y = Wx$ | $W x$ | $W^\top \frac{\partial \mathcal{L}}{\partial y}$ | $\frac{\partial \mathcal{L}}{\partial y} x^\top$ |
+| Elementwise $y = x \odot z$ | $x \odot z$ | $\frac{\partial \mathcal{L}}{\partial x} = \frac{\partial \mathcal{L}}{\partial y} \odot z$ | — |
+| Linear with bias $y = Wx + b$ | $W x + b$ | $W^\top \frac{\partial \mathcal{L}}{\partial y}$ | $b$: sum of the gradient over the batch |
+| RMSNorm | scale by RMS | (chain rule through the RMS denominator) | via $\gamma$ |
+| Softmax $p = \text{softmax}(z)$ | $p_i = e^{z_i}/\sum_j e^{z_j}$ | $\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j)$ | — |
+
+Two things to notice:
+
+1. **Matmul gradients are matmuls.** `∂L/∂W = (∂L/∂y)·xᵀ` is why backward costs the same FLOPs as forward — and why fused kernels ("GEMM backward") reuse the same tiling machinery.
+2. **The SwiGLU gate is a product** (§4). The backward of `h = silu(a) ⊙ b` splits into `∂L/∂b = ∂L/∂h ⊙ silu(a)` and `∂L/∂a = ∂L/∂h ⊙ b ⊙ silu'(a)` — two channels, each getting the *other* channel's forward value as a coefficient. This "gating backward" is exactly where the gate's multiplicative structure shows up in code.
+
+The added softmax row completes the picture: it is the Jacobian behind §2.4's "softmax minus one-hot" — chaining $(\partial \mathcal{L}/\partial p) \cdot (\partial p/\partial z)$ with $\mathcal{L} = -\log p_y$ collapses to $p - \text{onehot}(y)$.
+
+Orthogonality matters for RoPE: a rotation is an orthogonal matrix ($R^\top R = I$), so RoPE is **norm-preserving** and its backward is numerically well-behaved.
+
+---
+
+## 19. Weight initialization
+
+### 19.1 Why init matters at depth
+
+At 18 layers, any systematic activation growth compounds. If each layer scales activations by a factor slightly above 1, the stream saturates by layer 18; slightly below 1, it vanishes. Initialization must keep per-layer scale $\approx 1$ so the depth product stays bounded.
+
+### 19.2 This repo's choices
+
+```python
+nn.init.normal_(self.embed.weight, std=0.006)          # models/transformer.py:Transformer.__init__
+nn.init.normal_(self.gate.weight, std=0.006)           # models/moe.py:AuxLossFreeGate.__init__
+# all other Linear layers: PyTorch default init
+```
+
+- **Embedding and gate: `std = 0.006`**, far smaller than the GPT-2/LLaMA convention of `0.02`. With vocab 100K and dim 768, the embedding has 76.8M params; a small std keeps initial embeddings close together (similar tokens start similar) and, critically, keeps the *initial logits* from saturating softmax — a large embedding norm at init would push logits to $\pm$large values and the loss into the flat tail of CE (§2.4).
+- **MoE gate `std = 0.006`** keeps the sigmoid scores near 0.5 at init (`sigmoid(0) = 0.5`), avoiding saturated routing early in training (see [[Docs/04_DeepSeekMoE]] §Numerical stability).
+- **Other Linears use PyTorch defaults** (Kaiming/Uniform per weight shape). At this scale with RMSNorm resetting the stream's magnitude each layer (§3.3), the default init is sufficient; only the embedding and gate need the small-std treatment.
+
+### 19.3 Why 0.006 — the arithmetic
+
+The choice is forced by the *coupling* of the tied embedding: the same matrix is both input features and output logits (§16.3), so one std controls both the stream's entry scale and the initial softmax temperature.
+
+**Logit scale at init.** After 18 layers of RMSNorm, the final hidden $h$ has RMS $\approx 1$, so $\|h\|_2 \approx \sqrt{768} \approx 27.7$. The logit for token $v$ is $\ell_v = \langle h, e_v\rangle$ where the embedding row $e_v \sim \mathcal{N}(0, \sigma^2 I)$. For fixed $h$:
+
+$$\mathrm{Var}(\ell_v) = \sigma^2 \|h\|_2^2 \approx \sigma^2 \cdot 768$$
+
+- With $\sigma = 0.006$: $\mathrm{std}(\ell) \approx 0.006 \cdot 27.7 \approx 0.166$ — logits are small, the softmax is diffuse, and the CE gradient $p - \text{onehot}$ is far from its $\pm 1$ bounds. The initial loss sits near $\log V \approx 11.5$ and every position provides a healthy gradient.
+- With the LLaMA-style $\sigma = 0.02$: $\mathrm{std}(\ell) \approx 0.55$ — logits of $\pm 2$–3, the softmax starts concentrating, and a few positions begin saturating. Not fatal at depth 1, but it compounds: the embedding is also the *input*, so large rows inject a large stream norm at position 0 that the first norms must absorb.
+
+**The gate.** The routed gate computes $\text{sigmoid}(\langle w_g, x\rangle)$ with $w_g \sim \mathcal{N}(0, 0.006^2 I)$ and normalized $x$: the pre-activation has std $\approx 0.006 \cdot 27.7 \approx 0.166$, so scores cluster around 0.5 — every expert starts with roughly uniform routing probability, and the bias-update mechanism ([[Docs/04_DeepSeekMoE]]) takes over from there. A larger std would start the model with near-deterministic routing and a load imbalance the bias updates would have to dig out of.
+
+**What is *not* controlled:** the dense/MoE weight matrices use PyTorch's default Kaiming-uniform per shape. The reason this is safe is exactly §3.5: every sublayer input is RMSNorm'd to unit RMS, so the input scale is fixed regardless of how the previous layer was initialized. Init and normalization are a matched pair — change one and the other's guarantees shift.
+
+---
+
+## 20. Worked example — one forward pass at 411.6M scale
+
+**Input:** batch $B = 2$, sequence $S = 4$, token IDs:
+
+```
+[[101, 2345, 678, 9012],
+ [55,  1234, 5678, 90]]
+```
+
+| Step | Operation | Shape |
+|---|---|---|
+| Embedding | `embed(tokens)` | $(2, 4) \to (2, 4, 768)$ |
+| Layer 0 (dense) | `RMSNorm → MLA → + ; RMSNorm → SwiGLU(768→1536→768) → +` | $(2, 4, 768)$ |
+| Layer 1 (dense) | same structure | $(2, 4, 768)$ |
+| Layers 2–17 (MoE) | `RMSNorm → MLA → + ; RMSNorm → DeepSeekMoE → +` (top-4 of 20 + 1 shared) | $(2, 4, 768)$ |
+| Final norm + head | `RMSNorm → Linear(768 → 100018)` | $(2, 4, 100018)$ |
+
+The MLA internals at one layer, with the canonical dims: `wq` projects $(2,4,768) \to (2,4,864)$ (12 heads × 72), split into `q_nope` (48) and `q_pe` (24); the rope half is rotated (§6.7) while the content half is absorbed into the latent space; `wkv_a` produces the 192-dim latent + 24-dim rope key; `kv_norm` normalizes the latent; and the attention output — 12 heads × 64 value dims — is projected back to 768 by `wo`. The shapes all derive from `models/mla.py:MultiHeadLatentAttention.forward`; [[Docs/02_Model_Architecture]] walks every tensor shape in the full 18-layer stack.
+
+**Parameter touch count:** MoE layers store 21 experts each but execute 5 per token (4 routed + 1 shared) — so the *active* parameter count per token is ~185M of the ~411.6M deduped total (see [[Docs/02_Model_Architecture]] §Active vs Total Parameters).
+
+**MTP path (training only):** `forward_with_hidden` returns the pre-norm hidden; `MTPModule` takes $(h_t, e_{t+1})$ and predicts token $t+2$ (see §9, [[Docs/05_Multi_Token_Prediction]]). With `mtp_depth: 1`, the wrapped model carries 418,713,984 total params — the +7.1M MTP delta.
+
+---
+
+## 21. The loss landscape & training dynamics
+
+### 21.1 The geometry of the objective
+
+The per-position loss $\mathcal{L}(z) = -z_y + \log\sum_j e^{z_j}$ is **convex in the logits**: its Hessian is $\nabla^2\mathcal{L} = \operatorname{diag}(p) - pp^\top$, the covariance matrix of a categorical distribution, which is positive semi-definite. So in logit space the objective is a bowl with a unique minimum at the one-hot vector $z_y \to \infty$, $z_{j\ne y} \to -\infty$. This convexity is why gradient descent on the *parameters* works at all: at every position, the gradient $p - \text{onehot}$ (§2.4) points in a direction that strictly decreases the local loss, and the model's job is to make the parameter-to-logit map line those directions up.
+
+Two structural features of the landscape matter for training:
+
+1. **Flat directions are built in.** Softmax is shift-invariant, so adding a constant to all logits of a position leaves the loss unchanged — the gradient is orthogonal to the all-ones direction (it sums to zero, §2.4). RMSNorm adds a second family: scaling an entire stream slot is undone by the next norm, so the loss is (near-)invariant along those directions too. Nothing in the loss breaks these equivalences, which is why init (§19) and weight decay (§10.2) exist: they are the optimizer's tie-breakers among equally good solutions.
+2. **The gradient is bounded.** $\|p - \text{onehot}\|_2 \le \sqrt{2}$ at every position, and it *shrinks* as $p$ approaches the target: learning slows exactly as the model becomes confident — a "saturation plateau" that is inherent to CE, not a bug. This is why a loss that stalls at, say, 3.0 while perplexity keeps dropping (§2.6) is normal: the residual gradient is concentrated in the long tail of wrong predictions.
+
+### 21.2 The three phases of a pretraining run
+
+A healthy run has a recognizable shape, visible directly in the `loss`/`ppl`/`lr` columns of `utils/logging.py:TrainingLogger.log`:
+
+- **Phase 1 — token statistics (warmup, ~first 2,000 steps).** Loss collapses from $\log V \approx 11.5$ toward the 5–6 range within the first few thousand steps: the model learns unigram and short-range statistics almost immediately. The LR ramp (§10.3) exists precisely to keep this fast descent from overshooting while Adam's moments are still cold.
+- **Phase 2 — structure (the long middle).** Loss moves 4 → 3 as the model acquires subword, syntactic, and local semantic structure; MoE routing stabilizes as the bias updates (§10.7) balance expert loads. This is where the run spends most of its 128,000 optimizer steps, and where the per-step loss becomes noisy — gradient noise dominates over the mean descent.
+- **Phase 3 — the power-law tail.** Loss improvements slow to a crawl (the $b D^{-\beta}$ term of §12.4); gains come from rare patterns and long-range dependencies. This is the regime where the LR cosine decay matters most: small LR + long tail = fine-grained fitting without divergence.
+
+The phases are not phases of the *schedule* (warmup/cosine); they are phases of the *data-fitting process*, and they are why people read loss curves rather than final loss alone. A run whose Phase 1 is too fast (loss explodes mid-warmup) points at LR/init; a run whose Phase 2 plateaus early points at capacity or data.
+
+### 21.3 Loss spikes and the NaN guard
+
+Rare events — a pathological batch, a transient expert-load concentration, an unlucky large gradient — produce **loss spikes**: one step's loss jumps 2–3 nats before resuming its descent. The gradient clip (§10.4) absorbs the usual cases. The catastrophic case is NaN/Inf: once a NaN enters the loss, every subsequent gradient is corrupted and the model never recovers on its own. The repo runs a two-stage state machine (`training/pretrain.py:Pretrainer.train_step` and `Pretrainer.train`):
+
+```python
+if self.config.nan_guard and (torch.isnan(loss).any().item() or torch.isinf(loss).any().item()):
+    self._log(f"[nan-guard] NaN/Inf at micro_step={micro_step}, opt_steps={self._opt_steps}. Skipping backward.")
+    self.optimizer.zero_grad(set_to_none=True)
+    return None
+```
+
+- **Stage 1 (per micro-step):** the loss is checked *before* `backward()`; on NaN/Inf the step is skipped, gradients are zeroed, and `train_step` returns `None` — the accumulation for that micro-step is simply lost.
+- **Stage 2 (per streak):** the training loop counts consecutive skipped steps (`nan_guard_streak`); at `nan_guard_max_consecutive = 5` it restores the latest checkpoint (rolling back the corrupted weights) and continues. If there is no checkpoint, the run aborts with a clear `RuntimeError` rather than silently training on garbage.
+
+This is the repo's answer to the landscape's worst feature: it treats NaN as a *recoverable* event (rare, transient) and only escalates to rollback when the corruption persists. For the full state machine, see [[Docs/08_Training_Pipeline]] §NaN Guard.
+
+### 21.4 What the numbers mean in this repo
+
+The logged loss components map directly onto the objectives of §9: `loss` (main CE), `mtp_loss` (auxiliary), and `balance_loss` (the MoE load-balance metric from `models/moe.py:DeepSeekMoE.get_load_balance_loss`), all detached from the graph and rounded once per log interval to avoid per-step GPU syncs. Reading them together tells you *where* a run is struggling:
+
+| Symptom | Likely cause |
+|---|---|
+| `loss` high, `mtp_loss` fine | Main-head capacity / LR too low |
+| `loss` fine, `mtp_loss` high | MTP weight too aggressive or trunk hidden under-specified |
+| `balance_loss` creeping up | Expert load imbalance; bias updates too slow (`bias_update_speed`) |
+| `loss` → NaN, no rollback | Uncheckpointed corruption or an unguarded op outside autocast |
+
+There is no GPU run in this repo yet, so "mid-training 2.8 nats" remains a planning target, not an observation `[INFERENCE]` — the landscape story above is the *shape* to expect, derived from the objective and the config, not measured.
+
+### 21.5 Gradient noise, batch size, and the effective batch
+
+The loss curve is a noisy curve, and the noise is not a nuisance — it is information about the landscape. The gradient computed from a batch of $B$ sequences is a Monte Carlo estimate of the true gradient: writing $\sigma$ for the per-token gradient noise, the estimator's standard error is $\sigma/\sqrt{B_{\text{eff}}}$, where $B_{\text{eff}}$ is the number of *independent* tokens. The canonical config's effective batch — 32 sequences × 2048 tokens = 65,536 tokens per optimizer step — is a deliberate middle ground:
+
+- **Too small** (e.g., micro-batch 8, no accumulation): the gradient estimate is dominated by noise; the loss curve jitters; AdamW's moments are chasing noise, and the effective step direction wanders.
+- **Too large**: the optimizer steps on a nearly exact gradient, which sounds good but wastes compute — the descent direction changes slowly, and the schedule has fewer steps over which to anneal the LR.
+
+Gradient accumulation (§2.9) is the repo's tool for tuning $B_{\text{eff}}$ without touching memory: 4 micro-steps of batch 8 accumulate into one optimizer step with the *mean* gradient, so the 65,536-token effective batch costs the memory of a batch-8 forward. This is also why `loss.backward()` sees `loss / gradient_accumulation_steps` — the division keeps the accumulated gradient a mean rather than a sum, so the clip norm (§10.7) and AdamW's moments see a batch-size-independent scale.
+
+There is a second, subtler noise source in a MoE model: **routing noise**. Each token's expert assignment is a function of the current gate weights, so the gradient the FFN experts see is a *routed* gradient — tokens arrive at experts in clumps, and the per-expert gradient is noisier than the per-token average would suggest. The bias-update mechanism (§10.7, [[Docs/04_DeepSeekMoE]]) exists partly to keep the routing distribution (and hence the per-expert gradient noise) stable over time.
+
+---
+
+## 22. Practice problems (with answers)
+
+1. **RoPE periods.** With `rope_theta = 10000` and `qk_rope_head_dim = 24`, the frequencies are $\theta_i = 10000^{-2i/24}$. Which dimension rotates fastest? *Answer: $i=0$ — $\theta_0 = 1$, period $2\pi$. The slowest is $i=11$, $\theta_{11} = 10000^{-22/24} \approx 2.15\times10^{-4}$, period $2\pi \cdot 10000^{22/24} \approx 2\pi \cdot 4642 \approx 29\,160$ positions.*
+
+2. **SwiGLU params.** Derive the parameter count of a dense FFN with dim $d$ and intermediate $I$. *Answer: $3dI$ ($W_1, W_3: d \to I$; $W_2: I \to d$). At $d=768, I=1536$: $\approx 3.5$M.*
+
+3. **MoE FLOPs.** Compare one dense layer ($I=1536$) vs one MoE layer (top-4 of 20 routed + 1 shared, $I_{moe}=384$). *Answer: dense $\approx 6 \cdot 768 \cdot 1536 \approx 7.1$ MFLOPs/token; MoE $\approx 5 \cdot 6 \cdot 768 \cdot 384 \approx 8.8$ MFLOPs/token. MoE is slightly more compute but stores ~5× the FFN capacity.*
+
+4. **μP scaling.** If the parameter count quadruples, by what factor does the μP LR change? *Answer: $\sqrt{N_{ref}/N_{target}} = \sqrt{1/4} = 1/2$ — the LR halves.*
+
+5. **KV bytes.** Compute MLA cache bytes/token/layer vs full MHA at $R=192$, $d_{\text{rope}}=24$, $d_{\text{head}}=64$, $H=12$, BF16. *Answer: MLA = $(192+24) \times 2 = 432$ bytes/token/layer; MHA (K+V) = $2 \times 12 \times 64 \times 2 = 3072$ bytes; ratio $\approx 7.1\times$.*
+
+6. **Chinchilla tokens.** How many tokens for a 1B-param model? *Answer: $\approx 20$B.*
+
+7. **Softmax gradient.** If the model assigns $p = [0.7, 0.2, 0.1]$ and the true token is class 0, what is $\partial \mathcal{L}/\partial z$? *Answer: $p - \text{onehot} = [0.7-1, 0.2, 0.1] = [-0.3, 0.2, 0.1]$.* Notice it sums to zero — softmax gradients are zero-mean.
+
+8. **Activation memory.** Why does gradient checkpointing roughly triple memory savings while adding ~33% FLOPs? *Answer: it avoids storing all $O(L \cdot S \cdot d)$ activations, keeping only $O(L)$ checkpoints; backward re-runs the forward, adding one forward's FLOPs to the backward's ~2 forward-equivalents.*
+
+9. **Non-embedding FLOPs.** What is $N_{\text{non-embed}}$ for the canonical config? *Answer: $411\,632\,256 - 76\,813\,824 = 334\,818\,432 \approx 334.8$M — the embedding (76.8M, tied with the head) is memory-bound, not FLOP-bound.*
+
+10. **Optimizer steps.** How many optimizer steps does a full run take? *Answer: `total_steps: 512000` bounds micro-steps; with `gradient_accumulation_steps: 4` that is 128,000 optimizer steps (512,000 × 16,384 = 8.39B tokens ≈ one pass over the ~8.4B corpus).*
+
+---
+
+## 23. Core notation & glossary
+
+| Symbol | Meaning (canonical value) |
+|---|---|
+| $V$ | Vocabulary size (100,018) |
+| $d$, `dim` | Model hidden dimension (768) |
+| $L$, `n_layers` | Layer count (18) |
+| $H$, `n_heads` | Attention heads (12) |
+| $d_h$ | Per-head dimension (value 64) |
+| $T$, $S$ | Sequence length (2,048) |
+| $B$ | Batch size (micro-batch 8) |
+| $I$ / `inter_dim` | Dense FFN width (1,536) |
+| `moe_inter_dim` | Expert FFN width (384) |
+| $d_c$ / `kv_lora_rank` | MLA KV latent dim (192) |
+| $d_R$ / `qk_rope_head_dim` | Decoupled RoPE dim (24) |
+| $x_{<t}$ | Tokens strictly before $t$ |
+| $h_t$ | Residual-stream hidden at position $t$ |
+| $\eta$ | Learning rate |
+| $\lambda$ | Weight decay (0.1) or MTP weight (0.3), from context |
+| `rope_theta` | RoPE base frequency (10,000) |
+| MFU | Achieved FLOPs/s ÷ peak FLOPs/s |
+| PPL | $\exp(\mathcal{L}_{\text{CE}})$ — effective branching factor |
+
+---
+
+## 24. Load-bearing invariants
+
+| Invariant | Why it matters | Enforced by |
+|---|---|---|
+| Causal mask on all attention paths | Future-token leakage makes the loss trivial | `models/transformer.py:Transformer._build_causal_mask`, SDPA `attn_mask` |
+| `use_cache=False` in training | A cache write breaks gradient flow through past positions | `training/pretrain.py:Pretrainer.train_step`, `forward_with_hidden` default |
+| RMSNorm with `eps=1e-6` everywhere | Consistency of scale across the 60 norms | `models/*.py` |
+| $\mu$P LR after MTP param count | Wrong count ⇒ wrong LR | `test_mup_lr_scaling` |
+| Weight-tying dedup in param count | Double-counting inflates the μP denominator | `models/transformer.py:count_parameters` |
+| BF16 forward + FP32 optimizer master | Stable low-precision training, no GradScaler | `autocast`, AdamW `fused` |
+| MoE gate bias is a buffer, not a Parameter | Aux-loss-free routing must not get weight decay or autograd | `test_bias_not_in_parameters` |
+| `vocab_size == len(tokenizer) == 100018` | Embedding row count is load-bearing (byte_fallback) | CI import check, data validation |
+| `max_seq_len` caps the KV cache | Exceeding it is a hard error, not silent truncation | `models/mla.py:MultiHeadLatentAttention.forward` `RuntimeError` |
+
+---
+
+## 25. Check your understanding
+
+**Q1.** Derive the RMSNorm gradient. For $y = x / r$ with $r = \sqrt{\frac{1}{d}\sum_i x_i^2 + \epsilon}$ and upstream gradient $g = \partial \mathcal{L}/\partial y$, show that $\partial \mathcal{L}/\partial x_j = \frac{1}{r}\left(g_j - x_j \frac{\langle g, x\rangle}{d\, r^2}\right)$, and explain the two terms.
+
+*Answer (short version):* differentiate $y_i = x_i/r$: $\partial y_i/\partial x_j = \delta_{ij}/r - x_i x_j/(d\,r^3)$; chain with $g$ and sum over $i$. The first term is the direct path scaled by $1/r$; the second subtracts the component of $g$ parallel to $x$ — the norm explains away magnitude-changing gradients because magnitude is invisible to the next layer (scale-invariance, §3.5).
+
+**Q2.** Show that RoPE makes attention scores depend only on relative position.
+
+*Answer (short version):* $\text{RoPE}(x, t) = R(t\theta)\,x$ with block-diagonal rotation $R$; rotations compose as $R(m\theta)^\top R(n\theta) = R((n-m)\theta)$. Hence $\langle \text{RoPE}(q,m), \text{RoPE}(k,n)\rangle = q^\top R((n-m)\theta)\,k$ — only $n-m$ appears (§6.3). In the repo, this falls out of the complex multiply in `models/mla.py:MultiHeadLatentAttention._apply_rope`, where the table row index is the absolute position.
+
+**Q3.** Why does BF16 training in this repo need **no** loss scaling while FP16 training does?
+
+*Answer (short version):* loss scaling exists to keep small FP16 values representable — FP16 has 5 exponent bits (range ±65504, underflow below ~6e-5). BF16 keeps FP32's 8 exponent bits (same ±3.4e38 range), so gradients and activations stay representable without a multiplier; the mantissa loss is absorbed by FP32 accumulation in matmuls and the FP32 master weights in AdamW (§14.2, §14.4).
+
+**Q4.** Is the canonical config Chinchilla-consistent, and how many optimizer steps does a full run take?
+
+*Answer (short version):* yes — 20 × 411.6M ≈ 8.2B ≈ the ~8.4B-token corpus (§12.4). At 65,536 tokens per optimizer step (batch 32 × 2048), one pass is ≈ 125,000–128,000 optimizer steps = 512,000 micro-steps at accumulation 4, matching `total_steps: 512000` (§12.2).
+
+---
+
+## 26. References
+
+| Topic | Citation |
+|---|---|
+| Transformer | Vaswani et al., 2017 — arXiv:1706.03762 |
+| RoPE | Su et al., 2021 — arXiv:2104.09870 |
+| RMSNorm | Zhang & Sennrich, 2019 — arXiv:1910.07467 |
+| LayerNorm | Ba, Kiros & Hinton, 2016 — arXiv:1607.06450 |
+| SwiGLU | Shazeer, 2020 — arXiv:2002.05202 |
+| FlashAttention | Dao et al., 2022 — arXiv:2205.14135 |
+| BPE | Sennrich et al., 2016 — arXiv:1508.07909 |
+| Adam | Kingma & Ba, 2015 — arXiv:1412.6980 |
+| AdamW | Loshchilov & Hutter, 2019 — ICLR |
+| Weight tying | Press & Wolf, 2017 — arXiv:1608.05859 |
+| Chinchilla | Hoffmann et al., 2022 — arXiv:2203.15556 |
+| μP / Tensor Programs | Yang et al., 2021 — arXiv:2203.03466 |
+| YaRN | Peng et al., 2023 — arXiv:2309.00071 |
+| DeepSeek-V2 (MLA) | Liu et al., 2024 — arXiv:2405.04434 |
+| DeepSeek-V3 | DeepSeek-AI, 2024 — arXiv:2412.19437 |
+| MoE survey | Fedus et al., 2022 — JMLR |
+
+**Source files:** `models/transformer.py`, `models/mla.py`, `models/moe.py`, `models/mtp.py`, `training/pretrain.py`, `configs/pretrain_a100_422m.yaml`
 
 ---
 
@@ -209,6 +1434,10 @@ The intuition: wider models have more parameters contributing to each update; if
 
 1. **Every choice trades framework magic for readable math.** Pre-norm over post-norm, RMSNorm over LayerNorm, SwiGLU over ReLU-FFN, RoPE over learned position embeddings — each is the simpler, more inspectable, empirically-better option. DeepSeek's lineage is a sequence of "replace the magic with math that works better."
 2. **The KV cache is the inference bottleneck.** §11 is the reason MLA exists; it is the connective tissue between attention (§5) and the architecture chapter.
-3. **Scaling laws constrain everything.** Chinchilla (§12) sets the data budget; μP (§13) sets the LR. They are why a 422 M single-GPU run is a *deliberate* choice, not a limitation.
+3. **Scaling laws constrain everything.** Chinchilla (§12) sets the data budget; μP (§13) sets the LR. They are why a 411.6 M single-GPU run is a *deliberate* choice, not a limitation.
+4. **Precision is a ladder, not a switch.** FP32 master → BF16 compute (§14) → FP8 (paper, §docs/06): precision where gradients accumulate, savings where bytes move. Every component in this repo sits on the same principle.
 
 > **Next:** [[Docs/02_Model_Architecture]] — full 18-layer topology, tensor shapes, and the parameter budget that realizes these primitives.
+
+
+<!-- docs:verified 2026-08-04 · 59aeef3 -->

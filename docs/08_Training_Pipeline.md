@@ -12,30 +12,55 @@
 
 1. [Abstract](#abstract)
 2. [Training Stack Overview](#training-stack-overview)
-3. [TrainingConfig](#trainingconfig)
+3. [TrainingConfig Field by Field](#trainingconfig-field-by-field)
 4. [Pretrainer Lifecycle](#pretrainer-lifecycle)
-5. [μP Learning Rate Scaling](#μp-learning-rate-scaling)
-6. [LR Scheduler](#lr-scheduler)
-7. [PretrainDataset](#pretraindataset)
-8. [train_step](#train_step)
-9. [MTP Training Path](#mtp-training-path)
-10. [MoE Bias Updates](#moe-bias-updates)
-11. [NaN Guard](#nan-guard)
-12. [Checkpointing](#checkpointing)
-13. [CLI Reference](#cli-reference)
-14. [Appendix A — Train loop state diagram](#appendix-a--train-loop-state-diagram)
-15. [Appendix B — FAQ](#appendix-b--faq)
-16. [Appendix C — Glossary](#appendix-c--glossary)
-17. [Load-Bearing Invariants](#load-bearing-invariants)
-18. [Implementation Checklist](#implementation-checklist)
+5. [AdamW — Full Update Rule](#adamw--full-update-rule)
+6. [Gradient Accumulation — Mathematics](#gradient-accumulation--mathematics)
+7. [LR Scheduler](#lr-scheduler)
+8. [μP Learning Rate Scaling](#μp-learning-rate-scaling)
+9. [PretrainDataset](#pretraindataset)
+10. [DataLoader Design](#dataloader-design)
+11. [train_step](#train_step)
+12. [MTP Training Path](#mtp-training-path)
+13. [MoE Bias Updates](#moe-bias-updates)
+14. [NaN Guard](#nan-guard)
+15. [Checkpointing](#checkpointing)
+16. [torch.compile — What It Does Here](#torchcompile--what-it-does-here)
+17. [Memory Timeline — One train_step](#memory-timeline--one-train_step)
+18. [Chinchilla Epoch Analysis](#chinchilla-epoch-analysis)
+19. [CLI Reference](#cli-reference)
+20. [Pretrainer.__init__ — Line-by-Line Walkthrough](#pretrainer__init__--line-by-line-walkthrough)
+21. [train_step — Pseudocode with Tensor Shapes](#train_step--pseudocode-with-tensor-shapes)
+22. [Checkpoint Format — File-by-File](#checkpoint-format--file-by-file)
+23. [NaN Guard — State Machine](#nan-guard--state-machine)
+24. [Worked Example — One Optimiser Step at 422M](#worked-example--one-optimiser-step-at-422m)
+25. [torch.compile Interaction with MTP and MoE](#torchcompile-interaction-with-mtp-and-moe)
+26. [Appendix A — Train loop state diagram](#appendix-a--train-loop-state-diagram)
+27. [Appendix B — FAQ](#appendix-b--faq)
+28. [Appendix C — Glossary](#appendix-c--glossary)
+29. [Load-Bearing Invariants](#load-bearing-invariants)
+30. [Implementation Checklist](#implementation-checklist)
+31. [References](#references)
+32. [train() Main Loop — Pseudocode](#train-main-loop--pseudocode)
+33. [Optimiser Param Groups — Why Split?](#optimiser-param-groups--why-split)
+34. [compile_model Interaction](#compile_model-interaction)
+35. [Hyperparameter Sensitivity (Empirical)](#hyperparameter-sensitivity-empirical)
+36. [Worked Example — Micro-step vs Optim Step](#worked-example--micro-step-vs-optim-step)
+37. [Logging and Monitoring](#logging-and-monitoring)
+38. [Resume and Fault Tolerance](#resume-and-fault-tolerance)
+39. [Part B — Configuration Reference](#part-b--configuration-reference)
 
 ---
 
 ## Abstract
 
-The training system is a **single-GPU, from-scratch PyTorch pretrainer** targeting Chinchilla-optimal training: ~422M parameters on 8.4B tokens. It combines BF16 autocast, FP32 AdamW master weights, `torch.compile(max-autotune)`, gradient checkpointing, μP LR scaling, aux-loss-free MoE bias updates, MTP auxiliary loss, and a NaN guard with automatic checkpoint rollback.
+The training system is a **single-GPU, from-scratch PyTorch pretrainer** targeting Chinchilla-optimal training: ~411.6M parameters (418.7M with MTP) on 8.4B tokens. It combines BF16 autocast, FP32 AdamW master weights, `torch.compile(max-autotune)`, gradient checkpointing, μP LR scaling, aux-loss-free MoE bias updates, MTP auxiliary loss, and a NaN guard with automatic checkpoint rollback.
 
 No HuggingFace Trainer. No distributed. One A100 80GB.
+
+### 60-Second Summary
+
+Pretraining here is a plain Python `while` loop over sharded, pre-tokenised data. Each micro-step loads one `(B, S)` batch of `uint32` token ids, casts them to `long`, runs the trunk under BF16 autocast, divides the loss by the gradient-accumulation count, and calls `backward()`. Only every `gradient_accumulation_steps`-th micro-step clips, steps the FP32 AdamW optimizer, advances the warmup-cosine scheduler, and nudges the MoE routing biases. A NaN guard watches every loss; five consecutive non-finite losses roll the whole training state (weights, optimizer, scheduler, step counter) back to the newest checkpoint. The learning rate is not a hand-tuned constant: μP scales `lr` by `sqrt(reference_params / actual_params)`, turning `6.0e-4` at 757.2M reference params into **8.138e-4** for the 411.6M base model and **8.069e-4** with the MTP wrapper. Everything a 15-hour run does is spelled out in `training/pretrain.py` — there is no trainer framework layer to fight.
 
 ### The training problem, formally
 
@@ -45,7 +70,7 @@ $$
 \min_\theta \; \mathbb{E}_{\mathbf{x} \sim \mathcal{D}}\left[ -\sum_{t=1}^{T} \log p_\theta(x_t \mid x_{<t}) + \lambda \sum_{d=1}^{D} \mathcal{L}_{\text{MTP}}^{(d)} \right]
 $$
 
-with $\lambda = 0.3$, $D = 1$ at 422M config. The expectation is approximated by stochastic mini-batches over sharded uint32 corpora.
+with $\lambda = 0.3$, $D = 1$ at the canonical config (`configs/pretrain_a100_422m.yaml` — the filename is historical; the deduped model is 411,632,256 parameters, see [[Docs/02_Model_Architecture|Model Architecture]] for the budget). The expectation is approximated by stochastic mini-batches over sharded uint32 corpora.
 
 **Single-GPU constraint:** No data parallelism. Effective batch size = `micro_batch_size × gradient_accumulation_steps` sequences.
 
@@ -69,153 +94,6 @@ with $\lambda = 0.3$, $D = 1$ at 422M config. The expectation is approximated by
 
 ---
 
-## AdamW — Full Update Rule
-
-Adam (Kingma & Ba, 2015) maintains per-parameter first and second moment estimates:
-
-$$
-m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t, \quad v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2
-$$
-
-Bias-corrected:
-
-$$
-\hat{m}_t = \frac{m_t}{1-\beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1-\beta_2^t}
-$$
-
-**AdamW** (Loshchilov & Hutter, 2019) decouples weight decay from the gradient:
-
-$$
-\theta_{t+1} = \theta_t - \eta \left( \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} + \lambda \theta_t 
-\right)
-$$
-
-Note: decay is applied to $\theta_t$ directly, not added to $g_t$.
-
-**This repo:** $\beta_1=0.9$, $\beta_2=0.95$, $\lambda=0.1$ on `dim >= 2` params only. Norm scales and MoE bias (`dim < 2`) get $\lambda=0$.
-
-```python
-decay_params = [p for p in all_params if p.dim() >= 2]
-no_decay_params = [p for p in all_params if p.dim() < 2]
-```
-
-**Why exclude 1D params from decay?** Weight decay on LayerNorm/RMSNorm $\gamma$ and router bias destabilises training — standard LLM recipe (GPT-3, LLaMA).
-
-**Fused AdamW:** `fused=True` when CUDA available — single kernel for update, FP32 master weights internally.
-
----
-
-## Gradient Accumulation — Mathematics
-
-Effective batch size:
-
-$$
-B_{\text{eff}} = B_{\text{micro}} \times G_{\text{accum}}
-$$
-
-Gradients accumulate over $G_{\text{accum}}$ micro-steps before `optimizer.step()`:
-
-$$
-
-\nabla_\theta \mathcal{L}_{\text{total}} = \frac{1}{G} \sum_{g=1}^{G} 
-\nabla_\theta \mathcal{L}_g
-$$
-
-**Implementation:** `loss = total_loss / gradient_accumulation_steps` before `backward()`. PyTorch accumulates gradients in `.grad` across micro-steps; `zero_grad(set_to_none=True)` clears after optim step.
-
-**422M:** $B_{\text{micro}}=8$, $G=4$ → $B_{\text{eff}}=32$ sequences. Each optim step sees $32 \times 2048 = 65536$ tokens.
-
-**Micro-step vs optim-step counters:**
-- `global_step` in `train()` — counts every micro-batch (used for logging cadence)
-- `_opt_steps` — counts actual `optimizer.step()` calls (used for MoE bias updates, scheduler)
-
----
-
-## torch.compile — What It Does Here
-
-When `compile_model=True`:
-
-```python
-training_model = torch.compile(training_model, mode="max-autotune", fullgraph=False)
-```
-
-**TorchInductor** traces the forward graph, fuses elementwise ops, and autotunes CUDA kernels. `max-autotune` spends more compile time benchmarking kernel variants.
-
-**Trade-offs:**
-| Benefit | Cost |
-|---|---|
-| 10-20% faster step time | 5-15 min compile on first run |
-| Fused RMSNorm+matmul patterns | Opaque stack traces on error |
-| Less Python overhead in MoE loop | Higher peak VRAM during compile |
-
-**`fullgraph=False`:** Allows graph breaks (Python MoE dispatch, dynamic shapes) — required for this codebase.
-
-**Env:** `TORCH_COMPILE_MODE=max-autotune` set in `launch_a100.sh`.
-
-**1650 config:** `compile: false` — 4GB VRAM cannot absorb compile workspace.
-
----
-
-## DataLoader Design
-
-```python
-loader = DataLoader(
-    dataset, batch_size=8, shuffle=True, generator=g,
-    num_workers=8, pin_memory=True,
-    persistent_workers=True, prefetch_factor=8, drop_last=True,
-)
-```
-
-| Flag | Rationale |
-|---|---|
-| `shuffle=True` + seeded `Generator` | Different order each epoch; reproducible given same seed |
-| `num_workers=8` | Parallel `__getitem__` while GPU trains |
-| `pin_memory=True` | Faster H2D copy via page-locked host memory |
-| `persistent_workers=True` | Avoid worker respawn overhead each epoch |
-| `prefetch_factor=8` | Pipeline 8 batches per worker ahead of GPU |
-| `drop_last=True` | Avoid partial batch shape mismatch at epoch end |
-
-**Resume caveat:** Sampler RNG is **not** checkpointed — resume changes data order (benign at 8.4B scale).
-
----
-
-## Memory Timeline — One train_step
-
-```
-1. DataLoader delivers (tokens, targets) uint32 on CPU
-2. .to(device, non_blocking=True) → GPU int64 cast in train_step
-3. autocast forward:
-     embed → 18 layers (checkpoint recompute in backward) → logits
-     MTP: auxiliary heads if enabled
-4. loss.backward() — activation recompute from checkpoints
-5. clip_grad_norm_(max=1.0)
-6. optimizer.step() — FP32 master update
-7. scheduler.step()
-8. zero_grad(set_to_none=True)
-9. MoE bias update (reads _last_indices from last forward)
-```
-
-Peak memory occurs during backward recompute — typically layer 9-12 middle of stack. `estimate_model_memory_gb` uses PaLM factor 24 for this.
-
----
-
-## Chinchilla Epoch Analysis
-
-Unique corpus: ~8.4B tokens. Samples per epoch:
-
-$$
-N_{\text{samples}} = \frac{N_{\text{tokens}} - 1}{\text{max_seq_len}} \approx \frac{8.4 \times 10^9}{2048} \approx 4.1 \times 10^6
-$$
-
-With $B_{\text{eff}}=32$: $\approx 128000$ optim steps per epoch.
-
-At 512,000 total optim steps: **~4 epochs** over the corpus (with shuffle reshuffling boundaries each epoch).
-
-Total token **exposures**: $512000 \times 65536 \approx 33.5$B — intentional over-training relative to unique tokens improves convergence on rare mixture sources (code, math).
-
-
----
-
 ## Training Stack Overview
 
 | Layer | Technology | Purpose |
@@ -229,40 +107,151 @@ Total token **exposures**: $512000 \times 65536 \approx 33.5$B — intentional o
 | MoE balance | Out-of-band bias updates | No aux loss in task gradient |
 | Stability | NaN guard + ckpt rollback | Auto-recover from divergence |
 
+Each row of this table becomes a section below, in the order the training system actually touches them: configuration first, then the `Pretrainer` object, then the optimizer/scheduler math, then data, then the per-step mechanics.
+
 ---
 
-## TrainingConfig
+## TrainingConfig Field by Field
 
-`@dataclass` mapping YAML `training:` section:
+`TrainingConfig` (`training/pretrain.py:TrainingConfig`) is a plain `@dataclass` — 29 fields, no magic. It is the *runtime* view of training hyperparameters: `main()` reads the YAML file and copies values into the dataclass, `Pretrainer.__init__` reads the dataclass, and nothing in the training loop ever touches YAML again. The one deliberate exception is `model_config`, which carries the **entire** raw YAML dict so that downstream model code can unwrap the `model:` section itself (`models/transformer.py:Transformer.__init__` does `config.get("model", config)`).
 
-| Field | 422M YAML | Description |
-|---|---|---|
-| `micro_batch_size` | 8 | Tokens per GPU per micro-step |
-| `gradient_accumulation_steps` | 4 | Micro-steps per optimizer step |
-| `total_steps` | 512,000 | Optimizer steps (not micro-steps) |
-| `warmup_steps` | 2,000 | Linear LR warmup |
-| `lr` | 8.0e-4 | Base LR (μP-adjusted at init) |
-| `min_lr_ratio` | 0.05 | Floor as fraction of peak LR |
-| `weight_decay` | 0.1 | On dim≥2 params only |
-| `grad_clip` | 1.0 | Global norm clip |
-| `grad_checkpoint` | true | Activation checkpointing |
-| `compile` | true | torch.compile |
-| `mtp_weight` | 0.3 | From `mtp_loss_weight` in model section |
-| `bias_update_every` | 1 | MoE bias cadence |
-| `nan_guard` | true | Enable rollback |
-| `mup_lr` | true | μP scaling |
+### The dataclass
 
-**Effective batch size:** `8 × 4 = 32` sequences per optimizer step.
+```python
+@dataclass
+class TrainingConfig:
+    model_config: dict = field(default_factory=dict)
+    data_path: str = "data/pretrain_data.bin"
+    checkpoint_dir: str = "checkpoints/pretrain"
+    vocab_size: int = 100018
+    max_seq_len: int = 4096
+    batch_size: int = 8
+    gradient_accumulation_steps: int = 4
+    max_steps: int = 20000
+    warmup_steps: int = 2000
+    lr: float = 2.2e-4
+    min_lr_ratio: float = 0.1
+    weight_decay: float = 0.1
+    beta1: float = 0.9
+    beta2: float = 0.95
+    max_grad_norm: float = 1.0
+    mtp_weight: float = 0.0
+    bias_update_speed: float = 0.001
+    bias_update_every: int = 10
+    grad_checkpoint: bool = True
+    compile_model: bool = True
+    save_every: int = 1000
+    log_every: int = 100
+    nan_guard: bool = False
+    nan_guard_max_consecutive: int = 5
+    mup_lr: bool = False
+    mup_lr_reference: float = 6.0e-4
+    mup_lr_reference_params: int = 757226496
+    log_per_component_params: bool = True
+    seed: int = 42
+```
 
-**Tokens per optimizer step:** `32 × 2048 = 65,536`.
+Notice the defaults are **not** the 422M recipe. The defaults are a conservative smoke profile (`max_steps=20000`, `nan_guard=False`, `mup_lr=False`, `bias_update_every=10`); the canonical values come from YAML. The mapping below is exact — it is the code in `training/pretrain.py:main`.
 
-**Total training tokens:** `512,000 × 65,536 ≈ 33.5B` micro-token exposures (with reshuffling; Chinchilla target is 8.4B unique tokens over multiple epochs).
+### YAML to field mapping
 
+| YAML key (422M value) | Field | Type | Who consumes it |
+|---|---|---|---|
+| *(whole file)* | `model_config` | dict | `Transformer`, `MultiTokenPrediction` |
+| `data.train_data_path` (`data/pretrain_chinchilla`) | `data_path` | str | `PretrainDataset` |
+| `training.save_dir` (`checkpoints/pretrain_a100`) | `checkpoint_dir` | str | `CheckpointManager` |
+| `model.vocab_size` (`100018`) | `vocab_size` | int | dataset construction (informational) |
+| `model.max_seq_len` (`2048`) | `max_seq_len` | int | `PretrainDataset`, logger |
+| `training.micro_batch_size` (`8`) | `batch_size` | int | `DataLoader` batch size, logger |
+| `training.gradient_accumulation_steps` (`4`) | `gradient_accumulation_steps` | int | `train_step` |
+| `training.total_steps` (`512000`) | `max_steps` | int | scheduler, `train()` loop bound |
+| `training.warmup_steps` (`2000`) | `warmup_steps` | int | `make_warmup_cosine_lambda` |
+| `training.lr` (`8.0e-4`) | `lr` | float | AdamW (possibly overwritten by μP) |
+| `training.min_lr_ratio` (`0.05`) | `min_lr_ratio` | float | scheduler floor |
+| `training.weight_decay` (`0.1`) | `weight_decay` | float | AdamW decay group |
+| `training.beta1` / `beta2` (`0.9` / `0.95`) | `beta1`, `beta2` | float | AdamW betas |
+| `training.grad_clip` (`1.0`) | `max_grad_norm` | float | `clip_grad_norm_` |
+| `model.mtp_loss_weight` (`0.3`) | `mtp_weight` | float | MTP engagement + loss |
+| `training.bias_update_speed` (`0.001`) | `bias_update_speed` | float | `update_gate_bias` |
+| `training.bias_update_every` (`1`) | `bias_update_every` | int | bias cadence |
+| `training.grad_checkpoint` (`true`) | `grad_checkpoint` | bool | `Transformer(use_checkpoint=...)` |
+| `training.compile` (`true`) | `compile_model` | bool | `torch.compile` gate |
+| `training.save_interval` (`4000`) | `save_every` | int | checkpoint cadence |
+| `training.log_interval` (`50`) | `log_every` | int | logging cadence |
+| `training.nan_guard` (`true`) | `nan_guard` | bool | NaN skip/rollback |
+| `training.nan_guard_max_consecutive` (`5`) | `nan_guard_max_consecutive` | int | rollback threshold |
+| `training.mup_lr` (`true`) | `mup_lr` | bool | μP scaling |
+| `training.mup_lr_reference` (`6.0e-4`) | `mup_lr_reference` | float | μP reference LR |
+| `training.mup_lr_reference_params` (`757226496`) | `mup_lr_reference_params` | int | μP reference count |
+| `training.log_per_component_params` (`true`) | `log_per_component_params` | bool | startup breakdown |
+| `training.seed` (absent → `42`) | `seed` | int | RNG seeding |
+
+Three name mismatches are worth memorising because they appear everywhere in docs and logs: YAML `micro_batch_size` → field `batch_size`, YAML `total_steps` → field `max_steps`, YAML `grad_clip` → field `max_grad_norm`. And `mtp_weight` lives under the **model** section in YAML but lands in the **training** dataclass.
+
+### Field-by-field tour
+
+**`model_config`** is the only non-scalar field: the entire parsed YAML dict. `Transformer.__init__` unwraps `model:` from it; `MultiTokenPrediction` reads `mtp_depth` / `mtp_loss_weight` from it; `Pretrainer.__init__` reads `mtp_depth` out of it via the two-level `config.model_config.get("model", config.model_config).get("mtp_depth", 0)` dance — the inner `.get("model", ...)` makes the same code work for flat test dicts and nested YAML.
+
+**`data_path` / `checkpoint_dir`** are the only two fields that can also be overridden from the command line (`--data-path`, `--checkpoint-dir`). `data_path` may point at a single `.bin` tensor file *or* a directory of `shard_*.bin` files; `PretrainDataset.__init__` decides by `os.path.isdir`. `checkpoint_dir` is created (mkdir -p) by `CheckpointManager.__init__`.
+
+**`vocab_size` / `max_seq_len`** mirror the model section so the dataset and logger can size themselves. `max_seq_len` drives both the dataset window and the `TrainingLogger` tokens-per-second arithmetic. If they disagree with the model config, nothing crashes — but windows and throughput numbers come out wrong, so keep them in lockstep with `model.max_seq_len`.
+
+**`batch_size` (micro) and `gradient_accumulation_steps`** jointly define the effective batch. The `DataLoader` is given `batch_size` (the micro size); the accumulation factor lives only in `train_step`'s boundary test `(micro_step + 1) % gradient_accumulation_steps == 0` and the loss division. Nothing else in the codebase needs to know the product.
+
+**`max_steps`** is the **micro-step budget** of the `train()` loop: `global_step` counts micro-batches, and the loop terminates when `global_step` reaches `max_steps`. At 422M that is 512,000 micro-batches = 128,000 optimizer steps (÷ `gradient_accumulation_steps` = 4) ≈ one pass over the 8.4B-token corpus — the Chinchilla-optimal budget. This is a genuine naming trap: `total_steps`, `save_interval`, and `log_interval` are all in micro-step units, but the LR scheduler's `total_steps` argument is in *scheduler* steps — one per optimizer step — so the schedule horizon and the loop bound are in different units (consequence in [LR Scheduler](#lr-scheduler)).
+
+**`warmup_steps`, `lr`, `min_lr_ratio`** feed the scheduler. `lr` is the *base* LR that `LambdaLR` multiplies by the warmup-cosine curve — and, when `mup_lr=True`, it is silently overwritten at `Pretrainer.__init__` time *before* the optimizer is built (so the optimizer never sees the YAML value). More in [μP Learning Rate Scaling](#μp-learning-rate-scaling).
+
+**`weight_decay`, `beta1`, `beta2`** are passed straight to AdamW. Decay is applied only to the `dim >= 2` parameter group (see [AdamW — Full Update Rule](#adamw--full-update-rule)); the betas are the standard LLM pair 0.9 / 0.95.
+
+**`max_grad_norm`** is the global-norm clip bound in `train_step`.
+
+**`mtp_weight`** gates the whole MTP machinery: `Pretrainer.__init__` wraps the model in `MultiTokenPrediction` only when `mtp_depth > 0` **and** `mtp_weight > 0.0`. Setting `mtp_weight: 0` in YAML quietly disables the auxiliary path (depth is ignored).
+
+**`bias_update_speed` / `bias_update_every`** control the MoE router-bias control loop: how far the bias moves per update and how many optimizer steps between updates. `bias_update_every=1` in the 422M YAML means "every optimizer step" — the dataclass default of 10 is for smoke runs.
+
+**`grad_checkpoint` / `compile_model`** are booleans that reach into model construction (`use_checkpoint`) and wrapping (`torch.compile`). Both can be force-disabled from the CLI with `--no-checkpoint` / `--no-compile` — the YAML value is `and`-ed with the CLI flags in `main()`.
+
+**`save_every` / `log_every`** are the two cadences of the run: checkpoints at multiples of 4000 optimizer steps, log lines at multiples of 50.
+
+**`nan_guard` / `nan_guard_max_consecutive`** arm the divergence safety net. Note the dataclass default is `False` — the 422M YAML explicitly sets `true` (AGENTS.md treats disabling it as a deliberate, reviewed decision).
+
+**`mup_lr` / `mup_lr_reference` / `mup_lr_reference_params`** are the μP recipe: the reference model's tuned LR and parameter count. The reference (757,226,496 params @ 6.0e-4) is an external anchor from the wider DeepSeek-V3 family — it is *not* measurable in this repo.
+
+**`log_per_component_params`** turns on the startup parameter breakdown (embedding vs MLA vs experts …) — cheap, and the single best sanity check that the architecture you built matches the architecture you intended.
+
+**`seed`** seeds the CPU RNG before model construction (`torch.manual_seed(config.seed)`) and the DataLoader shuffle generator. It is not in the 422M YAML, so it defaults to 42.
+
+### Effective batch size arithmetic
+
+The two numbers that every other budget derives from:
+
+$$
+B_{\text{eff}} = B_{\text{micro}} \times G_{\text{accum}} = 8 \times 4 = 32 \text{ sequences / optimizer step}
+$$
+
+$$
+T_{\text{micro-step}} = B_{\text{micro}} \times S = 8 \times 2048 = 16\,384 \text{ tokens / micro-step}
+$$
+
+$$
+T_{\text{opt-step}} = B_{\text{eff}} \times S = 32 \times 2048 = 65\,536 \text{ tokens / optimizer step}
+$$
+
+Total tokens over the run (512,000 micro-steps):
+
+$$
+N_{\text{tokens}} = 512\,000 \times 16\,384 \approx 8.39 \times 10^9 \approx \text{one pass over the 8.4B corpus}
+$$
+
+Optimizer steps over the run: $512\,000 / 4 = 128\,000$. The 8.4B-token corpus is the Chinchilla-optimal budget for 411.6M parameters; the run ends ~0.14% short of a full epoch because one epoch is 512,695 micro-batches (see [Chinchilla Epoch Analysis](#chinchilla-epoch-analysis)).
 ---
 
 ## Pretrainer Lifecycle
 
-### `__init__`
+`Pretrainer` (`training/pretrain.py:Pretrainer`) is the whole training system in one class: construction wires hardware flags, model, optimizer, scheduler, and checkpoints; `train()` owns the data loop; `train_step` owns the per-micro-batch math. The class deliberately keeps **no** state that `train_step` cannot see — the only persistent counters are `_opt_steps` (checkpointed) and the implicit `global_step` (re-derived on resume).
+
+### `__init__` — the eleven steps
 
 ```
 1. Seed RNG (config.seed)
@@ -298,6 +287,330 @@ no_decay_params = [p for p in all_params if p.dim() < 2]  # bias, norm γ
 
 Shared/tied params deduplicated by `id(p)` before grouping.
 
+### `__init__` deep dive
+
+Everything below is the actual body of `training/pretrain.py:Pretrainer.__init__`, read top to bottom.
+
+#### Seeding
+
+```python
+# Seed before model construction for reproducible init + data order.
+torch.manual_seed(config.seed)
+```
+
+`torch.manual_seed` seeds the CPU RNG used by weight initialisation (`nn.init.normal_`, `torch.empty`) and, transitively, the CUDA RNG for the current device. It runs **before** `Transformer(...)` so a given `seed` reproduces the exact weight initialisation. Two things it does *not* cover:
+
+- **DataLoader shuffle order** — that uses a separate `torch.Generator` created in `train()` (`g = torch.Generator().manual_seed(self.config.seed)`), deliberately independent so the training loop can reseed it per epoch without touching model init.
+- **Run-to-run jitter on CUDA** — `torch.compile`, cuBLAS heuristics and nondeterministic kernels mean two identical-seed runs on the same GPU can still differ in the last ULPs. Seed reproducibility here is "same initial weights and same data order", not bit-exact runs.
+
+#### Device and numerics flags
+
+```python
+self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if not torch.cuda.is_available():
+    print("[warn] CUDA not available — running on CPU (smoke-testing only).")
+else:
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cudnn.benchmark = True
+```
+
+- **TF32** is a reduced-precision FP32 mode on Ampere+ GPUs: FP32 inputs with a 10-bit mantissa (19 bits total) instead of 23. cuBLAS TF32 GEMMs run ~8× the FP32 rate. Two flags: `torch.backends.cuda.matmul.allow_tf32` covers `torch.mm`/`torch.bmm`/`nn.Linear` in plain FP32; `torch.set_float32_matmul_precision("high")` is the newer umbrella that enables the same for eager and compiled paths. Why is it safe here? The model's heavy compute runs in **BF16** under autocast, so TF32 only affects stray FP32 matmuls; the numerically sensitive FP32 spots (RMSNorm, the loss, the AdamW update) are elementwise/reductions, not matmuls — cuBLAS TF32 never touches them.
+- **`cudnn.benchmark`** lets cuDNN autotune kernel choices; this repo has no convolutions, so it is mostly inert — it is set for uniformity with the rest of the stack.
+- **CPU path:** the warning is literal. On a laptop the loop runs eagerly in FP32/BF16 CPU matmuls and is meant for smoke tests only (the 1650 config, `torch.compile=False`).
+
+#### Logging setup
+
+```python
+init_logging(config.log_every, seq_len=config.max_seq_len, batch_size=config.batch_size)
+self.logger = get_logger()
+```
+
+`utils/logging.py:init_logging` constructs the process-global `TrainingLogger`; `get_logger` hands it back. The logger needs `seq_len` and `batch_size` up front because its throughput line is `tokens_per_sec = (log_interval × seq_len × batch_size) / elapsed` — i.e. it assumes every logged interval consumed exactly `log_interval` full micro-batches.
+
+#### Model construction
+
+```python
+# AGENTS rule #7: default-config run must never silently switch to a Triton path.
+# Guard already ran in Transformer.__init__; this is a no-op.
+raw_model = Transformer(config.model_config, use_checkpoint=config.grad_checkpoint).to(self.device)
+total, trainable = count_parameters(raw_model)
+self._log(f"Parameters: {total:,} total / {trainable:,} trainable")
+```
+
+`use_checkpoint` is threaded into `Transformer` and becomes the switch inside `models/transformer.py:Transformer._run_layers` that decides between `torch.utils.checkpoint.checkpoint(...)` and a plain layer call. The "no-op" comment refers to `enforce_triton_env_var` (the `models/_triton_dispatch.py` guard that forces `attn_impl="sdpa"`/`moe_dispatch="stacked"` unless `ENABLE_TRITON_KERNELS=1`): it already ran inside `Transformer.__init__`, so calling it again here would be redundant — the comment documents *why* it is not called.
+
+#### Parameter accounting
+
+`count_parameters` (`models/transformer.py:count_parameters`) deduplicates by tensor `id` — with weight tying, `head.weight` *is* `embed.weight`, and counting both would double-count ~76.8M. Measured on a CPU instantiation of the canonical config (2026-08-04): **411,632,256 total, 411,632,256 trainable** (every parameter trains).
+
+With `log_per_component_params: true`, `Pretrainer._log_per_component_params` prints a name-based breakdown. The real numbers for the canonical config:
+
+| Component | Params | Share |
+|---|---|---|
+| MoE routed experts (16 layers × 20 × SwiGLU 768→384→768) | 283,115,520 | 68.78% |
+| Embedding (100,018 × 768; head tied, counted once) | 76,813,824 | 18.66% |
+| MLA attention (18 layers: wq, wkv_a, wkv_b, wo, q_norm, kv_norm) | 30,195,072 | 7.34% |
+| Shared experts (16 layers × 1) | 14,155,776 | 3.44% |
+| Dense SwiGLU (2 layers) | 7,077,888 | 1.72% |
+| MoE gate weights (16 × 20 × 768) | 245,760 | 0.06% |
+| RMSNorm γ (18 layers × 2 + final) | 27,648 | 0.01% |
+| other (final `norm.weight`) | 768 | 0.00% |
+
+Two instructive facts hide in this table. First, **routed experts are 2/3 of the model** — the sparse part dominates the budget, which is exactly why DeepSeek-style MoE economics work: you pay ~20% of expert FLOPs per token but own all 20 experts' weights. Second, **the embedding is a sixth of the model** at 100,018 vocabulary — and it is also the LM head (tied), so the logit projection is *free* in parameter count (it is not free in compute: the head is a 768→100,018 GEMM every token, ~77M MACs/token, more than the whole 18-layer dense forward at ~59M MACs/token [derived: 2·768·1536 per dense layer]). The classifier is string-based and heuristic — a parameter whose name matches `.experts.` with `w1/w2/w3` lands in routed experts even if some future refactor moves it — so treat the breakdown as a debugging aid, not a contract.
+
+#### MTP wrapping
+
+```python
+self.mtp_wrapper: Optional[MultiTokenPrediction] = None
+mtp_depth = config.model_config.get("model", config.model_config).get("mtp_depth", 0)
+if mtp_depth > 0 and config.mtp_weight > 0.0:
+    mtp_model = MultiTokenPrediction(config.model_config, raw_model).to(self.device)
+    mtp_total, mtp_trainable = count_parameters(mtp_model)
+    self._log(f"MTP enabled (depth={mtp_depth}, weight={config.mtp_weight}): {mtp_total:,} total / {mtp_trainable:,} trainable")
+    total = mtp_total
+    training_model: nn.Module = mtp_model
+    self.mtp_wrapper = mtp_model
+else:
+    training_model = raw_model
+```
+
+Both conditions must hold: `mtp_depth > 0` (architecture has heads) **and** `mtp_weight > 0.0` (the loss is actually used). When engaged, the training model becomes the wrapper, `total` switches to 418,713,984, and `self.mtp_wrapper` is set — `train_step` branches on that pointer. The delta is 7,081,728 parameters: exactly one `MTPBlock` (fusion projection 1536→768, `nn.MultiheadAttention` 768-wide, SwiGLU 768→1536→768, four RMSNorms) plus its output norm — the embedding and LM head are **shared** with the trunk, so MTP adds no new embedding or head parameters (verified against `models/mtp.py:MultiTokenPrediction.__init__`, which reuses `main_model.embed` and `main_model.head`).
+
+#### torch.compile
+
+```python
+if config.compile_model and hasattr(torch, "compile"):
+    compile_mode = os.environ.get("TORCH_COMPILE_MODE", "max-autotune")
+    self._log(f"Compiling model with torch.compile (mode={compile_mode})...")
+    training_model = torch.compile(training_model, mode=compile_mode, fullgraph=False)
+```
+
+The compile mode comes from the environment (`TORCH_COMPILE_MODE`, defaulting to `max-autotune`; `scripts/launch_a100.sh` exports it). `fullgraph=False` tolerates the Python MoE dispatch loop. Only `training_model` is compiled — `self.raw_model` stays eager.
+
+#### μP LR adjustment
+
+```python
+if config.mup_lr:
+    new_lr = config.mup_lr_reference * (config.mup_lr_reference_params / total) ** 0.5
+    self._log(f"µP LR scaling: {config.lr:.2e} → {new_lr:.2e} (ref {config.mup_lr_reference:.2e} @ {config.mup_lr_reference_params:,} params)")
+    config.lr = new_lr
+```
+
+Full derivation in [μP Learning Rate Scaling](#μp-learning-rate-scaling). Note `total` here is the **post-MTP** count when the wrapper is engaged.
+
+#### Optimizer construction
+
+```python
+seen = set()
+all_params = []
+for p in self.model.parameters():
+    pid = id(p)
+    if pid not in seen:
+        seen.add(pid)
+        all_params.append(p)
+decay_params = [p for p in all_params if p.dim() >= 2]
+no_decay_params = [p for p in all_params if p.dim() < 2]
+self.optimizer = AdamW([
+    {"params": decay_params, "weight_decay": config.weight_decay},
+    {"params": no_decay_params, "weight_decay": 0.0},
+], lr=config.lr, betas=(config.beta1, config.beta2), fused=torch.cuda.is_available())
+```
+
+`id(p)` dedup handles both weight tying (`head.weight` shares storage with `embed.weight`) and the MTP wrapper (`mtp_modules` share the trunk's embed/head tensors). Two param groups: decay on `dim >= 2` matrices, none on vectors. `fused=True` on CUDA selects the fused AdamW kernel. See [AdamW — Full Update Rule](#adamw--full-update-rule).
+
+#### Scheduler construction
+
+```python
+# The LR schedule lives in optimizer-step space: `max_steps` is a micro-step
+# budget, so the cosine horizon is max_steps // gradient_accumulation_steps.
+opt_steps = max(1, config.max_steps // config.gradient_accumulation_steps)
+lr_lambda = make_warmup_cosine_lambda(warmup_steps=config.warmup_steps, total_steps=opt_steps, min_lr_ratio=config.min_lr_ratio)
+self.scheduler = LambdaLR(self.optimizer, lr_lambda)
+```
+
+`LambdaLR` re-scales the optimizer's LR by `lr_lambda(step)` where `step` counts `scheduler.step()` calls — one per optimizer step, issued from `train_step`. Closed form in [LR Scheduler](#lr-scheduler). The horizon division means the canonical run's cosine arc spans its full 128,000 optimizer steps and does reach the 5% floor (pinned by `tests/test_training.py:TestPretrainerConstruction.test_scheduler_horizon_is_optimizer_steps`).
+
+#### The tail
+
+```python
+self.amp_dtype = torch.bfloat16
+self.ckpt_manager = CheckpointManager(config.checkpoint_dir)
+self._opt_steps: int = 0
+```
+
+`amp_dtype` is the autocast precision for the whole run; `CheckpointManager` creates the save directory; `_opt_steps` is the only training counter that survives in the object — and it is checkpointed.
+
+**Critical split (repeated everywhere):** `self.model` may be the compiled MTP wrapper; `self.raw_model` is always the bare eager `Transformer`, used for checkpoint I/O, MoE bias updates, and the balance metric.
+
+---
+
+## AdamW — Full Update Rule
+
+### From SGD to Adam
+
+Plain SGD follows the gradient: $\theta_{t+1} = \theta_t - \eta g_t$. Two failures motivate the Adam family: **ill-conditioning** (directions with tiny curvature need bigger steps than directions with huge curvature, but SGD gives every coordinate the same step) and **noisy gradients** (mini-batch noise makes single-sample estimates jumpy).
+
+**Momentum** smooths the noise: keep an exponential moving average of gradients,
+
+$$
+m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t,
+$$
+
+which damps oscillation and accelerates along consistent directions. **RMSProp-style scaling** fixes conditioning: keep a moving average of *squared* gradients,
+
+$$
+v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2,
+$$
+
+and divide each coordinate's step by $\sqrt{v_t}$. Coordinates with persistently large gradients (steep curvature) get small steps; flat coordinates get large ones. **Adam** combines the two:
+
+$$
+\theta_{t+1} = \theta_t - \eta \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon},
+$$
+
+where $\hat{m}_t = m_t/(1-\beta_1^t)$ and $\hat{v}_t = v_t/(1-\beta_2^t)$ are **bias corrections**. They matter because both averages start at zero: at small $t$ the estimates are dragged toward zero, so dividing by $1-\beta^t$ (which grows from ~0 toward 1) restores the true scale. Without correction, early steps are systematically too small.
+
+**AdamW** (Loshchilov & Hutter, 2019) decouples weight decay from the gradient:
+
+$$
+\theta_{t+1} = \theta_t - \eta \left( \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} + \lambda \theta_t \right)
+$$
+
+Note: decay is applied to $\theta_t$ directly, not added to $g_t$. That distinction is the entire point of the "W": in classic Adam (Loshchilov & Hutter's earlier AdamL2), decay enters $g_t$, then interacts with the per-coordinate $\sqrt{\hat v_t}$ scaling, so heavily-updated coordinates get *more* effective decay — a coupling that fights the optimizer's own normalization. AdamW keeps decay uniform across coordinates.
+
+**This repo:** $\beta_1=0.9$, $\beta_2=0.95$, $\lambda=0.1$ on `dim >= 2` params only. Norm scales and MoE bias (`dim < 2`) get $\lambda=0$.
+
+### Why FP32 master weights
+
+The model parameters are stored **FP32**; autocast never mutates them. During the forward pass, `autocast(dtype=bfloat16)` casts each Linear/Embedding's inputs and weights to BF16 *transiently* — the fp32 tensors are untouched. Gradients computed by `backward()` land in FP32 `.grad` buffers, and the AdamW update runs entirely in FP32 on the FP32 parameters.
+
+Why this design instead of keeping parameters in BF16? Two reasons:
+
+1. **BF16 has an 8-bit exponent** (same range as FP32, max ~3.4e38, min normal ~1.2e-38) but only **7 mantissa bits** (~3 decimal digits). A parameter update like `θ += 1e-4` applied to a value ~0.1 is representable in FP32 but would be swallowed by BF16 rounding (relative precision 2^-8 ≈ 0.4% of the value — an update of 0.1% of the value is below the representable granularity). FP32 master weights keep every update; the BF16 cast happens only for compute, where the forward pass's precision requirements are much looser.
+2. **The AdamW state is FP32 anyway**: `exp_avg` and `exp_avg_sq` are FP32 tensors. The fused AdamW kernel reads FP32 params + FP32 moments and writes FP32 params — no precision conversion anywhere in the update path.
+
+So "FP32 master weights" is not an extra copy here (unlike classic fp16 mixed precision, which keeps a separate fp32 master because fp16 params genuinely cannot hold small updates). The fp32 parameter **is** the master. The memory estimator counts it in the optimizer bucket: 2 bytes/param for working weights + 12 bytes/param for optimizer state (fp32 master + two fp32 moments) = 14 bytes/param total (`utils/memory.py:estimate_model_memory_gb`).
+
+### The constructor in this repo
+
+```python
+decay_params = [p for p in all_params if p.dim() >= 2]
+no_decay_params = [p for p in all_params if p.dim() < 2]
+self.optimizer = AdamW([
+    {"params": decay_params, "weight_decay": config.weight_decay},
+    {"params": no_decay_params, "weight_decay": 0.0},
+], lr=config.lr, betas=(config.beta1, config.beta2), fused=torch.cuda.is_available())
+```
+
+`lr=config.lr` is the μP-scaled value when `mup_lr` is on (see [μP Learning Rate Scaling](#μp-learning-rate-scaling)). `epsilon` uses PyTorch's default `1e-8`. `fused=True` on CUDA: the update is one vectorized kernel over all parameters (`m`, `v`, `θ` all resident) instead of per-tensor Python kernel launches — measurably faster and the standard choice for single-GPU LLM training.
+
+### Why exclude 1D parameters from decay?
+
+Weight decay on LayerNorm/RMSNorm $\gamma$ and router bias destabilises training — standard LLM recipe (GPT-3, LLaMA). Decay shrinks parameters toward zero every step; for a scale vector that is a *multiplicative* gain (RMSNorm γ multiplies the normalized activation), decay acts as a slow annealing of the whole residual-stream scale. Empirically this fights the norm's learned scale and slows convergence. For the router bias (a control variable, see [MoE Bias Updates](#moe-bias-updates)), decay would fight the load-balancing controller. Matrices — Linear weights, embeddings, projections — are the parameters where decay's regularisation is wanted. The split rule `dim >= 2` is a coarse proxy that happens to be exact for this architecture: every matrix is 2D, every scale/bias is 1D, and there are no scalar parameters (verified: `dim < 2` catches only RMSNorm γ, gate bias is a *buffer* outside the optimizer, and the final norm weight).
+
+**Fused AdamW:** `fused=True` when CUDA available — single kernel for update, FP32 master weights internally.
+
+---
+
+## Gradient Accumulation — Mathematics
+
+Effective batch size:
+
+$$
+B_{\text{eff}} = B_{\text{micro}} \times G_{\text{accum}}
+$$
+
+Gradients accumulate over $G_{\text{accum}}$ micro-steps before `optimizer.step()`:
+
+$$
+\nabla_\theta \mathcal{L}_{\text{total}} = \frac{1}{G} \sum_{g=1}^{G} \nabla_\theta \mathcal{L}_g
+$$
+
+**Implementation:** `loss = total_loss / gradient_accumulation_steps` before `backward()`. PyTorch accumulates gradients in `.grad` across micro-steps; `zero_grad(set_to_none=True)` clears after optim step.
+
+**Why divide by G rather than summing?** The optimizer must see the *average* gradient over the effective batch, not the sum — otherwise the update magnitude would grow with G and the LR would silently stop meaning the same thing across configs. Dividing each micro-loss by G makes each `.grad` the running average of the window, so one optimizer step at accumulation G is (up to data ordering and batch-normalization effects) the same step as a single batch of size $B_{\text{eff}}$.
+
+**Why accumulate at all instead of just using a bigger `batch_size`?** Memory: activations for one micro-batch of 8 × 2048 dominate the peak, and the backward pass recomputes them (gradient checkpointing). A direct batch of 32 would need ~4× the activation memory. Accumulation buys the optimizer's signal quality (batch 32 gradient) at the memory cost of batch 8, paying only extra forward/backward passes (which are compute-bound anyway).
+
+**422M:** $B_{\text{micro}}=8$, $G=4$ → $B_{\text{eff}}=32$ sequences. Each optim step sees $32 \times 2048 = 65536$ tokens.
+
+**Micro-step vs optim-step counters:**
+- `global_step` in `train()` — counts every micro-batch (used for logging cadence)
+- `_opt_steps` — counts actual `optimizer.step()` calls (used for MoE bias updates, scheduler)
+
+The loop bound is `global_step < max_steps` with `global_step` counting micro-batches, so a run performs `max_steps` micro-batches and `max_steps / G` optimizer steps — 512,000 micro-batches → 128,000 optimizer steps at 422M (see [TrainingConfig Field by Field](#trainingconfig-field-by-field)).
+
+Two subtleties that bite in practice:
+
+1. **The division is applied to the full training loss**, which for the MTP path is `main_loss + λ·mtp_loss` — the *combined* loss is divided by G, so both heads' gradients get the same 1/G scale. The balance metric is *not* divided (it is never backpropagated — see [train_step](#train_step)).
+2. **A NaN skip discards the whole accumulation window.** `train_step` returns `None` and calls `zero_grad(set_to_none=True)` when the loss is non-finite. If the NaN lands at micro-step 2 of a 4-step window, the gradients already accumulated from micro-steps 0–1 are wiped along with it — the optimizer simply never sees that partial window. This is deliberate (a window containing an Inf gradient is unusable), but it means NaN-guard rollbacks can "lose" up to G-1 clean micro-steps of gradient signal.
+
+---
+
+## LR Scheduler
+
+### The closed form
+
+`training/pretrain.py:make_warmup_cosine_lambda` returns a pure function of the optimizer-step count:
+
+```python
+def make_warmup_cosine_lambda(warmup_steps: int, total_steps: int, min_lr_ratio: float = 0.1):
+    def lr_lambda(step: int) -> float:
+        if step < warmup_steps:
+            return step / max(1, warmup_steps)
+        if step >= total_steps:
+            return min_lr_ratio
+        progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+        return min_lr_ratio + (1.0 - min_lr_ratio) * 0.5 * (1.0 + math.cos(math.pi * progress))
+    return lr_lambda
+```
+
+In closed form, with $w$ = warmup, $T$ = total, $r$ = min ratio:
+
+$$
+\lambda(s) = \begin{cases} s / w & 0 \le s < w \\[4pt] r + (1-r)\,\dfrac{1+\cos\big(\pi \cdot \frac{s-w}{T-w}\big)}{2} & w \le s < T \\[4pt] r & s \ge T \end{cases}
+$$
+
+The actual LR seen by the optimizer is $\eta(s) = \eta_{\text{base}} \cdot \lambda(s)$, because `LambdaLR` multiplies the optimizer's base LR by `lr_lambda(step)`.
+
+**Continuity is exact at every seam** (a property the tests pin down):
+- At $s = w$: warmup branch gives $w/w = 1$; cosine branch has progress 0, so $r + (1-r)\cdot(1+\cos 0)/2 = r + (1-r) = 1$. ✓
+- At $s = T$: cosine gives $r + (1-r)\cdot(1+\cos\pi)/2 = r + (1-r)\cdot 0 = r$; the $\ge T$ branch also returns $r$. ✓
+- The cosine is symmetric: progress 0 → 1, progress 0.5 → $r + (1-r)/2$ (the midpoint multiplier is the average of peak and floor — with $r=0.05$ that is 0.525), progress 1 → $r$.
+
+For the canonical config the key points are (all in **optimizer-step** space, $s$ = `scheduler.step()` count):
+
+| $s$ | $\lambda(s)$ | actual LR (with MTP base 8.069e-4) |
+|---|---|---|
+| 0 | 0 | 0 |
+| 2000 (end of warmup) | 1.0 | 8.069e-4 |
+| 64,000 (cosine midpoint) | 0.525 | 4.24e-4 |
+| 128,000 (run end = horizon) | 0.05 | 4.03e-5 |
+| ≥ 128,001 | 0.05 (clamped) | 4.03e-5 |
+
+**The horizon is auto-scaled to optimizer steps.** `train_step` advances the scheduler once per *optimizer* step, but `max_steps` is a *micro*-step loop budget; the scheduler is therefore constructed with `total_steps = max_steps // gradient_accumulation_steps` (see [Scheduler construction](#scheduler-construction)). For the canonical run that is 512,000 ÷ 4 = 128,000 — exactly the number of optimizer steps the loop performs — so the cosine arc completes and the LR reaches the 5% floor at the final step. Warmup's 2,000 steps are also in optimizer-step space (1.6% of the run). If you change `max_steps` or `gradient_accumulation_steps`, the horizon follows automatically; only `warmup_steps` needs manual rescaling for a different run length.
+
+### Why warmup, cosine, and a floor?
+
+- **Warmup exists because Adam's early steps are miscalibrated.** Both moment estimates start at zero; for the first handful of steps $\hat v_t$ is tiny, so $\eta / \sqrt{\hat v_t}$ would be huge. Linear warmup from 0 lets the moments fill in before the LR reaches full strength. 2000 steps ≈ 1.6% of the run's 128,000 optimizer steps — the standard order of magnitude for LLMs.
+- **Cosine decay** anneals smoothly: unlike step decay (sudden cliffs) or linear decay (constant slope), cosine's slope is ~0 at both ends and steepest mid-decay, spending more time at both high and low LR — empirically good for the loss landscape of a transformer.
+- **The floor `min_lr_ratio=0.05`** keeps the tail from collapsing to exactly zero: zero LR means no further learning *and* no gradient signal to guide the final phase; 5% of peak (≈ 4e-5) still lets the model settle. It also bounds the effective number of "useful" steps, which interacts with the total-step budget.
+
+### Binding and off-by-one
+
+The scheduler is stepped exactly once per optimizer step, from `train_step`:
+
+```python
+self.optimizer.step()
+self.scheduler.step()
+```
+
+Because `scheduler.step()` fires *after* `optimizer.step()`, optimizer step $t$ executes with LR $\eta \cdot \lambda(t-1)$. In particular the **very first optimizer step runs at $\lambda(0) = 0$** — a literal no-op (weight decay is also scaled by $\eta$, so nothing moves). This is benign because warmup starts at zero anyway, but it means the effective schedule is shifted by one step: optimizer step $k$ uses $\lambda(k-1)$. Logging uses `scheduler.get_last_lr()[0]`, which after $k$ scheduler steps reports $\lambda(k)$ — so the first log line at micro-step 0 reports `lr=0.00e+00`.
+
+Edge cases handled by `max(1, ...)`: `warmup_steps=0` (cosine from step 0, λ(0)=1 — covered by `test_no_warmup`) and `total_steps == warmup_steps` (no cosine room; everything past warmup clamps to $r$). Tests: `tests/test_training.py` `TestWarmupCosineScheduler.test_values_at_key_points`, `test_monotonic_warmup`, `test_cosine_decay`, plus the boundary tests `test_before_warmup_is_zero`, `test_at_warmup_end_is_one`, `test_at_total_steps_is_min_ratio`, `test_past_total_steps_clamps_to_min`.
+
 ---
 
 ## μP Learning Rate Scaling
@@ -310,34 +623,67 @@ new_lr = mup_lr_reference × (mup_lr_reference_params / total_params)^0.5
 
 422M config:
 - Reference: `6.0e-4` at `757,226,496` params (~757M reference model)
-- Total counted **after** MTP wrap (includes MTP head params)
+- Total counted **after** MTP wrap (includes MTP head params): 418.7M
 - Result: **~8.07e-4**
 
 **Why sqrt?** μP theory: optimal LR scales inversely with sqrt(width) for width-dependent init schemes. The reference model was tuned at 757M; this formula transfers that tuning to 422M.
 
 `test_mup_lr_scaling` verifies the computation.
 
----
+### The real numbers
 
-## LR Scheduler
+The code that does this, verbatim from `training/pretrain.py:Pretrainer.__init__`:
 
 ```python
-make_warmup_cosine_lambda(warmup_steps=2000, total_steps=512000, min_lr_ratio=0.05)
+if config.mup_lr:
+    new_lr = config.mup_lr_reference * (config.mup_lr_reference_params / total) ** 0.5
+    self._log(f"µP LR scaling: {config.lr:.2e} → {new_lr:.2e} (ref {config.mup_lr_reference:.2e} @ {config.mup_lr_reference_params:,} params)")
+    config.lr = new_lr
 ```
 
-| Phase | Steps | LR multiplier |
-|---|---|---|
-| Warmup | 0 → 2000 | linear 0 → 1 |
-| Cosine | 2000 → 512000 | cosine 1 → 0.05 |
-| Floor | > 512000 | 0.05 |
+With the locked constants the arithmetic is:
 
-Bound to `LambdaLR` — stepped once per optimizer step (not micro-step).
+$$
+\eta_{\text{base}} = 6.0\times10^{-4} \times \sqrt{\frac{757\,226\,496}{411\,632\,256}}
+= 6.0\times10^{-4} \times \sqrt{1.8396}
+= 6.0\times10^{-4} \times 1.3563
+= 8.138\times10^{-4}
+$$
 
+$$
+\eta_{\text{mtp}} = 6.0\times10^{-4} \times \sqrt{\frac{757\,226\,496}{418\,713\,984}}
+= 6.0\times10^{-4} \times \sqrt{1.8085}
+= 6.0\times10^{-4} \times 1.3448
+= 8.069\times10^{-4}
+$$
+
+So: **8.138e-4 for the bare 411.6M model, 8.069e-4 with the MTP wrapper**. Both are "~8.1e-4" — close to the YAML's nominal 8.0e-4, which is why the config's `lr: 8.0e-4` looks "already right". It is a coincidence of the two reference anchors; the formula, not the YAML value, is what trains.
+
+**Two properties worth internalising:**
+
+1. **The YAML `lr` key is dead config when `mup_lr: true`.** `new_lr` depends only on `mup_lr_reference`, `mup_lr_reference_params`, and `total`. The YAML `lr` appears *only* in the log message's "before" slot. If you tune `lr` in YAML expecting it to matter while `mup_lr: true`, nothing changes — edit `mup_lr_reference` instead, or set `mup_lr: false`.
+2. **The denominator is the deduped post-MTP count.** Enabling MTP *lowers* the LR (8.138 → 8.069e-4) because the wrapper adds 7.08M parameters. The μP argument is that the update per parameter should stay at the reference scale; more parameters at the same LR would overshoot.
+
+### Why sqrt — the intuition
+
+The reference model (757.2M params) was tuned to LR 6.0e-4 — someone swept it, or it inherits a known-good family value. μP asks: *what LR should a differently-sized model of the same family use so that the training dynamics match?* The answer for standard (Pytorch-default) init and Adam-family optimizers is that per-parameter update magnitudes are width-dependent: as the hidden width $d$ grows, the typical activation magnitude and the typical gradient magnitude each scale, and the combination means the safe LR scales like $1/\sqrt{\text{width}}$ in the "maximal update" regime — the regime where every parameter keeps learning at the same rate regardless of scale. Since parameter count $N$ grows roughly quadratically in width for a fixed-depth transformer (the dense layers contribute $O(d^2)$ each), $\sqrt{N_{\text{ref}}/N}$ is the width-ratio proxy:
+
+$$
+\frac{\eta_{\text{new}}}{\eta_{\text{ref}}} \approx \frac{d_{\text{ref}}}{d_{\text{new}}} \approx \sqrt{\frac{N_{\text{ref}}}{N_{\text{new}}}}.
+$$
+
+That is the entire formula: **scale LR by the inverse square root of the parameter-count ratio**. It is a transfer recipe, not a guarantee — the reference anchor (757,226,496 @ 6.0e-4) is external to this repo, and the honest reading is "8.07e-4 is our best transfer estimate; the warmup, clipping, and NaN guard are the safety net if the transfer is imperfect."
+
+### Testing
+
+- `tests/test_training.py::TestPretrainerConstruction::test_mup_lr_scaling` — builds a small `Pretrainer`, enables `mup_lr`, asserts the optimizer LR equals `mup_lr_reference × sqrt(ref/total)`.
+- `test_factor_one_when_total_equals_reference` — when the model *is* the reference size, the factor is 1.0 and the LR is unchanged (the formula's identity check).
+- `test_mup_disabled_no_scaling` — with `mup_lr: false`, the YAML LR passes through untouched.
 ---
 
 ## PretrainDataset
 
-Packed contiguous token windows from pre-tokenised data.
+Packed contiguous token windows from pre-tokenised data. `PretrainDataset` (`training/pretrain.py:PretrainDataset`) is a `torch.utils.data.Dataset` over a flat token stream: it never tokenizes, never pads, and never randomizes within a sample — sample $i$ is simply the contiguous window starting at token $i \times S$.
 
 ### Single-file layout
 
@@ -350,7 +696,7 @@ sample i: tokens = data[i*S : i*S+S], targets = data[i*S+1 : i*S+S+1]
 
 ```
 data/pretrain_chinchilla/
-  shard_000.bin  (50M tokens each)
+  shard_000.bin  (≈50M tokens each — exact sizes vary by preparation)
   shard_001.bin
   ...
 ```
@@ -364,28 +710,227 @@ data/pretrain_chinchilla/
 
 Dataset stores `uint32` (4 bytes/token). `train_step` casts to `int64` before `nn.Embedding` and `cross_entropy`.
 
+### Construction
+
+```python
+if not os.path.exists(data_path):
+    raise FileNotFoundError(f"Pre-training data not found: {data_path}\nRun `python data/prepare_data.py` first.")
+self.layout = "sharded" if os.path.isdir(data_path) else "single"
+if self.layout == "sharded":
+    self.shard_paths = [str(p) for p in sorted(Path(data_path).glob("shard_*.bin"))]
+    if not self.shard_paths:
+        raise FileNotFoundError(f"No `shard_*.bin` files in {data_path}")
+    self.shards = [torch.load(p, weights_only=True, map_location="cpu", mmap=True) for p in self.shard_paths]
+    self.shard_sizes = [s.numel() for s in self.shards]
+    self.shard_offsets = []
+    running = 0
+    for s in self.shard_sizes:
+        self.shard_offsets.append(running)
+        running += s
+    self._total_tokens = sum(self.shard_sizes)
+else:
+    self.data = torch.load(data_path, weights_only=True, map_location="cpu", mmap=True)
+    self._total_tokens = self.data.numel()
+self._n_samples = (self._total_tokens - 1) // self.max_seq_len
+```
+
+`mmap=True` means shards are never fully resident: pages are faulted in on access and the OS evicts them, so a 30+ GB corpus can be streamed from a single process. `weights_only=True` rejects pickle gadgets. Shard files are matched by the literal `shard_*.bin` glob — a directory containing other files is fine, but a shard named `part_0.bin` will be silently ignored. The layout is decided by `os.path.isdir`, so the *same* `data_path` contract serves both forms. The full corpus is never concatenated: only `shard_offsets` (cumulative token counts) is materialised.
+
+### The bisect math — `_locate`
+
+```python
+def _locate(self, global_idx: int) -> Tuple[int, int]:
+    """Map a global token index to (shard_idx, offset_within_shard). ..."""
+    if global_idx < 0 or global_idx >= self._total_tokens:
+        raise IndexError(
+            f"global_idx {global_idx} out of range [0, {self._total_tokens})"
+        )
+    import bisect
+    lo = bisect.bisect_right(self.shard_offsets, global_idx) - 1
+    return lo, global_idx - self.shard_offsets[lo]
+```
+
+`shard_offsets` is the list of starting indices: `[0, |s₀|, |s₀|+|s₁|, …]`. For a global index $g$, the containing shard is the **last** shard whose start $\le g$:
+
+$$
+\text{shard}(g) = \max\{k : \text{offsets}[k] \le g\}, \qquad \text{offset}(g) = g - \text{offsets}[k].
+$$
+
+`bisect.bisect_right(offsets, g) - 1` is exactly that: `bisect_right` returns the insertion point *after* any equal element, so when $g$ equals a shard boundary, the result points one past the boundary shard — minus one lands on the next shard, which is correct because the boundary token belongs to the shard whose start it is. (`bisect_left` would mis-assign boundary indices to the previous shard.) Worked example, shards of 100 / 50 / 75 tokens → offsets `[0, 100, 150]`:
+
+| $g$ | `bisect_right` | shard | offset |
+|---|---|---|---|
+| 0 | 1 | 0 | 0 |
+| 99 | 1 | 0 | 99 |
+| 100 | 2 | 1 | 0 |
+| 149 | 2 | 1 | 49 |
+| 150 | 3 | 2 | 0 |
+| 224 | 3 | 2 | 74 |
+
+Each lookup is $O(\log K)$ in the number of shards (Python's C bisect), so per-sample cost is negligible even for thousands of shards. Out-of-range indices raise `IndexError` — the check `global_idx >= self._total_tokens` matters because `_total_tokens - 1` is the last valid token (the targets need the token *after* the window).
+
+### `__getitem__` walkthrough
+
+```python
+def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    start = idx * self.max_seq_len
+    needed = self.max_seq_len + 1
+    if self.layout == "single":
+        chunk = self.data[start: start + needed].clone()
+    else:
+        pieces = []
+        cursor = start
+        cursor_pos = 0
+        while cursor_pos < needed:
+            shard_idx, offset_in_shard = self._locate(cursor)
+            shard = self.shards[shard_idx]
+            take = min(needed - cursor_pos, self.shard_sizes[shard_idx] - offset_in_shard)
+            pieces.append(shard[offset_in_shard: offset_in_shard + take])
+            cursor += take
+            cursor_pos += take
+        chunk = torch.cat(pieces) if len(pieces) > 1 else pieces[0].clone()
+    return chunk[:-1], chunk[1:]
+```
+
+Step by step:
+
+1. `start = idx * max_seq_len` — windows tile the stream with stride $S$; sample $i$ owns tokens $[iS, iS+S)$.
+2. `needed = S + 1` — one extra token so `chunk[:-1]` (inputs) and `chunk[1:]` (targets) both have length $S$ and the targets are the inputs shifted by one. This is the whole "next-token prediction" contract: sample `i` predicts `x[iS+1 : iS+S+1]` from `x[iS : iS+S]`.
+3. Single-file: one slice + `.clone()`. The clone is not cosmetic — the slice is a *view* into the mmap'd tensor, and views into mmap memory are exactly what you do not want crossing process boundaries or outliving the mapping; the copy makes each sample a standalone tensor.
+4. Sharded: a `while` loop that can cross any number of shard boundaries. Each iteration locates the shard containing the current `cursor`, takes as many tokens as fit in that shard (`min(needed - cursor_pos, shard_size - offset_in_shard)`), appends the slice, and advances. `torch.cat` joins the pieces; a window that happens to fit in one shard still gets `.clone()`d.
+5. Return `chunk[:-1], chunk[1:]` — two views of the same cloned buffer; the DataLoader collates them into the `(B, S)` tokens and targets tensors that `train_step` receives.
+
+**Length and the dropped tail:** `_n_samples = (total_tokens - 1) // S`. The final sample starts at `(_n_samples - 1) * S` and needs `S + 1` tokens, which is guaranteed to exist by the floor; whatever remains after that (fewer than $S$ tokens, since the next window would not fit) is **dropped, not padded** — padding would inject fake tokens into the training distribution. The drop is guarded by `tests/test_training.py::TestPretrainDataset::test_final_sample_truncated`. One consequence: corpus position and sample index are a *bijection* — there is no per-sample random offset, so every token (except the last $S$ of the stream) is seen exactly once per epoch, and the only randomness in data order comes from the DataLoader shuffle of sample indices.
+
+Other guards: `test_single_file`, `test_single_file_shift` (targets are inputs shifted by one), `test_sharded_dataset`, `test_sharded_cross_boundary` (a window spanning ≥ 2 shards), `test_missing_file_raises`, `test_locate_edge_case`, `test_locate_out_of_range_raises`.
+
+---
+
+## DataLoader Design
+
+```python
+loader = DataLoader(
+    dataset, batch_size=8, shuffle=True, generator=g,
+    num_workers=8, pin_memory=True,
+    persistent_workers=True, prefetch_factor=8, drop_last=True,
+)
+```
+
+(This is `training/pretrain.py:Pretrainer.train` with the config fields substituted; `batch_size` is `config.batch_size` — the micro-batch.)
+
+| Flag | Rationale |
+|---|---|
+| `shuffle=True` + seeded `Generator` | Different order each epoch; reproducible given same seed |
+| `num_workers=8` | Parallel `__getitem__` while GPU trains |
+| `pin_memory=True` | Faster H2D copy via page-locked host memory |
+| `persistent_workers=True` | Avoid worker respawn overhead each epoch |
+| `prefetch_factor=8` | Pipeline 8 batches per worker ahead of GPU |
+| `drop_last=True` | Avoid partial batch shape mismatch at epoch end |
+
+### The seeded shuffle
+
+```python
+g = torch.Generator().manual_seed(self.config.seed)
+```
+
+The generator is created once, before the epoch loop, with the *same* `config.seed` used for weight init. DataLoader's shuffle sampler draws permutation indices from `g`, so: same seed → same first-epoch order; each subsequent epoch draws a fresh permutation (the sampler does not reset `g`, so epoch 2's order differs from epoch 1's — that is the point, no more identical sequential order every epoch).
+
+### Worker semantics
+
+With `num_workers=8`, `__getitem__` runs in 8 child processes; each worker holds its own copy of the `Dataset` object (fork semantics), so the mmap'd shards are shared at the OS page level — 8 workers do not multiply corpus memory. `persistent_workers=True` keeps those processes alive across epochs instead of respawning, which matters here because each worker re-warms its page cache. `prefetch_factor=8` fills 8 batches per worker ahead of the GPU's demand, which is what keeps a 15-hour run from ever idling on data. `pin_memory=True` makes the H2D copies in `train()` (`tokens.to(self.device, non_blocking=True)`) overlap with compute.
+
+`drop_last=True` matters for a subtle reason beyond shape hygiene: `train_step` divides by `gradient_accumulation_steps` and the boundary test requires *exactly* `G` micro-batches per optimizer window. A partial final batch would both break the `(B,S)` shape contract and shift the accumulation cadence.
+
+### Resume caveat
+
+Sampler RNG is **not** checkpointed — resume changes data order (benign at 8.4B scale). More precisely: after a restart, the *same* `config.seed` re-creates `g`, so the new run replays the same epoch-1 order from the beginning, while `global_step` resumes mid-run. The result is that a resumed run sees a re-shuffled corpus from epoch 1 onward — no sample is skipped, the order is simply different from what a never-interrupted run would have seen.
+
 ---
 
 ## train_step
 
+`train_step` (`training/pretrain.py:Pretrainer.train_step`) is the entire training math, in one function:
+
 ```python
-def train_step(tokens, targets, micro_step) -> metrics | None
+def train_step(self, tokens: torch.Tensor, targets: torch.Tensor, micro_step: int) -> Optional[Dict[str, Optional[float]]]:
+    is_opt_step = (micro_step + 1) % self.config.gradient_accumulation_steps == 0
+    # Cast uint32 → int64 at the boundary. PretrainDataset stores tokens as
+    # uint32 for memory efficiency (4 bytes vs 8), but `nn.Embedding` and
+    # `F.cross_entropy` both require Long indices. Doing the cast here keeps
+    # the dataset's storage compact and the training path dtype-correct.
+    if tokens.dtype != torch.long:
+        tokens = tokens.to(torch.long)
+    if targets.dtype != torch.long:
+        targets = targets.to(torch.long)
+    with self._amp_context():
+        if self.mtp_wrapper is not None:
+            main_logits, mtp_pairs = self.model(tokens)
+            total_loss, main_loss, mtp_loss = self.mtp_wrapper.compute_loss(main_logits, targets, mtp_pairs)
+            # Defer host round-trip to the logger (avoids per-step GPU sync).
+            _ce_loss_val = main_loss.detach()
+            _mtp_loss_val = mtp_loss.detach() if mtp_pairs else None
+            loss = total_loss / self.config.gradient_accumulation_steps
+        else:
+            logits = self.model(tokens, start_pos=0, use_cache=False)
+            main_loss = torch.nn.functional.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=-100)
+            _ce_loss_val = main_loss.detach()
+            _mtp_loss_val = None
+            loss = main_loss / self.config.gradient_accumulation_steps
+        balance_loss = self._moe_balance_metric()
+
+    if self.config.nan_guard and (torch.isnan(loss).any().item() or torch.isinf(loss).any().item()):
+        self._log(f"[nan-guard] NaN/Inf at micro_step={micro_step}, opt_steps={self._opt_steps}. Skipping backward.")
+        self.optimizer.zero_grad(set_to_none=True)
+        return None
+
+    loss.backward()
+    if is_opt_step:
+        nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
+        self.optimizer.step()
+        self.scheduler.step()
+        self.optimizer.zero_grad(set_to_none=True)
+        self._opt_steps += 1
+        if self._opt_steps % self.config.bias_update_every == 0:
+            self._update_moe_bias()
+
+    return {"loss": _ce_loss_val, "mtp_loss": _mtp_loss_val, "balance_loss": balance_loss}
 ```
 
-1. Cast tokens/targets to long
-2. BF16 autocast forward:
-   - With MTP: `model(tokens)` → `compute_loss`
-   - Without: `model(tokens, use_cache=False)` → CE
-3. Compute `balance_loss` (logging only, on device)
-4. NaN check → skip backward if bad
-5. `loss / grad_accum` → `backward()`
-6. On optimizer step boundary:
-   - `clip_grad_norm_(max=1.0)`
-   - `optimizer.step()`, `scheduler.step()`, `zero_grad`
-   - MoE bias update if `opt_steps % bias_update_every == 0`
-7. Return `{loss, mtp_loss, balance_loss}`
+### The optimizer-step boundary
 
-**Micro-step vs optimizer-step:** `global_step` in `train()` counts micro-steps. Optimizer steps tracked in `_opt_steps`.
+```python
+is_opt_step = (micro_step + 1) % self.config.gradient_accumulation_steps == 0
+```
+
+With $G = 4$, `is_opt_step` is true at `micro_step ∈ {3, 7, 11, …}` — the *last* micro-step of each window. Everything below the boundary line (clip, step, scheduler, zero, bias) runs only then. This is the single source of truth for the micro/opt distinction: `global_step` (the loop counter, passed in as `micro_step`) counts windows' micro-steps; `_opt_steps` counts how many times the boundary was crossed. For a worked table see [Worked Example — Micro-step vs Optim Step](#worked-example--micro-step-vs-optim-step).
+
+### The uint32 → int64 cast
+
+The dataset stores `uint32` (4 bytes/token) so a 33 GB corpus of token ids costs 33 GB, not 66. `nn.Embedding` and `F.cross_entropy` both require `torch.long` (int64) indices — the cast happens here, once, at the boundary between the data path and the compute path, after the batch has moved to the GPU in `train()`. The comment in the source is explicit about why the cast lives here and not in the dataset: keeping storage compact *and* the training path dtype-correct.
+
+### The autocast forward
+
+`self._amp_context()` is `autocast(self.device.type, dtype=torch.bfloat16)`. Inside it:
+
+- **MTP branch:** `self.model(tokens)` runs the whole `MultiTokenPrediction.forward` — trunk *and* heads — under one autocast scope; `compute_loss` returns `(total_loss, main_loss, mtp_loss)` and the *combined* loss is divided by $G$.
+- **Standard branch:** `self.model(tokens, start_pos=0, use_cache=False)` — `use_cache=False` is load-bearing: training never writes a KV cache (invariant #1; see also [Memory Timeline](#memory-timeline--one-train_step)). The cross-entropy flattens logits to `(B·S, V)` against targets `(B·S,)` with `ignore_index=-100` — `-100` is the PyTorch convention for "mask this position out of the loss"; the current dataset never emits it (no padding), so it is a forward-compatible contract for padded batches rather than an active mask.
+- **What runs in what precision:** under autocast(bf16), the matmuls (Linear, Embedding, SDPA) execute in BF16 with FP32 accumulation inside the kernels; the normalization layers and the cross-entropy loss run in FP32 per PyTorch's autocast policy. The model's stored parameters stay FP32 — autocast casts transiently, it never mutates them (see [Why FP32 master weights](#why-fp32-master-weights)).
+- **`balance_loss`** is computed *inside* the autocast scope but is log-only: it is a sum over MoE layers of `get_load_balance_loss()`, never backpropagated, and `.item()` is deferred to the logger path to avoid a per-micro-step GPU sync.
+
+### NaN skip
+
+When `nan_guard` is on and the divided loss is NaN or Inf, `train_step` logs, zeroes *all* gradients (discarding the partial window — see [Gradient Accumulation](#gradient-accumulation--mathematics)), and returns `None`. The caller (`train()`) treats `None` as "this micro-step contributed nothing" and feeds the streak counter. Note the check happens **before** `loss.backward()`, so a poisoned batch never contaminates parameters — that is what makes rollback (see [NaN Guard](#nan-guard)) a recovery, not a repair.
+
+### Backward, clip, step
+
+`loss.backward()` accumulates into `.grad` (FP32) across the window. On the boundary:
+
+- `clip_grad_norm_(self.model.parameters(), max_grad_norm)` computes the global norm $||g||_2 = \sqrt{\sum_i ||g_i||_2^2}$ over all parameter gradients and rescales them by $\min(1, \text{max\_norm}/||g||_2)$ — so clipping only ever *shrinks* gradients, never grows them, and a single exploding expert gradient cannot drag the whole step off (MoE routing spikes are the classic source; see [Hyperparameter Sensitivity](#hyperparameter-sensitivity-empirical)).
+- `optimizer.step()` applies AdamW (FP32), `scheduler.step()` advances the warmup-cosine curve, `zero_grad(set_to_none=True)` frees the gradient buffers (set_to_none is faster than zeroing and releases memory), `_opt_steps += 1`, and the MoE bias controller fires on its cadence.
+
+### The return value and deferred sync
+
+The dict's `"loss"` key is **`main_loss`** (the trunk cross-entropy), *not* `total_loss` — the MTP penalty is reported separately under `"mtp_loss"`. All three values are GPU tensors (`detach()`ed); the only `.item()` calls happen in `train()`'s logging branch (`global_step % log_every == 0`), so a micro-step that is not logged performs **zero** host-device synchronizations for metrics. The balance loss `.item()` is likewise deferred to the same branch. This is a deliberate, measured choice: forced syncs stall the pipeline 3–4 times per micro-step if done naively.
 
 ---
 
@@ -404,6 +949,41 @@ Loss: `total = main_loss + 0.3 * mean(mtp_depth_losses)`
 
 Only `total / grad_accum` is backpropped. Main and MTP share trunk gradients through the shared embed/head.
 
+### Forward and length alignment
+
+The wrapper's forward (`models/mtp.py:MultiTokenPrediction.forward`) runs the trunk via `forward_with_hidden`, which returns both the logits **and** the pre-norm trunk hidden state `h` (the raw residual-stream output — MTP blocks apply their own norms, so the *pre*-norm `h` is what they consume). Then, per depth $d$ (0-indexed):
+
+$$
+\text{usable}_d = S - d - 2
+$$
+
+For depth 0 with $S = 2048$: usable = 2046. The three slices are
+
+- `h_in = h[:, :usable]` — the last 2046 trunk hidden states,
+- `emb_in = embed(tokens[:, 1 : usable+1])` — the *next* token's embedding (the token the MTP head should condition on, i.e. $x_{t+1}$),
+- `tgt = tokens[:, 2 : usable+2]` — the target two positions ahead ($x_{t+2}$).
+
+The MTP block fuses `[norm_h(h_t), norm_e(emb_{t+1})]` through a projection, runs causal self-attention (its own `nn.MultiheadAttention`, not MLA, with an internal cached triangular mask via `MTPBlock._get_causal_mask`) and a SwiGLU, and the head predicts $x_{t+2}$. Length alignment is exact: each depth trims two positions (one for the conditioning token, one for the target shift), so `usable` shrinks by one per additional depth — `usable = seq_len - d - 2` — and the code `break`s out if usable ≤ 0. The tail trim means the MTP loss supervises $8 \times 2046 = 16\,368$ positions per micro-step (vs 16,384 for the main loss), or 65,472 per optimizer step.
+
+### compute_loss
+
+```python
+def compute_loss(self, main_logits, targets, mtp_pairs=None):
+    """Returns (total_loss, main_loss, mtp_loss). MTP loss is mean across depths."""
+    main_loss = F.cross_entropy(main_logits.reshape(-1, main_logits.size(-1)), targets.reshape(-1), ignore_index=-100)
+    if not mtp_pairs:
+        return main_loss, main_loss, main_loss.new_zeros(())
+    depth_losses: List[torch.Tensor] = []
+    for logits, tgt in mtp_pairs:
+        if tgt.numel() == 0:
+            continue
+        depth_losses.append(F.cross_entropy(logits.reshape(-1, logits.size(-1)), tgt.reshape(-1), ignore_index=-100))
+    mtp_loss = torch.stack(depth_losses).mean() if depth_losses else main_loss.new_zeros(())
+    return main_loss + self.mtp_weight * mtp_loss, main_loss, mtp_loss
+```
+
+(`models/mtp.py:MultiTokenPrediction.compute_loss`.) Each depth's CE is computed on its aligned slice; `mtp_loss` is the **mean across depths** (so with $D=1$ it is just that depth's CE); the total is `main + λ·mtp` with λ = `mtp_weight` = 0.3. The trunk receives gradient from both terms: the main CE through the LM head, and the MTP term through the fusion block reading `h` — which is why MTP is a *training* regularizer (it sharpens trunk representations for next-token prediction one step ahead) and why its weight must be small enough not to overpower the main objective. The shared `embed` and `head` accumulate gradients from both paths (they are the same tensors), which is exactly why the optimizer dedup by `id(p)` matters — without it, the shared tensors would appear twice in the optimizer and get double-updated. Full MTP theory in [[Docs/05_Multi_Token_Prediction|MTP]].
+
 ---
 
 ## MoE Bias Updates
@@ -417,6 +997,41 @@ if self._opt_steps % self.config.bias_update_every == 0:
 Uses routing counts from the **last forward's** `_last_indices`. With `bias_update_every=1`, every optimizer step updates bias based on that step's routing distribution.
 
 See [[Docs/04_DeepSeekMoE|MoE]] for the full bias mechanism.
+
+### The control loop
+
+This is the aux-loss-free load balancer from DeepSeek-V3 §2.3.3, implemented as a **discrete-time controller** rather than a loss term. The plant is the router; the measured output is the per-expert token count over the last forward; the actuator is the gate's bias vector; the controller is `AuxLossFreeGate.update_bias` (`models/moe.py:AuxLossFreeGate.update_bias`):
+
+```python
+@torch.no_grad()
+def update_bias(self, counts: torch.Tensor, speed: float = 0.001) -> None:
+    counts = counts.float()
+    avg = counts.mean()
+    self.bias[counts > avg * (1.0 + self.bias_upper)] -= speed
+    self.bias[counts < avg * (1.0 - self.bias_lower)] += speed
+```
+
+With the canonical `bias_upper = bias_lower = 0.10`:
+
+- an expert routed more than **10% above** the average count gets its bias **decreased** by `speed` (its sigmoid scores drop, so it is selected less);
+- an expert routed more than **10% below** average gets its bias **increased**;
+- experts within the ±10% deadband are untouched (no dithering).
+
+Because `bias` is added to the gate *scores before* top-k selection but the routed **weights** come from the bias-free sigmoid scores, the bias steers *which* experts run without corrupting the mixing weights — and because the whole update is `@torch.no_grad()` on a **buffer** (not a parameter), no gradient ever flows through it and AdamW never sees it (it is also excluded from weight decay by construction — it is not even in a param group).
+
+### Timing
+
+`Pretrainer._update_moe_bias` (`training/pretrain.py:Pretrainer._update_moe_bias`) iterates `self.raw_model.moe_layers()` (`models/transformer.py:Transformer.moe_layers`, a generator yielding the `DeepSeekMoE` modules of layers 2–17) and calls `DeepSeekMoE.update_gate_bias` (`models/moe.py:DeepSeekMoE.update_gate_bias`), which bin-counts `self._last_indices` — the routing decisions of the **last forward**, recorded in `DeepSeekMoE.forward` as `self._last_weights = weights.detach(); self._last_indices = indices.detach()`.
+
+The cadence is: after the optimizer step, when `_opt_steps % bias_update_every == 0`. With the canonical `bias_update_every: 1` the bias therefore reacts to the routing distribution of the last micro-step of each accumulation window — a one-window delay, which is fine for a controller whose whole job is slow correction (speed 0.001, i.e. 0.1% of the bias scale per update; the bias lives in a sane range because it is nudged, not optimized). Control-theory reading: proportional control on imbalance with a deadband, deliberately *slower* than gradient descent so it does not fight the router's learned specialization. `bias_update_every: 10` (the dataclass default) slows the loop 10× for smoke runs.
+
+The **balance metric** (`models/moe.py:DeepSeekMoE.get_load_balance_loss`) is the observable of the same system: with $f_e$ = empirical expert fraction (from counts) and $P_e$ = mean routing probability per expert,
+
+$$
+\mathcal{L}_{\text{bal}} = E \sum_{e=1}^{E} f_e P_e
+$$
+
+It is logged (`balance_loss` in train_step's return) as the monitoring signal for routing health — a value creeping up means the gate is concentrating, and the bias controller should be pushing back.
 
 ---
 
@@ -435,6 +1050,47 @@ Rollback restores: model weights, optimizer state, scheduler state, `opt_steps` 
 
 If no checkpoint exists and NaN persists → `RuntimeError`.
 
+### The skip path
+
+The guard has two layers. Layer one is inside `train_step` (see [train_step](#train_step)): on a non-finite *divided* loss it logs, zeroes gradients, returns `None`. Layer two is the streak logic in `train()` — the state machine:
+
+```python
+nan_guard_streak = 0
+while global_step < self.config.max_steps:
+    for tokens, targets in tqdm(loader):
+        ...
+        metrics = self.train_step(tokens, targets, global_step)
+        if metrics is None:
+            nan_guard_streak += 1
+            if nan_guard_streak >= self.config.nan_guard_max_consecutive:
+                latest = self._find_latest_checkpoint()
+                if latest is not None:
+                    self._log(f"[nan-guard] {nan_guard_streak} consecutive NaN/Inf — restoring checkpoint step {latest}.")
+                    global_step = self.load_checkpoint(latest)
+                else:
+                    self._log("[nan-guard] No checkpoint to restore from. Aborting.")
+                    raise RuntimeError("NaN/Inf with no checkpoint to restore from")
+                nan_guard_streak = 0
+            continue
+        nan_guard_streak = 0
+        ...
+```
+
+(`training/pretrain.py:Pretrainer.train`.) States: **armed** (streak < 5 — skip and keep going), **triggered** (streak ≥ 5 — roll back), **reset** (streak = 0 — either after a successful step or after a rollback), and **abort** (no checkpoint exists — `RuntimeError`). Every finite-loss micro-step resets the streak to 0, so the threshold means *consecutive* failures.
+
+**Why 5 consecutive?** Single bad micro-batches happen from MoE routing spikes; five in a row signals true divergence (LR too high, corrupt shard, dtype bug).
+
+**422M default:** `nan_guard: true`, `nan_guard_max_consecutive: 5` in YAML.
+
+### Rollback semantics
+
+`load_checkpoint(latest)` restores model weights, AdamW state, scheduler state, and `_opt_steps` (see [Checkpointing](#checkpointing)), then returns the checkpoint's step, which becomes the new `global_step`. Two properties are worth understanding precisely:
+
+1. **The step counter rewinds; the data stream does not.** `load_checkpoint` does not recreate the DataLoader, so iteration continues from wherever the loader was — the batches that caused the divergence are *not* replayed (the loader is ahead of the counter by the rollback distance). The run therefore consumes up to `(diverged_steps − checkpoint_step)` extra micro-batches over its nominal budget before `global_step` catches back up to `max_steps`. At 8.4B-token scale with rollbacks measured in a handful of steps this is a rounding error on corpus exposure.
+2. **Rollback targets the latest *complete* checkpoint**, not necessarily the most recent save. `CheckpointManager.latest_step` walks saved steps newest-first and returns the first whose three files all exist (see [Checkpointing](#checkpointing)) — a torn checkpoint (crash mid-save) is skipped, so the guard can never roll back onto a half-written state.
+
+Tests: `test_train_step_returns_none_on_nan` (skip path returns `None` without stepping) and `test_consecutive_nan_triggers_rollback` (streak → load latest checkpoint, reset streak).
+
 ---
 
 ## Checkpointing
@@ -450,7 +1106,154 @@ save_checkpoint(step):
 
 Auto-resume on `train()` start via `latest_step()`.
 
-See [[Docs/08_Training_Pipeline|configs]] for atomic write details.
+### save_checkpoint
+
+```python
+def save_checkpoint(self, step: int, tag: str = "") -> None:
+    model_to_save = self.raw_model
+    state = model_to_save.state_dict()
+    # Weight tying: head.weight IS embed.weight (same tensor). Dropping the
+    # duplicate saves ~vocab×dim×4B per checkpoint; load_state_dict(strict=False)
+    # leaves head.weight missing, but the shared tensor is restored via embed.
+    if getattr(model_to_save, "weight_tying", False):
+        state = {k: v for k, v in state.items() if k != "head.weight"}
+    if self.mtp_wrapper is not None:
+        mtp_mod = self.mtp_wrapper
+        orig = getattr(mtp_mod, "_orig_mod", mtp_mod)
+        mtp_state = {f"mtp.{k}": v for k, v in orig.state_dict().items() if k.startswith("mtp_modules.")}
+        state.update(mtp_state)
+    extra_meta = {"scheduler": self.scheduler.state_dict(), "opt_steps": self._opt_steps,
+                  "tag": tag or f"step_{step}", "config": asdict(self.config), "has_mtp": self.mtp_wrapper is not None}
+    self.ckpt_manager.save(model_to_save, self.optimizer, step, extra_meta=extra_meta, state_dict=state)
+```
+
+(`training/pretrain.py:Pretrainer.save_checkpoint`.) Three details carry the weight:
+
+- **`head.weight` is dropped** when tying is on — it is the same tensor as `embed.weight`, so keeping it would double the checkpoint's embedding bytes (~307 MB at 100,018 × 768 × 4 B) and, worse, store two copies that could *drift apart* if someone ever loaded them independently. `load_state_dict(strict=False)` tolerates the missing key; the shared storage is restored through `embed.weight`. The same dedup exists a second time inside `CheckpointManager._atomic_save_safetensors` (`utils/checkpoint.py:CheckpointManager._atomic_save_safetensors`), which skips any tensor whose `data_ptr()` was already seen — belt and suspenders for any future sharing.
+- **MTP weights ride along with a `mtp.` prefix**, and only `mtp_modules.*` keys — the shared embed/head are already in the trunk state, and prefixing avoids any key collision with the trunk's own names. The `_orig_mod` unwrap handles the compiled wrapper (whose `state_dict` would otherwise carry `_orig_mod.` prefixes).
+- **The meta payload is the full resume contract**: scheduler state (so the LR curve continues where it left off), `_opt_steps` (so the MoE bias cadence and any bias_update_every logic resume), the `config` snapshot (so a resumed run can detect that its YAML changed), and `has_mtp` (so the loader knows to look for `mtp.*` keys).
+
+The file-by-file layout and atomic write mechanics are in [Checkpoint Format — File-by-File](#checkpoint-format--file-by-file).
+
+### The load path
+
+```python
+def load_checkpoint(self, step: int) -> int:
+    from safetensors.torch import load_file
+    meta = self.ckpt_manager.load(self.raw_model, step, device=str(self.device), optimizer=self.optimizer, strict=False)
+    if self.mtp_wrapper is not None and meta.get("has_mtp", False):
+        weight_path = self.ckpt_manager.save_dir / f"model_step_{step}.safetensors"
+        if weight_path.exists():
+            state = load_file(str(weight_path), device=str(self.device))
+            mtp_state = {k.removeprefix("mtp."): v for k, v in state.items() if k.startswith("mtp.")}
+            if mtp_state:
+                mtp_orig = getattr(self.mtp_wrapper, "_orig_mod", self.mtp_wrapper)
+                mtp_orig.load_state_dict(mtp_state, strict=False)
+                self._log(f"MTP weights restored ({len(mtp_state)} keys)")
+    if "scheduler" in meta:
+        self.scheduler.load_state_dict(meta["scheduler"])
+    if "opt_steps" in meta:
+        self._opt_steps = meta["opt_steps"]
+    resumed_step = meta.get("step", step)
+    self._log(f"Resumed from step {resumed_step}")
+    return resumed_step
+```
+
+(`training/pretrain.py:Pretrainer.load_checkpoint`.) The trunk is restored by `CheckpointManager.load` (`utils/checkpoint.py:CheckpointManager.load`) with `strict=False` — required, since `head.weight` is absent — and the optimizer state is pulled from `optim_step_N.pt` *if it exists* (its absence only warns: the optimizer restarts from scratch, which is a silent-but-survivable degradation worth knowing about if you ever hand-copy checkpoint files). MTP weights are then restored **from the same safetensors file**, stripping the `mtp.` prefix back off — the loader never reads a separate file. Finally scheduler and `_opt_steps` come from meta, and the *resumed* step is returned to the caller so the loop counter can jump.
+
+### Auto-resume and latest_step
+
+```python
+latest = self._find_latest_checkpoint()
+if latest is not None:
+    try:
+        global_step = self.load_checkpoint(latest)
+    except Exception as exc:
+        self._log(f"[warn] Could not load checkpoint: {exc}")
+```
+
+`train()` auto-resumes from the newest complete checkpoint at startup; a failed load only warns and starts from 0 (so a corrupt checkpoint does not brick the run — but it *does* silently abandon the saved state, which is exactly when you want the checkpoint-ops playbook, [[Guides/G5_Checkpoint_Ops|G5]]). `_find_latest_checkpoint` delegates to `CheckpointManager.latest_step` (`utils/checkpoint.py:CheckpointManager.latest_step`), which sorts the steps parsed from `model_step_*.safetensors` filenames descending and returns the first that `_checkpoint_complete` — all three of `model_step_N.safetensors`, `optim_step_N.pt`, `meta_step_N.json` present. Completeness, not recency, is the criterion: a crash between the three atomic writes leaves a partial step that is invisible to resume.
+
+**Restored:** model weights, AdamW state, scheduler, `_opt_steps`, MTP weights (when `has_mtp`). **Not restored:** DataLoader shuffle order (see [DataLoader Design](#dataloader-design)) and the per-epoch generator state. Also note the manual path: `python training/pretrain.py --resume 40000` calls `trainer.load_checkpoint(int(args.resume))` explicitly before `train()`, which then finds the same checkpoint and resumes identically — the flag exists for when you *don't* want the latest step.
+---
+
+## torch.compile — What It Does Here
+
+When `compile_model=True`:
+
+```python
+training_model = torch.compile(training_model, mode="max-autotune", fullgraph=False)
+```
+
+**TorchInductor** traces the forward graph, fuses elementwise ops, and autotunes CUDA kernels. `max-autotune` spends more compile time benchmarking kernel variants.
+
+**What actually changes:** the eager Python-level execution of the trunk is replaced by a lowered, fused Triton-kernel program. Elementwise chains (RMSNorm, SiLU, residual adds) collapse into single kernels; matmul scheduling is tuned per shape; the per-layer Python loop overhead disappears. The *math* is identical — that is the contract `torch.compile` promises, and the tests that compare compiled vs eager agree on outputs.
+
+**Trade-offs:**
+| Benefit | Cost |
+|---|---|
+| 10-20% faster step time | 5-15 min compile on first run |
+| Fused RMSNorm+matmul patterns | Opaque stack traces on error |
+| Less Python overhead in MoE loop | Higher peak VRAM during compile |
+
+**`fullgraph=False`:** Allows graph breaks (Python MoE dispatch, dynamic shapes) — required for this codebase. Each graph break is a boundary where compiled regions hand off to eager execution; the MoE `stacked` dispatch loop (per-expert Python forward) is the main break. `fullgraph=True` would refuse to compile this model at all.
+
+**Env:** `TORCH_COMPILE_MODE=max-autotune` set in `launch_a100.sh` — the code reads `os.environ.get("TORCH_COMPILE_MODE", "max-autotune")`, so the env var overrides the default at runtime without touching YAML.
+
+**1650 config:** `compile: false` — 4GB VRAM cannot absorb compile workspace.
+
+**Saved weights are always read from `raw_model`/`mtp_wrapper._orig_mod`** — the compiled wrapper's `state_dict` may carry `_orig_mod.` prefixes and is never checkpointed. See [compile_model Interaction](#compile_model-interaction).
+
+---
+
+## Memory Timeline — One train_step
+
+```
+1. DataLoader delivers (tokens, targets) uint32 on CPU
+2. .to(device, non_blocking=True) → GPU int64 cast in train_step
+3. autocast forward:
+     embed → 18 layers (checkpoint recompute in backward) → logits
+     MTP: auxiliary heads if enabled
+4. loss.backward() — activation recompute from checkpoints
+5. clip_grad_norm_(max=1.0)
+6. optimizer.step() — FP32 master update
+7. scheduler.step()
+8. zero_grad(set_to_none=True)
+9. MoE bias update (reads _last_indices from last forward)
+```
+
+Peak memory occurs during backward recompute — typically layer 9-12 middle of stack. `estimate_model_memory_gb` uses PaLM factor 24 for this.
+
+### What the estimator counts
+
+`utils/memory.py:estimate_model_memory_gb` sums five buckets ([derived] from the module docstring and PaLM Appendix A; no GPU run has executed, so treat every figure as an estimate):
+
+| Bucket | Formula | 422M value |
+|---|---|---|
+| Weights (working set) | 2 bytes × N | 411.6M × 2 B ≈ 0.8 GB |
+| Optimizer (AdamW FP32) | 12 bytes × N (fp32 master + m + v) | 411.6M × 12 B ≈ 4.9 GB |
+| Activations (grad ckpt) | 24 × B·S·D·L × 2 B | 24 × 8·2048·768·18 × 2 B ≈ 10.1 GB |
+| Activations (no ckpt) | 36 × B·S·D·L × 2 B | ≈ 15.2 GB |
+| Logits (transient, not in estimator) | B·S·V × 2 B | 8·2048·100018 × 2 B ≈ 3.1 GB |
+| Static PyTorch/CUDA overhead | `_detect_overhead_gb()` | 13.7 GB (A100 80GB cap) or 17% of device |
+
+The 24/36 constants mirror the PaLM formula (PaLM Appendix A): activations dominate the training footprint, which is exactly why `grad_checkpoint: true` is on by default — it trades ~1/3 of activation memory for recompute compute. Note the estimator does **not** include the transient logits tensor (B·S·V is 3+ GB at 100,018 vocab — the single largest activation, which is why `head` is tied and why the loss is computed *before* any logits-shaped buffer is retained: `logits.reshape(-1, V)` reuses the same storage). Summing with overhead lands in the ~30–35 GB range for training — comfortably inside 80 GB, which is what makes the 1650's 4 GB the real constraint and the "~35 GB" planning figure in Part B. Training never allocates a KV cache (`use_cache=False`), so the KV-cache bucket in the estimator exists for inference only.
+
+---
+
+## Chinchilla Epoch Analysis
+
+Unique corpus: ~8.4B tokens. Samples per epoch:
+
+$$
+N_{\text{samples}} = \frac{N_{\text{tokens}} - 1}{\text{max_seq_len}} \approx \frac{8.4 \times 10^9}{2048} \approx 4.1 \times 10^6
+$$
+
+(More precisely: 8,399,999,999 usable tokens → 4,101,562 samples.)
+
+**Micro-batches per epoch:** 4,101,562 / 8 = 512,695. **Optimizer steps per epoch:** 512,695 / 4 = 128,174.
+
+**The canonical run is one epoch, not four.** `max_steps = 512,000` is a *micro-step* budget, so the run consumes 512,000 micro-batches → 128,000 optimizer steps → 8.39B tokens. That is ≈ 0.999 epochs: it ends 695 micro-batches (0.14%) short of completing the first pass, having exposed the corpus essentially once. That is exactly the Chinchilla-optimal budget — 20 × 411.6M ≈ 8.2B unique tokens, and the corpus is 8.4B. (Historical note: earlier versions of this doc claimed "~4 epochs / 33.5B exposures" by treating `total_steps` as optimizer steps; the loop counts micro-steps — see [TrainingConfig Field by Field](#trainingconfig-field-by-field) — so the correct figure is one pass, not four.)
 
 ---
 
@@ -469,18 +1272,21 @@ python training/pretrain.py \
 | Flag | Effect |
 |---|---|
 | `--config` | YAML path (default: 422M) |
-| `--data-path` | Override `training.data_path` |
-| `--checkpoint-dir` | Override save directory |
+| `--data-path` | Override `data.train_data_path` |
+| `--checkpoint-dir` | Override `training.save_dir` |
 | `--resume N` | Load step N before training |
 | `--no-compile` | Disable torch.compile |
 | `--no-checkpoint` | Disable gradient checkpointing |
 
----
+### main() wiring
 
+`training/pretrain.py:main` parses the YAML, then builds `TrainingConfig` with precedence **CLI > YAML > dataclass default**. The pattern is `args.data_path or d.get("train_data_path", "data/pretrain_data.bin")` — a CLI flag wins when given; otherwise the YAML section is consulted; otherwise the dataclass default stands. `--no-compile` / `--no-checkpoint` combine with YAML via `and not`: the feature is on only if YAML says on *and* the CLI did not switch it off. `--resume N` runs *after* construction — `trainer.load_checkpoint(int(args.resume))` — so it overrides the auto-resume that `train()` would otherwise perform at startup. Model architecture keys have no CLI override — edit YAML or use test fixtures.
+
+---
 
 ## Pretrainer.__init__ — Line-by-Line Walkthrough
 
-`Pretrainer.__init__` (`training/pretrain.py:130-198`) is the single place where hardware, model, optimiser, and checkpoint subsystems are wired. Reading it top-to-bottom is the fastest way to understand the training stack.
+`Pretrainer.__init__` (`training/pretrain.py:Pretrainer.__init__`) is the single place where hardware, model, optimiser, and checkpoint subsystems are wired. Reading it top-to-bottom is the fastest way to understand the training stack. (The expanded version of each row lives in [Pretrainer Lifecycle](#pretrainer-lifecycle).)
 
 | Line block | What happens | Why it matters |
 |---|---|---|
@@ -542,7 +1348,7 @@ Each save at step `N` produces three files under `checkpoints/pretrain/`:
 | `optim_step_N.pt` | PyTorch pickle | AdamW moments (FP32 master) |
 | `meta_step_N.json` | JSON | `step`, `opt_steps`, `scheduler` state, `config` snapshot, `has_mtp`, `tag` |
 
-**Atomic write pattern:** write temp file in same directory → `os.replace` — crash mid-write never leaves a torn checkpoint.
+**Atomic write pattern:** write temp file in same directory → `os.replace` — crash mid-write never leaves a torn checkpoint. Concretely, `CheckpointManager._atomic_write` (`utils/checkpoint.py:CheckpointManager._atomic_write`) is a context manager that `tempfile.mkstemp`s in the save dir, yields the temp path, and `os.replace`s it onto the final name on success (unlinking the temp on failure). `os.replace` is atomic on POSIX — a reader either sees the old file or the new one, never a partial write. The safetensors writer additionally dedups shared tensors by `data_ptr()` and calls `.contiguous()` before `save_file`.
 
 **Load path (`load_checkpoint`):**
 1. `CheckpointManager.load(raw_model, step)` restores trunk weights (`strict=False` tolerates missing tied head)
@@ -609,7 +1415,7 @@ Each save at step `N` produces three files under `checkpoints/pretrain/`:
 
 **Saved weights:** always extracted from `raw_model` / `mtp_wrapper._orig_mod` — compiled wrapper state is never checkpointed.
 
-
+---
 
 ## Appendix A — Train loop state diagram
 
@@ -640,13 +1446,19 @@ FINAL checkpoint (tag="final")
 
 ## Appendix B — FAQ
 
-**Q: Why 512K steps with batch 32?** Provides multiple epochs over 8.4B tokens with shuffling. Exact epoch count depends on shard size.
+**Q: Why 512K steps?** `total_steps` counts micro-batches: 512,000 × 16,384 tokens = 8.39B ≈ one Chinchilla-optimal pass over the 8.4B corpus (128,000 optimizer steps at grad_accum 4). For multi-epoch training, raise `total_steps` and scale `warmup_steps`/`save_interval` with it.
 
 **Q: Why no GradScaler?** BF16 has sufficient dynamic range on Ampere/Blackwell for this model scale.
 
 **Q: Does compile work on CPU?** Disabled automatically when CUDA unavailable; smoke tests run eager.
 
 **Q: Resume exact data order?** No — DataLoader shuffle RNG is not checkpointed. Benign at this scale.
+
+**Q: Why does the first optimizer step do nothing?** `scheduler.step()` fires after `optimizer.step()`, so optimizer step 1 runs at λ(0) = 0 (warmup starts at zero). Benign — see [LR Scheduler](#lr-scheduler).
+
+**Q: Why is the log's first line `lr=0.00e+00`?** `get_last_lr()` reports λ(0) before any scheduler step. Expected.
+
+**Q: Does `--resume 40000` differ from auto-resume?** It forces step 40000 even when a newer checkpoint exists; auto-resume always takes `latest_step()`.
 
 ---
 
@@ -660,6 +1472,10 @@ FINAL checkpoint (tag="final")
 | `nan_guard_streak` | Consecutive NaN/Inf micro-steps |
 | `raw_model` | Uncompiled Transformer (for save/bias update) |
 | `training_model` | Possibly compiled MTP wrapper |
+| `global_step` | Micro-step counter in `train()`; the loop bound |
+| `is_opt_step` | `(micro_step+1) % grad_accum == 0` — window boundary |
+| `λ(s)` | Scheduler multiplier at optimizer step `s` |
+| `model_config` | The full YAML dict stored in `TrainingConfig` |
 
 ---
 
@@ -671,16 +1487,19 @@ FINAL checkpoint (tag="final")
 4. **uint32→int64 cast at train boundary** — not in dataset.
 5. **NaN guard never disabled by default** in 422M YAML.
 6. **`raw_model` for checkpoint/bias** — not the compiled wrapper.
+7. **`max_steps` is a micro-step budget** — the loop runs `max_steps` micro-batches = `max_steps / grad_accum` optimizer steps; the scheduler horizon is auto-scaled to optimizer steps (`max_steps // grad_accum`), so the cosine arc always spans the run.
+8. **The YAML `lr` key is inert under `mup_lr: true`** — the μP formula, not YAML, sets the LR.
 
 ---
 
 ## Implementation Checklist
 
 - [ ] `pytest tests/test_training.py` passes
-- [ ] `test_mup_lr_scaling` — μP formula
-- [ ] `test_nan_guard_rollback` — recovery path
-- [ ] `test_checkpoint_roundtrip` — save/load integrity
+- [ ] `test_mup_lr_scaling` — μP formula (`tests/test_training.py::TestPretrainerConstruction`)
+- [ ] `test_consecutive_nan_triggers_rollback` — recovery path
+- [ ] `TestCheckpointRoundtrip.test_save_load` — save/load integrity
 - [ ] `test_moe_bias_update_during_training` — bias moves
+- [ ] `TestWarmupCosineScheduler` — schedule continuity at seams
 
 ---
 
@@ -692,7 +1511,7 @@ FINAL checkpoint (tag="final")
 - [[Docs/08_Training_Pipeline|configs]] — checkpoint format
 - [[Docs/08_Training_Pipeline|training]] — YAML reference
 
-## `train()` Main Loop — Pseudocode
+## train() Main Loop — Pseudocode
 
 ```python
 global_step = resume_from_checkpoint_or_0()
@@ -733,7 +1552,7 @@ MoE `gate.bias` is a **buffer** — not in either group.
 
 ---
 
-## `compile_model` Interaction
+## compile_model Interaction
 
 ```python
 training_model = torch.compile(training_model, mode=compile_mode, fullgraph=False)
@@ -793,6 +1612,8 @@ step=   4050 | loss=2.8123 | ppl=16.64 | lr=7.91e-04 | tps=131072 | balance_loss
 | `balance_loss` | Small, stable | Spikes → routing instability |
 | `mtp_loss` | Tracks main loss | >> main loss → reduce `mtp_weight` |
 
+**How the line is produced:** `utils/logging.py:TrainingLogger.log` appends each micro-step's loss to a rolling window; when `step % log_interval == 0` it prints the window average, `ppl = exp(avg_loss)`, `lr = scheduler.get_last_lr()[0]` (passed in by `train()`), and `tokens_per_sec = (log_interval × seq_len × batch_size) / elapsed` — the elapsed wall time of the *last* `log_interval` micro-steps, so `tps` is a rolling throughput meter, not a device counter. The window is then cleared and the clock restarts. This is the only place per-step `.item()` calls happen.
+
 ### WandB integration
 
 Set before launch:
@@ -802,7 +1623,7 @@ export WANDB_PROJECT=deepseek-v3-lite-a100
 export WANDB_RUN_NAME=422m-run1
 ```
 
-Metrics: `train/loss`, `train/ppl`, `train/lr`, `train/tokens_per_sec`, `train/mtp_loss`, `train/balance_loss`.
+`TrainingLogger.__init__` checks `WANDB_PROJECT`; if set *and* `wandb` is importable, it initialises a run (name from `WANDB_RUN_NAME`) and every log line additionally pushes `train/loss`, `train/ppl`, `train/lr`, `train/tokens_per_sec`, plus any extra metrics (`train/mtp_loss`, `train/balance_loss`). Missing `wandb` degrades to a one-line console notice — logging never crashes training.
 
 ---
 
@@ -874,7 +1695,7 @@ Hyperparameters are **experiment surface area** — you will sweep LR, batch siz
 
 ## pretrain_a100_422m.yaml — Canonical Recipe
 
-**Target:** 1× A100 80GB, ~422M params, 8.4B Chinchilla tokens, 13–15 h wall.
+**Target:** 1× A100 80GB, ~412M params (411.6M deduped — the "422m" filename is historical nominal), 8.4B Chinchilla tokens, ~30–45 h wall (estimated; the old 13–15 h target implied >70% MFU).
 
 | Section | Highlights |
 |---|---|
@@ -942,7 +1763,7 @@ These keys are not independent — violating a constraint crashes at first forwa
 | Constraint | Rule | Example violation |
 |---|---|---|
 | Head divisibility | $d \bmod H = 0$ | dim=770, n_heads=12 |
-| MLA head dims | $q_{\mathrm{k,nope}} + q_{\mathrm{k,rope}} = d_h$ | 48+24=72, 768/12=64 — **must match** |
+| MLA head dims | `v_head_dim = dim / n_heads`; `qk_head_dim = qk_nope + qk_rope` | v_head_dim=64 = 768/12; qk_head_dim=72 = 48+24 — the two are independent |
 | Vocab = embed rows | `vocab_size` = tokenizer len | 100000 vs 100018 |
 | MoE width | experts use `moe_inter_dim` | dense layers use `inter_dim` |
 | Triton MoE limit | `moe_inter_dim ≤ 256` for triton_grouped | 384 → auto-fallback stacked |
@@ -977,17 +1798,21 @@ These keys are not independent — violating a constraint crashes at first forwa
 
 ### Training budget arithmetic
 
-Derive total token exposures from YAML:
+Derive the token budget from YAML:
 
 $$
-N_{\text{tokens/step}} = B_{\text{micro}} \times G_{\text{accum}} \times S = 8 \times 4 \times 2048 = 65536
+N_{\text{tokens/micro-step}} = B_{\text{micro}} \times S = 8 \times 2048 = 16384
 $$
 
 $$
-N_{\text{total exposures}} = N_{\text{tokens/step}} \times T_{\text{steps}} = 65536 \times 512000 \approx 33.5 \times 10^9
+N_{\text{tokens/opt-step}} = B_{\text{micro}} \times G_{\text{accum}} \times S = 8 \times 4 \times 2048 = 65536
 $$
 
-Unique corpus size ≈ 8.4B → **~4 epochs** over the mixture (with shuffle each epoch). Chinchilla-optimal **unique** tokens ≈ $20 \times 422\text{M} \approx 8.4$B — the corpus size matches; multi-epoch training is intentional for a single-GPU budget.
+$$
+N_{\text{total tokens}} = 16384 \times T_{\text{steps}} = 16384 \times 512000 \approx 8.4 \times 10^9
+$$
+
+`total_steps` counts **micro-steps**, so the run is one pass over the corpus (8.39B tokens ≈ 8.4B), and the optimizer performs $512000 / 4 = 128000$ steps. Unique corpus size ≈ 8.4B → **≈ 1 epoch**. Chinchilla-optimal **unique** tokens ≈ $20 \times 411.6\text{M} \approx 8.2$B — the corpus matches the target.
 
 
 ---
@@ -1056,8 +1881,8 @@ lr: 8e-4
 
 | | 422M A100 | 1650 2M |
 |---|---|---|
-| Params | ~422M | ~2M |
-| VRAM | ~35 GB | <4 GB |
+| Params | ~412M (411.6M deduped) | ~2M |
+| VRAM | ~35 GB (estimate) | <4 GB |
 | Vocab | 100018 | 50257 |
 | MoE layers | 16 | 2 |
 | Experts | 20 routed, top-4 | 4 routed, top-1 |
@@ -1075,7 +1900,7 @@ lr: 8e-4
 4. μP scaling uses **post-wrap** param count
 5. Checkpoint saves `mtp.mtp_modules.*` keys with `has_mtp: true` in meta
 
-Trace in: `training/pretrain.py:155-163`, `models/mtp.py:67-117`.
+Trace in: `training/pretrain.py:Pretrainer.train_step`, `models/mtp.py:MultiTokenPrediction.forward`.
 
 
 ---
@@ -1088,7 +1913,7 @@ Trace in: `training/pretrain.py:155-163`, `models/mtp.py:67-117`.
 
 ### Why `dim=768`, `n_layers=18`?
 
-Chinchilla-optimal sizing: for ~422M params, depth and width balance FLOPs and memory. 18 layers fits in A100 VRAM with MoE at batch 8 × seq 2048.
+Chinchilla-optimal sizing: for ~412M params, depth and width balance FLOPs and memory. 18 layers fits in A100 VRAM with MoE at batch 8 × seq 2048.
 
 ### Why `n_dense_layers=2`?
 
@@ -1104,7 +1929,7 @@ Base YAML value; overwritten at init to ~8.07e-4 when `mup_lr: true`. Tuned for 
 
 ### Why `warmup_steps=2000`?
 
-~0.4% of total micro-steps. Sufficient for Adam moment estimates to stabilise without wasting compute.
+≈1.6% of the run's 128,000 optimizer steps (warmup counts scheduler steps, one per optimizer step). Sufficient for Adam moment estimates to stabilise without wasting compute.
 
 ### Why `min_lr_ratio=0.05`?
 
@@ -1259,1889 +2084,14 @@ Before launching a 15-hour run:
 - [ ] If `attn_impl: triton` or `moe_dispatch: triton_grouped`, set `ENABLE_TRITON_KERNELS=1`
 - [ ] `moe_inter_dim > 256` with triton_grouped → expect stacked fallback at runtime
 
-<!-- docs:verified 2026-08-01 · e8553c4 -->
+## Check Your Understanding
 
+1. **Counter semantics.** `global_step` counts micro-steps and `max_steps` is the micro-step budget. If `gradient_accumulation_steps = 4` and `max_steps = 512000`, how many micro-batches does the run consume, and what is `_opt_steps` when the loop exits? *(Answer: 512,000 micro-batches; `_opt_steps` reaches 128,000 — one optimizer step per 4 micro-steps, and the final window ends exactly at the loop bound.)*
 
----
+2. **μP arithmetic.** Reproduce the LR computation for the bare 411.6M model from the locked constants. *(Answer: 6.0e-4 × sqrt(757226496/411632256) = 8.138e-4.)* What single edit makes the YAML `lr` key actually take effect? *(Answer: set `mup_lr: false` — under `mup_lr: true` the LR is the formula's output.)*
 
-# Operations — Scripts, Utilities, and Testing
+3. **The first optimizer step.** Why is optimizer step #1 a no-op, and is that a bug? *(Answer: `scheduler.step()` runs after `optimizer.step()`, so step #1 executes at λ(0) = 0 — every term in the AdamW update is scaled by η = 0. Benign: warmup is zero at step 0 by construction, so the schedule is just shifted by one step.)*
 
-> **Canonical** for launch scripts, utilities, and the test suite.
+4. **NaN recovery.** A NaN fires at micro-step 2 of a 4-step window with a checkpoint at step 4000 and current `global_step = 4007`. What happens to the gradients of micro-steps 0–1 of the current window, and what does `global_step` become after rollback? *(Answer: the partial window's accumulated gradients are discarded (`zero_grad(set_to_none=True)`), and rollback sets `global_step` to 4000 — the DataLoader position is not rewound, so the lost steps' data is not replayed.)*
 
-## Table of contents
-
-- [Part A — Scripts](#part-a--scripts)
-- [Part B — Utilities](#part-b--utilities)
-- [Part C — Testing](#part-c--testing)
-
----
-
-## Part A — Scripts
-
-## A Comprehensive Technical Reference
-
-> **Covers**: `scripts/` — operational tooling for GPU validation and production training launch.
-
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [launch_a100.sh](#launch_a100sh)
-3. [microbench_a100.py](#microbench_a100py)
-4. [step_time_a100.py](#step_time_a100py)
-5. [smoke_forward.py](#smoke_forwardpy)
-6. [e2e_test_gpu.py](#e2e_test_gpupy)
-7. [build_small_pretrain_data.py](#build_small_pretrain_datapy)
-8. [check_docs.py](#check_docspy)
-9. [Recommended Workflow](#recommended-workflow)
-10. [Environment Variables](#environment-variables)
-
----
-
-## Overview
-
-Scripts are **observability instruments** — they answer three questions before you commit GPU-days:
-
-1. **Does it build?** (`smoke_forward.py`) — graph construction, shape correctness
-2. **Does it fit?** (`microbench_a100.py`) — VRAM budget vs hardware
-3. **Is it fast enough?** (`step_time_a100.py`) — MFU, tokens/sec
-
-Each script mirrors a phase of the [[Docs/00_Getting_Started|Getting Started]] mental model (CPU tests → GPU smoke → production).
-
-| Script | Purpose | Requires GPU |
-|---|---|---|
-| `launch_a100.sh` | Production training launch (nohup) | Yes (A100) |
-| `microbench_a100.py` | VRAM estimate vs measured peak | Yes |
-| `step_time_a100.py` | ms/step, tokens/sec, MFU | Yes |
-| `smoke_forward.py` | Single forward+backward sanity | Yes |
-| `e2e_test_gpu.py` | End-to-end GPU test suite | Yes |
-| `build_small_pretrain_data.py` | Tiny dataset for local dev | No |
-| `check_docs.py` | Lint `Docs/` links, paths, stale patterns | No |
-
----
-
-## check_docs.py
-
-Validates documentation quality (also runs in CI):
-
-```bash
-python scripts/check_docs.py              # lint only
-python scripts/check_docs.py --update-sizes --stamp-footers   # refresh README line counts + verification stamps
-```
-
-Checks: control characters, stale math/status patterns, internal `.md` links, and backtick-quoted repo paths. Generated data dirs and planned Triton files are allowlisted.
-
----
-
-## launch_a100.sh
-
-**Purpose:** Pre-flight checks + background training launch.
-
-### Pre-flight
-
-1. CUDA available, VRAM ≥ 75 GB
-2. `data/pretrain_chinchilla/shard_*.bin` exists
-3. Creates `checkpoints/pretrain_a100/`
-
-### Environment
-
-```bash
-export CUDA_VISIBLE_DEVICES=0
-export WANDB_PROJECT=deepseek-v3-lite-a100
-export TORCH_COMPILE_MODE=max-autotune
-export TOKENIZERS_PARALLELISM=false
-```
-
-### Launch
-
-```bash
-nohup python -u training/pretrain.py \
-  --config configs/pretrain_a100_422m.yaml \
-  --data-path data/pretrain_chinchilla \
-  --checkpoint-dir checkpoints/pretrain_a100 \
-  > checkpoints/pretrain_a100/train.log 2>&1 &
-```
-
-### Monitor
-
-```bash
-tail -f checkpoints/pretrain_a100/train.log
-nvidia-smi
-```
-
-### Resume
-
-```bash
-python training/pretrain.py --config configs/pretrain_a100_422m.yaml --resume 4000
-```
-
----
-
-## microbench_a100.py
-
-**Purpose:** Validate memory budget before committing to a 15-hour run.
-
-```bash
-python scripts/microbench_a100.py
-```
-
-**What it does:**
-
-1. Builds 422M `Transformer` with grad_checkpoint=True
-2. Prints analytical estimate from `estimate_model_memory_gb`
-3. Runs forward + backward on random data
-4. Reports `torch.cuda.max_memory_allocated()`
-5. Calls `assert_fits_in_available_gpu(estimate, margin=2.0)`
-
-**Expected output (A100 80GB):**
-
-```
-estimated peak   = ~30.5 GB
-measured peak    = ~33-35 GB
-```
-
-If measured > total - 8 GB → warning to reduce batch or seq len.
-
----
-
-## step_time_a100.py
-
-### MFU — what it measures
-
-**Model FLOPs Utilisation (MFU)** compares achieved throughput to peak hardware FLOPs:
-
-$$
-\mathrm{MFU} = \frac{\text{achieved FLOPs/sec}}{\text{peak BF16 Tensor Core FLOPs/sec}}
-$$
-
-For 422M on A100 (312 TFLOPS peak BF16), MFU 35% ≈ 109 TFLOPS sustained. Low MFU usually means:
-- Memory-bound MoE dispatch (stacked path copies weights)
-- Activation recomputation from grad checkpointing
-- Small batch under-utilising SMs
-
-**Purpose:** Measure training throughput and Model FLOPs Utilisation (MFU).
-
-```bash
-python scripts/step_time_a100.py --steps 20 --warmup 5
-```
-
-**Metrics:**
-
-- ms/step (median)
-- tokens/sec = `batch × seq / ms`
-- MFU = `actual_flops / (peak_tflops × time)`
-
-**Target:** 35–40% MFU on A100 80GB for the 422M config.
-
-**Flags:**
-
-| Flag | Default | Effect |
-|---|---|---|
-| `--steps` | 20 | Timed iterations |
-| `--warmup` | 5 | Warmup before timing |
-| `--no-compile` | off | Disable torch.compile |
-| `--compile-mode` | max-autotune | Compile mode |
-| `--peak-tflops` | 312 | A100 BF16 peak |
-
----
-
-## smoke_forward.py
-
-Quick sanity: build model, one forward pass, print output shape. Used for CI GPU runners and manual smoke.
-
----
-
-## e2e_test_gpu.py
-
-End-to-end GPU validation: model construction, forward, backward, optional compile. Broader than `smoke_forward.py`.
-
----
-
-## build_small_pretrain_data.py
-
-Creates a tiny token file for local development without running the full 8B pipeline. Useful for debugging `PretrainDataset` and training loop on laptop.
-
----
-
-## Recommended Workflow
-
-```
-1. pytest tests/ -q                    # CPU correctness
-2. python scripts/smoke_forward.py     # GPU builds
-3. python scripts/microbench_a100.py   # VRAM headroom
-4. python scripts/step_time_a100.py    # throughput / MFU
-5. python3 data/prepare_data.py ...    # full data (once)
-6. bash scripts/launch_a100.sh         # production run
-```
-
----
-
-## Environment Variables
-
-| Variable | Used by | Purpose |
-|---|---|---|
-| `CUDA_VISIBLE_DEVICES` | All GPU scripts | GPU selection |
-| `TORCH_COMPILE_MODE` | pretrain, step_time | Compile mode |
-| `ENABLE_TRITON_KERNELS` | Model init | Allow Triton paths |
-| `WANDB_PROJECT` | launch, logging | Experiment tracking |
-| `WANDB_RUN_NAME` | launch, logging | Run name |
-
----
-
-
-
----
-
-## launch_a100.sh — Deep Dive
-
-### Shell safety
-
-```bash
-set -euo pipefail
-```
-
-- `-e`: exit on first command failure
-- `-u`: error on unset variables
-- `-o pipefail`: pipeline fails if any stage fails
-
-### Pre-flight Python check
-
-The embedded `python -c` block verifies:
-1. `torch.cuda.is_available()`
-2. VRAM ≥ 75 GB (allows headroom below 80 GB nominal)
-3. Prints GPU name, PyTorch version, CUDA version
-
-**Why 75 GB threshold?** Some A100 instances report ~79 GB usable; 75 GB catches misconfigured VMs while allowing real A100s.
-
-### Data directory validation
-
-```bash
-[[ ! -d "$DATA_DIR" ]] || [[ -z "$(ls -A "$DATA_DIR"/shard_*.bin 2>/dev/null)" ]]
-```
-
-Requires at least one `shard_*.bin` — empty directory fails fast with actionable error pointing to `data/prepare_data.py`.
-
-### Background launch pattern
-
-```bash
-nohup python -u training/pretrain.py ... > "$LOG_FILE" 2>&1 &
-```
-
-| Flag | Purpose |
-|---|---|
-| `nohup` | Survives terminal disconnect |
-| `python -u` | Unbuffered stdout (log appears immediately) |
-| `2>&1` | Merge stderr into log |
-| `&` | Background process |
-
-**PID tracking:** Script prints PID for `ps -p $PID` monitoring.
-
-### Resume (manual)
-
-`launch_a100.sh` does not auto-resume. Use:
-
-```bash
-python training/pretrain.py --config configs/pretrain_a100_422m.yaml --resume 4000
-```
-
-`Pretrainer.train()` also auto-resumes from `latest_step()` if checkpoints exist and `--resume` is omitted.
-
----
-
-## microbench_a100.py — Deep Dive
-
-Full source: `scripts/microbench_a100.py` (45 lines).
-
-### Execution flow
-
-1. Load `configs/pretrain_a100_422m.yaml`
-2. Build `Transformer(cfg, use_checkpoint=True).cuda()`
-3. Print analytical estimate via `estimate_model_memory_gb`
-4. `assert_fits_in_available_gpu(est, margin=2.0)` — raises if estimate > VRAM - 2GB
-5. Random forward + backward on `(bs, seq)` tensor
-6. Compare `torch.cuda.max_memory_allocated()` vs estimate
-
-### Interpreting delta
-
-| delta vs estimate | Action |
-|---|---|
-| < 20% | Normal — allocator fragmentation, compile workspace |
-| 20-35% | Acceptable — monitor during long run |
-| > 35% | Investigate — wrong batch size, leak, or estimate bug |
-
-### Warning thresholds
-
-- `measured > total - 8 GB`: **WARNING** — reduce `micro_batch_size` or `max_seq_len`
-- `measured > 70% total`: **NOTICE** — comfortable headroom
-
-**Does not test:** MTP wrapper, `torch.compile`, or full `Pretrainer` — only bare Transformer. Real training uses ~5-10% more VRAM (optimizer state, MTP, compile).
-
----
-
-## step_time_a100.py — Deep Dive
-
-### FLOP estimate
-
-```python
-flops = 6 * n_nonembed * seq * bs
-```
-
-Classic Chinchilla approximation: 6× params × tokens per step (forward + backward through matmul layers).
-
-### MFU calculation
-
-```python
-tflops_per_s = flops / dt / 1e12
-mfu = tflops_per_s / args.peak_tflops * 100
-```
-
-Default `peak_tflops=312` — A100 SXM BF16 Tensor Core nominal peak.
-
-### MFU interpretation guide
-
-| MFU | Diagnosis |
-|---|---|
-| < 25% | MoE Python overhead, compile disabled, or TF32 off |
-| 25-35% | Normal for stacked MoE dispatch on A100 |
-| 35-45% | Target range for this codebase |
-| > 50% | Unusual — verify FLOP count or check for measurement bug |
-
-### What is NOT measured
-
-- DataLoader overhead (synthetic random tokens on GPU)
-- MTP auxiliary loss path
-- MoE bias updates
-- Checkpoint I/O
-
-Add ~10-15% wall time in real training for these.
-
-### Flags reference
-
-```bash
-python scripts/step_time_a100.py \
-  --steps 50 --warmup 10 \
-  --no-compile \
-  --compile-mode reduce-overhead \
-  --peak-tflops 312
-```
-
----
-
-## smoke_forward.py
-
-Minimal GPU sanity: constructs model, runs one forward, prints output shape. Used when you only need to verify CUDA + model construction without backward or memory profiling.
-
-**When to use:** After changing `Transformer.__init__` or config schema — faster than full pytest GPU suite.
-
----
-
-## e2e_test_gpu.py
-
-Broader than smoke_forward:
-- Forward + backward
-- Optional `torch.compile` path
-- Gradient norm check
-
-Run before first production launch if you modified training loop or compile settings.
-
----
-
-## build_small_pretrain_data.py
-
-Creates a tiny token file for local `PretrainDataset` debugging without 8B-token pipeline.
-
-**Use case:** Laptop debugging of training loop, NaN guard, checkpoint roundtrip — not for quality evaluation.
-
----
-
-## Troubleshooting Guide
-
-| Symptom | Script to run | Likely fix |
-|---|---|---|
-| CUDA OOM at step 0 | `microbench_a100.py` | Halve `micro_batch_size` |
-| MFU < 20% | `step_time_a100.py --no-compile` vs default | Enable compile; check TF32 |
-| Model won't construct | `smoke_forward.py` | Config/schema mismatch |
-| Training dies after 1h | Check `train.log` | NaN guard rollback — reduce LR |
-| Triton silently disabled | `echo $ENABLE_TRITON_KERNELS` | Set env var or use stacked |
-
----
-
-## Appendix — Wall Clock Budget (422M)
-
-| Phase | Duration |
-|---|---|
-| Data prep (once) | Hours-days (bandwidth bound) |
-| microbench + step_time | ~5 min |
-| Training (512K micro-steps) | 13-15 h on A100 |
-| Checkpoint every 4000 steps | ~128 saves |
-
-**Note:** `total_steps` in YAML counts **micro-steps** (each DataLoader batch). Optimizer steps = micro-steps / grad_accum = 128,000. At ~0.4s per optim step (post-compile), wall time matches 13-15h.
-
-
-
-## Appendix — Script Source Map
-
-| File | Lines | Entry point |
-|---|---|---|
-| `launch_a100.sh` | 91 | `bash scripts/launch_a100.sh` |
-| `microbench_a100.py` | 45 | `python scripts/microbench_a100.py` |
-| `step_time_a100.py` | 79 | `python scripts/step_time_a100.py` |
-| `smoke_forward.py` | ~30 | `python scripts/smoke_forward.py` |
-| `e2e_test_gpu.py` | varies | `python scripts/e2e_test_gpu.py` |
-| `build_small_pretrain_data.py` | varies | `python scripts/build_small_pretrain_data.py` |
-
-All Python scripts insert project root into `sys.path` for import portability.
-
----
-
-## FAQ
-
-**Q: Can I run microbench on RTX 4090?**
-A: Yes — adjust expectations. 24GB VRAM will OOM at full 422M batch; reduce batch in YAML first.
-
-**Q: step_time without compile is much slower — is that normal?**
-A: Yes. `torch.compile` is load-bearing for 35%+ MFU on this codebase.
-
-**Q: launch_a100.sh on multi-GPU machine?**
-A: Set `CUDA_VISIBLE_DEVICES=0` (default). Multi-GPU training is not implemented.
-
-
-## References
-
-- [[Docs/08_Training_Pipeline|Training]] — what launch_a100 runs
-- [[Docs/11_Operations_and_Testing|Operations]] — memory estimation formulas
-- [[Docs/00_Getting_Started|Getting Started]] — quick start path
-
-## smoke_forward.py — Deep Dive
-
-Builds the 422M `Transformer` from YAML, runs one forward pass on random `input_ids`, prints output shape.
-
-**Use when:** Verifying CUDA + PyTorch install before data prep or training.
-
-**Does not test:** MTP wrapper, compile, DataLoader, checkpoint I/O.
-
----
-
-## e2e_test_gpu.py — Deep Dive
-
-Broader GPU validation than `smoke_forward.py`:
-
-- Forward + backward
-- Optional `torch.compile` smoke
-- Gradient norm sanity
-
-Run before first production launch if you modified `training/pretrain.py`.
-
----
-
-## build_small_pretrain_data.py
-
-Creates a tiny uint32 token file for local `PretrainDataset` debugging without 8B download.
-
-```bash
-python scripts/build_small_pretrain_data.py
-python training/pretrain.py --config configs/pretrain_1650_2m.yaml --data-path <output>
-```
-
----
-
-## Wall-Clock Budget — 422M Run
-
-| Phase | Duration | Notes |
-|---|---|---|
-| Data prep (first time) | 4–24 h | Bandwidth + CPU bound |
-| `torch.compile` warmup | 5–15 min | First steps slow |
-| Training 512k steps | 13–15 h | @ 270–320 ms/step |
-| Checkpoint saves | ~2 min each | Every 4000 steps |
-
-**Disk:** 128 checkpoints × ~6 GB ≈ 750 GB if no retention — plan storage or prune old steps manually.
-
----
-
-## Troubleshooting Scripts
-
-| Script output | Meaning | Action |
-|---|---|---|
-| microbench WARNING > 72 GB | OOM risk | Lower `micro_batch_size` |
-| step_time MFU < 20% | Memory bound | Try Triton MoE (with env var) |
-| smoke_forward shape mismatch | Config / code drift | Run `pytest tests/test_models.py` |
-| launch_a100 no shards | Data not prepared | `python3 data/prepare_data.py --stage pretrain` |
-
-<!-- docs:verified 2026-07-31 · 5a880d2 -->
-
----
-
-## Part B — Utilities
-
-## A Comprehensive Technical Reference
-
-> **Covers**: `utils/checkpoint.py`, `utils/memory.py`, `utils/logging.py` — production infrastructure for training and inference.
-
-> **Read this if** you're debugging checkpoints, VRAM estimates, or WandB logging. **Skip if** you're changing model math → component docs.
-
----
-
-## Table of Contents
-
-1. [Abstract](#abstract)
-2. [CheckpointManager](#checkpointmanager)
-3. [Atomic Write Protocol](#atomic-write-protocol)
-4. [Shared-Tensor Dedup](#shared-tensor-dedup)
-5. [MTP Checkpoint Roundtrip](#mtp-checkpoint-roundtrip)
-6. [Memory Estimation](#memory-estimation)
-7. [TrainingLogger](#traininglogger)
-8. [Appendix A — Worked memory example](#appendix-a--worked-memory-example)
-9. [Appendix B — FAQ](#appendix-b--faq)
-10. [Appendix C — Glossary](#appendix-c--glossary)
-11. [References](#references)
-
----
-
-## Abstract
-
-Three utility modules support the training and inference lifecycle:
-
-| Module | Role |
-|---|---|
-| `checkpoint.py` | Atomic safetensors save/load with step discovery |
-| `memory.py` | VRAM budget estimation (PaLM-style formulas) |
-| `logging.py` | Console + optional WandB metrics |
-
-All are CPU-friendly and tested without GPU.
-
----
-
-## CheckpointManager
-
-### Files per step `N`
-
-```
-checkpoints/pretrain_a100/
-  model_step_N.safetensors   # model weights (+ mtp.* keys)
-  optim_step_N.pt            # AdamW state_dict
-  meta_step_N.json           # scheduler, opt_steps, config, has_mtp
-```
-
-### API
-
-```python
-mgr = CheckpointManager("checkpoints/pretrain_a100")
-
-# Save
-mgr.save(model, optimizer, step=4000, extra_meta={...}, state_dict=optional)
-
-# Load
-meta = mgr.load(model, step=4000, device="cuda", optimizer=opt, strict=False)
-
-# Discovery
-step = mgr.latest_step()  # highest N with all 3 files present
-```
-
-### Step discovery rules
-
-- `_list_steps()` — parses `model_step_*.safetensors` stems
-- `_checkpoint_complete(N)` — requires **all three** files
-- `latest_step()` — highest complete step, or `None`
-
-Incomplete checkpoints (e.g., crash mid-save) are ignored.
-
-### Load behaviour
-
-| `strict` | Missing keys | Unexpected keys |
-|---|---|---|
-| `True` | Raise | Raise |
-| `False` | Log warning, continue | Log warning, continue |
-
-Training and inference use `strict=False` (weight tying leaves `head.weight` "missing").
-
-Optimizer load is optional — missing `optim_step_N.pt` logs warning, starts fresh.
-
----
-
-## Atomic Write Protocol
-
-Every save uses temp-file → rename:
-
-```python
-fd, tmp = tempfile.mkstemp(dir=save_dir, suffix=".safetensors.tmp")
-save_file(deduped_state, tmp)
-os.replace(tmp, final_path)   # atomic on POSIX
-```
-
-On failure: temp file unlinked, exception re-raised. No partial checkpoints.
-
-`test_atomicity_temp_file_cleaned` verifies no `.tmp` files remain.
-
-**Why not pickle for model weights?** Safetensors is mmap-friendly, cross-language, and avoids arbitrary code execution. Optimiser state still uses `torch.save` (contains non-tensor objects).
-
----
-
-## Shared-Tensor Dedup
-
-Weight tying makes `head.weight` and `embed.weight` the **same storage**:
-
-```python
-for k, v in state.items():
-    ptr = v.data_ptr()
-    if ptr in seen_ptrs:
-        deduped[k] = v.contiguous().clone()  # safetensors rejects duplicate ptrs
-    else:
-        seen_ptrs.add(ptr)
-        deduped[k] = v.contiguous()
-```
-
-On save, `Pretrainer` **drops** `head.weight` entirely (redundant with embed).
-
-On load, `head.weight` is "missing" — the tied tensor is restored via `embed.weight`.
-
----
-
-## MTP Checkpoint Roundtrip
-
-Save path (`Pretrainer.save_checkpoint`):
-
-```python
-mtp_state = {f"mtp.{k}": v for k, v in mtp_wrapper.state_dict().items()
-             if k.startswith("mtp_modules.")}
-state.update(mtp_state)
-extra_meta["has_mtp"] = True
-```
-
-Load path:
-
-```python
-if meta.get("has_mtp"):
-    mtp_state = {k.removeprefix("mtp."): v for k, v in weights.items() if k.startswith("mtp.")}
-    mtp_wrapper.load_state_dict(mtp_state, strict=False)
-```
-
-MTP params are in the **same AdamW optimiser** as the main model (via `MultiTokenPrediction.parameters()`). No separate optim state.
-
----
-
-## Memory Estimation
-
-### PaLM-style activation model
-
-Activation memory dominates training VRAM for long sequences. This repo uses the PaLM heuristic:
-
-$$
-M_{\text{act}} = f \cdot B \cdot S \cdot D \cdot L \cdot \text{bytes}
-$$
-
-where $f = 24$ with gradient checkpointing (recompute ~1/3 of layers in backward), $f = 36$ without. The factor accounts for storing inputs to matmuls, attention softmax buffers, and MoE routing temporaries.
-
-**Why not exact?** PyTorch allocator fragmentation, `torch.compile` workspaces, and MoE stacked-weight refresh are not modelled — always leave 15–20% headroom.
-
-`estimate_model_memory_gb(model, seq_len, batch_size, grad_checkpoint=True)`
-
-### Component formulas (BF16 training)
-
-| Component | Bytes | Formula |
-|---|---|---|
-| Params | 2 × N | BF16 weights |
-| Optimiser | 12 × N | FP32 master + m + v |
-| KV cache | Σ B·S·(R+d_rope)·2 | Per MLA layer (training: usually 0) |
-| Activations | factor·B·S·D·L·2 | factor=24 (ckpt) or 36 (no ckpt) |
-| Overhead | min(13.7, 0.17·total) GB | CUDA context |
-
-Where:
-- N = deduped parameter count
-- B = batch size, S = seq len, D = dim, L = n_layers
-- R = kv_lora_rank (192), d_rope = qk_rope_head_dim (24)
-
-### `assert_fits_in_available_gpu(estimate_gb, margin=2.0)`
-
-No-op on CPU. On CUDA, raises if estimate exceeds `total_vram - margin`.
-
-Used by `scripts/microbench_a100.py` as pre-flight check.
-
-### Inference mode
-
-`inference=True` drops optimiser and activation bytes — KV cache dominates.
-
----
-
-## TrainingLogger
-
-```python
-init_logging(log_interval=50, seq_len=2048)
-logger = get_logger()
-logger.log(step, loss, lr=lr, metrics={"balance_loss": 1.2, "mtp_loss": 3.4})
-```
-
-### Console output (every `log_interval` steps)
-
-```
-step=    100 | loss=3.2145 | ppl=24.89 | lr=4.00e-05 | tps=125,440 | balance_loss=1.1234
-```
-
-- **ppl** = exp(avg_loss) over the log window
-- **tps** = `log_interval × seq_len / elapsed_seconds`
-
-### WandB integration
-
-Set environment variables:
-
-```bash
-export WANDB_PROJECT=deepseek-v3-lite-a100
-export WANDB_RUN_NAME=422m-chinchilla
-```
-
-If `wandb` not installed, prints warning and continues console-only.
-
----
-
-## Appendix A — Worked memory example
-
-422M config, B=8, S=2048, grad_checkpoint=True:
-
-```
-N ≈ 422M params (deduped)
-Params:      422M × 2 B  = 0.84 GB
-Optim:       422M × 12 B = 5.06 GB
-Activations: 24 × 8 × 2048 × 768 × 18 × 2 = 10.9 GB
-KV (train):  0 (use_cache=False)
-Overhead:    min(13.7, 0.17 × 17) ≈ 2.9 GB → capped logic gives ~13.6 GB
-Total ≈ 30.5 GB estimated, ~35 GB measured peak
-```
-
----
-
-## Appendix B — FAQ
-
-**Q: Why three files per checkpoint?** Separates concerns: weights (safetensors), optim (torch), metadata (JSON). Allows inference-only load of safetensors.
-
-**Q: Can I load a checkpoint on CPU?** Yes — `device="cpu"` in `load()`.
-
-**Q: What if I only have model_step_N.safetensors?** `latest_step()` returns None (incomplete). Inference can still load weights directly via safetensors.
-
----
-
-## Appendix C — Glossary
-
-| Term | Meaning |
-|---|---|
-| `data_ptr` | Tensor storage address for dedup |
-| `extra_meta` | JSON metadata beyond step number |
-| `has_mtp` | Flag in meta for MTP weight restore |
-| `STATIC_PYTORCH_OVERHEAD_GB` | 13.7 GB CUDA context estimate |
-| `factor 24/36` | PaLM activation memory multiplier |
-
----
-
-
-
----
-
-## Checkpoint Recovery Scenarios
-
-### Crash during save
-
-Atomic write protocol guarantees: either all three files exist (complete step) or none do (incomplete step ignored by `latest_step()`).
-
-```
-model_step_4000.safetensors.tmp  → deleted on failure
-model_step_4000.safetensors      → only appears after os.replace succeeds
-```
-
-### Resume after NaN guard
-
-`Pretrainer.train()` on 5 consecutive NaN/Inf micro-steps:
-1. Calls `latest_step()`
-2. `load_checkpoint(latest)` — restores weights, AdamW state, scheduler, `_opt_steps`
-3. Resets `nan_guard_streak`
-
-**What is NOT restored:** DataLoader position / shuffle order.
-
-### Inference-only load
-
-```python
-from safetensors.torch import load_file
-state = load_file("checkpoints/pretrain_a100/model_step_4000.safetensors")
-model.load_state_dict(state, strict=False)
-```
-
-No `optim_step_*.pt` needed. MTP keys prefixed `mtp.` — load separately if using speculative decode.
-
----
-
-## Memory Estimation — Derivation
-
-### Parameter memory
-
-BF16 weights: $2$ bytes × $N$ params.
-
-### Optimiser memory (AdamW)
-
-Per parameter:
-- FP32 master weight: 4 bytes
-- First moment $m$: 4 bytes  
-- Second moment $v$: 4 bytes
-
-Total: $12$ bytes × $N$ (fused AdamW may pack differently but budget uses 12).
-
-### Activation memory (PaLM heuristic)
-
-From PaLM paper (Chowdhery et al., 2022):
-
-$$
-M_{\text{act}} = f \cdot B \cdot S \cdot D \cdot L \cdot \text{bytes}
-$$
-
-$f = 24$ with gradient checkpointing (recompute ~2/3 of layers in backward).
-$f = 36$ without checkpointing.
-
-**Why linear in $L$?** Each layer stores activations for backward; checkpointing trades compute for memory by not storing all layers.
-
-### KV cache (inference)
-
-Per MLA layer:
-
-```python
-bytes = batch * seq * (kv_lora_rank + qk_rope_head_dim) * dtype_bytes
-```
-
-Summed over all layers in `_kv_cache_bytes`.
-
-### Overhead
-
-`STATIC_PYTORCH_OVERHEAD_GB = 13.7` — CUDA context, cuBLAS workspace, allocator pools. Capped at `min(13.7, 0.17 * total_vram)`.
-
----
-
-## TrainingLogger — Metric Definitions
-
-| Metric | Formula | Notes |
-|---|---|---|
-| `loss` | Rolling mean over `log_interval` micro-steps | Raw CE (main head only in log line) |
-| `ppl` | `exp(avg_loss)` | Natural-log base |
-| `lr` | `scheduler.get_last_lr()[0]` | After warmup+cosine |
-| `tps` | `log_interval * seq_len / elapsed` | **Micro-steps** not optim steps |
-| `balance_loss` | Sum of MoE `get_load_balance_loss()` | Logging only — not in task loss |
-| `mtp_loss` | Auxiliary CE | When MTP enabled |
-
-**GPU sync discipline:** `.item()` called once per log interval, not per micro-step — avoids 3-4 forced device syncs per step.
-
----
-
-## WandB Integration Details
-
-Activation requires **only** `WANDB_PROJECT` env var:
-
-```python
-wandb_project = os.environ.get("WANDB_PROJECT")
-if wandb_project:
-    wandb.init(project=wandb_project, name=os.environ.get("WANDB_RUN_NAME"), reinit=True)
-```
-
-Logged keys: `train/loss`, `train/ppl`, `train/lr`, `train/tokens_per_sec`, plus any `metrics` dict keys prefixed `train/`.
-
-**Offline training:** Omit `WANDB_PROJECT` — console-only logging, no import error.
-
-
-
-
-## Appendix — Checkpoint File Sizes (422M)
-
-| File | Approximate size |
-|---|---|
-| `model_step_N.safetensors` | ~850 MB (BF16 weights, deduped head) |
-| `optim_step_N.pt` | ~5 GB (FP32 AdamW state) |
-| `meta_step_N.json` | < 100 KB |
-
-128 checkpoints @ 4000-step interval ≈ 750 GB total — plan disk space or implement retention (not wired in training loop).
-
----
-
-## FAQ (Extended)
-
-**Q: Why safetensors for model but pickle for optimizer?**
-A: Optimizer state contains Python objects and nested dicts. Safetensors is tensor-only.
-
-**Q: Can I convert checkpoint to HuggingFace format?**
-A: Not implemented in this repo. Manual key mapping required (MLA/MoE structure differs).
-
-**Q: Memory estimate wrong on RTX 4090?**
-A: `STATIC_PYTORCH_OVERHEAD_GB` tuned for A100. Consumer GPUs use `min(13.7, 0.17*total)` cap.
-
-
-
-## CheckpointManager — Deep Dive
-
-Three-file checkpoint triplet per step (see [[Docs/08_Training_Pipeline|Training]] §Checkpoint Format).
-
-### Deduplication on save
-
-```python
-for k, v in state.items():
-    ptr = v.data_ptr()
-    if ptr in seen_ptrs: continue  # weight tying duplicate
-```
-
-Prevents writing `embed.weight` twice when `head.weight` shares storage.
-
-### `latest_step()` completeness check
-
-A step is "complete" only if **all three** files exist:
-
-- `model_step_N.safetensors`
-- `optim_step_N.pt`
-- `meta_step_N.json`
-
-Partial writes from killed jobs are ignored — training resumes from last complete triplet.
-
-### Strict vs loose load
-
-Training uses `strict=False` on trunk load because tied `head.weight` key is intentionally omitted from safetensors. Missing **unexpected** keys in MTP load are logged, not fatal.
-
----
-
-## `estimate_model_memory_gb` — Formula
-
-From `utils/memory.py` (PaLM-style heuristic):
-
-$$
-\text{GB} \approx \frac{N_{params} \times \text{bytes/param}}{10^9}
-$$
-
-Training multiplier ~24× params accounts for optimizer state (2×), gradients, activations (checkpointed), and fragmentation. Use before launching long runs on unfamiliar GPUs.
-
----
-
-## TrainingLogger — Metric Definitions
-
-Logged each `log_every` micro-steps:
-
-| Metric | Definition |
-|---|---|
-| `loss` / `ce_loss` | Main next-token cross-entropy (detached) |
-| `mtp_loss` | Auxiliary MTP CE when enabled |
-| `balance_loss` | Sum of MoE load-balance **metrics** (not in loss) |
-| `ppl` | `exp(ce_loss)` |
-| `lr` | Current scheduler LR |
-| `tps` | Tokens/sec since last log window |
-
-**Perf note:** `.item()` called once per log interval — not per micro-step.
-
----
-
-## WandB Integration (Optional)
-
-When `WANDB_PROJECT` is set, `init_logging` may attach a WandB backend (see `utils/logging.py`). Hyperparameters and scalars mirror stdout metrics. Not required for local training.
-
----
-
-## Recovery Playbook
-
-| Scenario | Action |
-|---|---|
-| Corrupt safetensors | Delete incomplete step; resume from `latest_step()-1` |
-| Optim state mismatch | Delete `optim_step_N.pt`; warm-restart optimizer (LR schedule still in meta) |
-| OOM mid-save | Retry with smaller `micro_batch_size`; checkpoint every `save_every` |
-| Wrong `has_mtp` flag | Re-save from known-good weights or load trunk only |
-
-
-
-## References
-
-- `utils/checkpoint.py`, `utils/memory.py`, `utils/logging.py`
-- `tests/test_utils.py` — checkpoint and memory tests
-- [[Docs/08_Training_Pipeline|Training]] — save/load integration
-- `scripts/microbench_a100.py` — empirical validation
-
-## CheckpointManager — Deep Dive
-
-### `_atomic_save_safetensors` deduplication
-
-When `weight_tying: true`, `embed.weight` and `head.weight` share the same storage (`data_ptr()`). The save path deduplicates by pointer:
-
-```python
-seen_ptrs = set()
-for k, v in state.items():
-    ptr = v.data_ptr()
-    if ptr in seen_ptrs:
-        continue  # skip duplicate tensor
-    seen_ptrs.add(ptr)
-    deduped[k] = v
-```
-
-This prevents writing 768×100018 weights twice (~600 MB saved per checkpoint).
-
-### `_checkpoint_complete` semantics
-
-A step is **complete** only when all three files exist:
-
-```
-model_step_N.safetensors
-optim_step_N.pt
-meta_step_N.json
-```
-
-Crash during `optim_step_N.pt` write → `latest_step()` skips step N → resume from N-1.
-
-### MTP load path in Pretrainer
-
-```python
-mtp_state = {k.removeprefix("mtp."): v for k, v in state.items() if k.startswith("mtp.")}
-mtp_orig.load_state_dict(mtp_state, strict=False)
-```
-
-Keys in checkpoint: `mtp.mtp_modules.0.block.norm_h.weight`, etc.
-
----
-
-## Memory Estimation — Formula Derivation
-
-`estimate_model_memory_gb` sums five terms:
-
-| Term | Formula | 422M approx |
-|---|---|---|
-| Parameters | $2 \times N_{\text{params}}$ bytes (BF16) | 0.84 GB |
-| Optimiser | $12 \times N_{\text{params}}$ bytes (AdamW FP32) | 5.0 GB |
-| KV cache | $B \cdot S \cdot L \cdot (R + d_{\text{rope}}) \cdot 2$ | small at train (no cache) |
-| Activations | $24 \cdot B \cdot S \cdot d \cdot L \cdot 2$ (PaLM factor) | ~22 GB |
-| Overhead | `min(13.7, 0.17 × VRAM)` GB | ~13.7 GB |
-
-**PaLM factor 24:** empirical peak activation multiplier for transformer training with checkpointing.
-
-### `assert_fits_in_available_gpu`
-
-No-op on CPU. On CUDA:
-
-```python
-if estimate_gb > total_gb - safety_margin_gb:
-    raise RuntimeError(...)
-```
-
-`microbench_a100.py` uses `margin=2.0` GB.
-
----
-
-## TrainingLogger — Metric Definitions
-
-Printed every `log_interval` micro-steps:
-
-```
-step=   4000 | loss=2.8541 | ppl=17.28 | lr=7.92e-04 | tps=128,000 | balance_loss=0.0012
-```
-
-| Field | Definition |
-|---|---|
-| `loss` | Rolling mean CE (nats) over last `log_interval` steps |
-| `ppl` | $\exp(\text{loss})$ |
-| `lr` | Current scheduler LR |
-| `tps` | `log_interval × seq_len / elapsed` (approx tokens/sec) |
-| `balance_loss` | Sum of MoE load-balance metrics (logging only) |
-| `mtp_loss` | Present when MTP enabled |
-
-**WandB:** Set `WANDB_PROJECT` env var; metrics logged as `train/loss`, `train/ppl`, etc.
-
----
-
-## Recovery Playbook
-
-| Scenario | Action |
-|---|---|
-| Corrupt checkpoint at step N | Delete incomplete trio; resume from `latest_step()` |
-| OOM mid-training | Lower `micro_batch_size`; resume from last complete step |
-| Missing `optim_step_N.pt` | Load weights only; optimiser restarts (LR schedule restored from meta) |
-| `head.weight` missing on load | Expected with weight tying — use `strict=False` |
-| MTP keys missing | `has_mtp: false` in meta or train without speculative decode |
-
-<!-- docs:verified 2026-07-31 · 5a880d2 -->
-
----
-
-## Part C — Testing
-
-## A Comprehensive Technical Reference
-
-> **Covers**: The `tests/` suite — how to use it to verify correctness and learn the system's invariants.
-
----
-
-## Table of Contents
-
-1. [Philosophy](#philosophy)
-2. [Running Tests](#running-tests)
-3. [Fixtures (conftest.py)](#fixtures-conftestpy)
-4. [test_models.py](#test_modelspy)
-5. [test_training.py](#test_trainingpy)
-6. [test_inference.py](#test_inferencepy)
-7. [test_utils.py](#test_utilspy)
-8. [test_moe_triton.py](#test_moe_tritonpy)
-9. [test_mla_triton.py](#test_mla_tritonpy)
-10. [test_force_back.py](#test_force_backpy)
-11. [Load-Bearing Tests](#load-bearing-tests)
-12. [Adding New Tests](#adding-new-tests)
-13. [CI](#ci)
-
----
-
-## Philosophy
-
-Every test in this repo is designed to run on **CPU without CUDA or Triton**. This is intentional:
-
-- Mac developers can verify correctness locally
-- CI runs without GPU runners
-- Triton paths compare against PyTorch references on CPU
-
-GPU-specific tests are gated with `@pytest.mark.gpu` and auto-skipped without CUDA.
-
-**Tests are documentation.** When in doubt about an invariant, search `tests/` for the behaviour.
-
-### Tests as epistemology
-
-In a from-scratch LLM repo, **tests are the only machine-checked specification**. Papers describe intent; code drifts; tests catch drift.
-
-| Test category | What it proves | Example |
-|---|---|---|
-| Shape | Graph wiring | `test_forward_shape` |
-| Equivalence | Two paths compute same math | `test_sdpa_and_manual_agree` |
-| Invariant | Architectural rule | `test_bias_not_in_parameters` |
-| Roundtrip | Persistence | `test_checkpoint_mtp_roundtrip` |
-| Guard | Safety mechanism | `test_nan_guard_rollback` |
-
-When extending the model, add a test **before** updating docs — the test is the contract.
-
----
-
-## Running Tests
-
-```bash
-# Full suite (CPU)
-python -m pytest tests/ -q
-
-# Specific module
-python -m pytest tests/test_models.py -v
-
-# Keyword filter
-python -m pytest tests/ -k "MoE or MTP or bias"
-
-# With coverage (optional)
-python -m pytest tests/ --cov=models --cov=training
-```
-
-Expected: all tests pass on a fresh clone with `torch` installed (~1–3 min on CPU).
-
-### Suite overview (2026-07-31)
-
-| File | Tests | Primary coverage |
-|---|---|---|
-| `test_models.py` | 81 | MLA, MoE, MTP, transformer shapes & invariants |
-| `test_training.py` | 40 | Pretrain loop, μP, NaN guard, checkpoints |
-| `test_utils.py` | 26 | Checkpoint I/O, memory estimates, logging |
-| `test_moe_triton.py` | 16 | MoE Triton vs PyTorch reference (`@pytest.mark.gpu` for kernel) |
-| `test_inference.py` | 13 | Generate, speculative decode |
-| `test_mla_triton.py` | 5 | MLA reference + import surface; GPU Triton vs reference |
-| `test_force_back.py` | 8 | `ENABLE_TRITON_KERNELS` force-back guard |
-| **Total** | **189** | |
-
-**Remaining gap:** full-model `test_sdpa_and_triton_agree` (end-to-end `attn_impl: triton`) is not yet in the suite — track in [[Docs/12_Triton_Kernels|triton kernels]].
-
----
-
-## Fixtures (conftest.py)
-
-| Fixture | Purpose | Key dims |
-|---|---|---|
-| `cfg` | Medium model (2 layers) | dim=640, 8 experts |
-| `small_cfg` | Tiny model for fast tests | dim=64, vocab=1024, 4 experts |
-| `nested_cfg` | Nested YAML shape | `{"model": {...}}` |
-| `training_cfg` | Pretrainer smoke | Minimal training config |
-| `tokens`, `targets` | Random int64 tensors | (2, 16) |
-| `tmp_ckpt_dir` | Temp checkpoint dir | Auto-cleaned |
-| `tmp_data_file` | Single-file dataset | uint32 tokens |
-| `tmp_shard_dir` | Sharded dataset | 2 shards |
-
-`device` fixture: always CPU in CI.
-
----
-
-## test_models.py
-
-**Largest file (~900 lines).** Covers every model component.
-
-| Class | What it verifies |
-|---|---|
-| `TestEmbedding` | Embedding shape, init |
-| `TestTransformer` | Construction, forward shape, nested config |
-| `TestMLA` | SDPA vs manual agreement, cache, RoPE |
-| `TestSwiGLUFFN` | FFN shape, non-linearity |
-| `TestExpert` | Single MoE expert |
-| `TestDeepSeekMoE` | Forward, gate shapes, bias update, balance loss |
-| `TestAuxLossFreeGate` | **bias is buffer, in state_dict** |
-| `TestTransformerBlock` | Dense vs MoE block selection |
-| `TestMTPBlock/Module/Prediction` | MTP shapes, shared head, short seq |
-| `TestGeneration` | generate(), sampling, cache reset |
-| `TestCountParameters` | Weight tying dedup |
-
-**Key learning test:**
-
-```python
-test_sdpa_and_manual_agree  # MLA absorption equivalence
-test_bias_not_in_parameters # MoE bias invariant
-test_shared_head_mtp        # MTP head sharing
-```
-
----
-
-## test_training.py
-
-| Class | What it verifies |
-|---|---|
-| `TestTrainingConfig` | Dataclass defaults |
-| `TestWarmupCosineScheduler` | LR curve shape |
-| `TestPretrainDataset` | Single + sharded layouts |
-| `TestPretrainerConstruction` | μP LR, optim dedup, MTP wrap |
-| `TestCheckpointRoundtrip` | Save/load with MTP |
-| `TestTrainStep` | Forward+backward smoke |
-| `TestMoEBalanceMetric` | balance_loss logging |
-| `TestNanGuardRollback` | NaN recovery |
-| `TestConfigFromYAML` | YAML → TrainingConfig |
-
----
-
-## test_inference.py
-
-| Class | What it verifies |
-|---|---|
-| `TestModelGenerate` | KV-cache generation |
-| `TestSpeculativeDecoder` | Accept/reject, cache coherence |
-| `TestInferenceHelpers` | generate_tokens wrapper |
-
----
-
-## test_utils.py
-
-| Class | What it verifies |
-|---|---|
-| `TestCheckpointManagerSaveLoad` | Atomic save, step discovery |
-| `TestCheckpointManagerMTP` | mtp. prefix roundtrip |
-| `TestMemoryEstimation` | Formula components |
-| `TestCheckpointManagerAdditional` | Crash recovery, incomplete steps |
-
----
-
-## test_moe_triton.py
-
-| Class | What it verifies |
-|---|---|
-| `TestGroupedMoePytorchReference` | Reference kernel correctness |
-| `TestMoeTritonImportSurface` | HAS_TRITON gating |
-| `TestMoeTritonDispatchWiring` | stacked vs triton_grouped fallback |
-| `TestMoeTritonKernelGPU` | Triton ≈ reference on GPU (`@pytest.mark.gpu`) |
-
-CPU tests always pass. GPU tests skipped on Mac.
-
----
-
-## test_mla_triton.py
-
-| Class | What it verifies |
-|---|---|
-| `TestMlaAttentionReference` | PyTorch reference shapes + decode step |
-| `TestMlaTritonImport` | `HAS_TRITON` gating, ImportError without triton |
-| `TestMlaTritonKernelGPU` | Triton ≈ reference on GPU (`@pytest.mark.gpu`) |
-
----
-
-## test_force_back.py
-
-Verifies `ENABLE_TRITON_KERNELS` env-var guard:
-
-- Without env var: `triton_grouped` → `stacked`, `triton` attn → `sdpa`
-- With `ENABLE_TRITON_KERNELS=1`: keys preserved
-- Single warning at construction, not per-layer
-
----
-
-## Load-Bearing Tests
-
-**Never break these** — they guard architectural invariants:
-
-| Test | Invariant |
-|---|---|
-| `test_bias_not_in_parameters` | MoE bias is buffer |
-| `test_bias_in_state_dict` | Bias persists in checkpoints |
-| `test_sdpa_and_manual_agree` | MLA math correctness |
-| `test_update_bias_sign_rule` | Over/under-load bias direction |
-| `test_stacked_weights_refresh_after_optimizer_step` | No stale MoE weights |
-| `test_count_with_weight_tying` | Param dedup |
-| `test_force_back_moe_dispatch_when_env_var_missing` | Triton guard |
-| `test_nan_guard_rollback` | Training stability |
-
----
-
-## Adding New Tests
-
-Rules from AGENTS.md:
-
-1. **CPU-runnable by default** — PyTorch reference for any Triton path
-2. **GPU tests** — `@pytest.mark.gpu`, compare Triton vs reference at `atol=1e-2` BF16
-3. **Triton kernels** — also need `gradcheck` on float32 tiny config
-4. Place in `tests/test_<component>.py` or extend existing file
-5. Use `small_cfg` fixture for speed
-
----
-
-## CI
-
-`.github/workflows/ci.yml` — CPU smoke on push.
-
-**Known issue:** CI may reference missing `configs.pretrain_a100_422m` Python module (only YAML exists). Local `pytest tests/` is the authoritative correctness gate.
-
----
-
-
-
----
-
-## Test-Driven Learning Exercises
-
-Use tests as a **curriculum** — read the test, predict the assertion, then read the implementation.
-
-### Exercise 1 — MLA absorption equivalence
-
-```bash
-python -m pytest tests/test_models.py -k sdpa_and_manual_agree -v
-```
-
-**Learn:** SDPA path expands compressed KV; manual path absorbs projections. They must agree within tolerance.
-
-### Exercise 2 — MoE bias invariant
-
-```bash
-python -m pytest tests/test_models.py -k bias_not_in_parameters -v
-```
-
-**Learn:** `AuxLossFreeGate.bias` is `register_buffer`, not `nn.Parameter` — excluded from AdamW and weight decay.
-
-### Exercise 3 — μP LR formula
-
-```bash
-python -m pytest tests/test_training.py -k mup_lr_scaling -v
-```
-
-**Learn:** LR scales as sqrt(ref_params / actual_params) after MTP wrap.
-
-### Exercise 4 — NaN guard rollback
-
-```bash
-python -m pytest tests/test_training.py -k nan_guard -v
-```
-
-**Learn:** 5 consecutive bad micro-steps trigger checkpoint restore.
-
-### Exercise 5 — Triton env guard
-
-```bash
-python -m pytest tests/test_force_back.py -v
-```
-
-**Learn:** Without `ENABLE_TRITON_KERNELS=1`, Triton config keys are force-backed at construction.
-
----
-
-## Fixture Deep Dive (`conftest.py`)
-
-### `small_cfg` — the workhorse
-
-```python
-dim=64, vocab_size=1024, n_layers=2, n_routed_experts=4
-```
-
-Small enough for instant CPU tests; preserves MLA/MoE/MTP structure.
-
-### `cfg` — medium model
-
-`dim=640`, 8 experts — used for shape tests closer to production aspect ratios.
-
-### `tmp_shard_dir`
-
-Two-shard layout testing `PretrainDataset._locate` cross-shard stitching.
-
----
-
-## pytest Markers
-
-| Marker | Meaning |
-|---|---|
-| `@pytest.mark.gpu` | Requires CUDA; skipped on Mac CI |
-
-GPU tests compare Triton vs PyTorch reference at `atol=1e-2` BF16.
-
----
-
-## Mapping Tests to Architecture Docs
-
-| Test file | Primary doc |
-|---|---|
-| `test_models.py` | [[Docs/03_Multi_Head_Latent_Attention|MLA]], [[Docs/04_DeepSeekMoE|MoE]], [[Docs/02_Model_Architecture|Transformer]] |
-| `test_training.py` | [[Docs/08_Training_Pipeline|Training]] |
-| `test_inference.py` | [[Docs/10_Inference_and_Serving|Inference]] |
-| `test_utils.py` | [[Docs/11_Operations_and_Testing|Operations]] |
-| `test_moe_triton.py` | [[Docs/12_Triton_Kernels|triton kernels]] |
-| `test_force_back.py` | [[Docs/08_Training_Pipeline|Training]] §Triton |
-
----
-
-## When a Test Fails — Diagnostic Tree
-
-```
-pytest failure
-  ├─ shape mismatch → check config dims vs implementation
-  ├─ MLA sdpa/manual disagree → absorption bug in mla.py
-  ├─ MoE bias in parameters → violated buffer invariant
-  ├─ checkpoint roundtrip → weight tying or mtp. prefix
-  └─ nan_guard → training instability; check LR, data, dtype
-```
-
-
-
-
-
-## Complete Test Inventory
-
-| File | Class / test | Asserts |
-|---|---|---|
-| `test_models.py` | `TestTransformerForward` | Output shapes, no NaN |
-| `test_models.py` | `TestMLAPaths` | SDPA vs manual agreement |
-| `test_models.py` | `TestMoE` | Routing, expert output shape |
-| `test_models.py` | `TestMTP` | Shared head, loss finite |
-| `test_models.py` | `TestWeightTying` | `head.weight is embed.weight` |
-| `test_training.py` | `test_mup_lr_scaling` | μP formula |
-| `test_training.py` | `test_nan_guard_rollback` | Recovery after NaN streak |
-| `test_training.py` | `test_checkpoint_roundtrip` | Save/load weights |
-| `test_training.py` | `test_moe_bias_update_during_training` | Bias buffer moves |
-| `test_inference.py` | `TestGenerate` | Greedy decode deterministic |
-| `test_inference.py` | `TestSpeculativeDecoder` | Accept/reject path |
-| `test_utils.py` | `TestCheckpointManager` | Atomic save, latest_step |
-| `test_force_back.py` | Triton env guard | Force-back without env var |
-| `test_moe_triton.py` | GPU kernel | Triton vs stacked (CUDA only) |
-
-Run `python -m pytest tests/ --collect-only -q` in a checkout to see the live list — names above are representative; grep `def test_` when adding docs.
-
----
-
-## How to Write a Load-Bearing Test
-
-Template for a new invariant:
-
-```python
-def test_my_invariant(small_cfg):
-    model = Transformer(small_cfg)
-    # exercise code path
-    assert condition, "actionable message linking to doc section"
-```
-
-**Rules:**
-1. Use `small_cfg` unless testing scale-specific behaviour
-2. No CUDA required unless marked `@pytest.mark.gpu`
-3. Prefer numerical agreement (two paths) over snapshot tests
-4. Name tests after the invariant, not the implementation detail
-
----
-
-## CI Expectations
-
-- Full CPU suite completes in minutes on MacBook-class hardware
-- GPU tests skip gracefully without CUDA
-- No network I/O in unit tests (tokenizer fixtures are local or mocked)
-
----
-
-## Regression Stories (Documented Bugs Tests Prevent)
-
-| Bug class | Test that catches it |
-|---|---|
-| MoE bias in `parameters()` | `test_bias_not_trainable` |
-| Triton silent enable | `test_force_back.py` |
-| MTP checkpoint prefix | `test_save_load_with_mtp` |
-| uint32 embed crash | training integration casts at boundary |
-| KV cache in training | `use_cache=False` in train_step |
-
-
-
-## Coverage Map (What Tests Do NOT Cover)
-
-| Area | Gap | Mitigation |
-|---|---|---|
-| Full 8B data pipeline | Too slow for CI | Manual `prepare_data.py` run |
-| 13h training convergence | Too expensive | Monitor loss in production |
-| Triton MLA kernel | Not implemented | N/A |
-| Multi-GPU | Not implemented | N/A |
-| Chat quality / benchmarks | Out of scope | External eval harness |
-
----
-
-## Running Subsets
-
-```bash
-# Fast smoke (< 30s)
-pytest tests/test_models.py::TestAuxLossFreeGate -q
-
-# Training loop only
-pytest tests/test_training.py -q
-
-# Everything except GPU Triton
-pytest tests/ -q --ignore=tests/test_moe_triton.py::TestMoeTritonKernelGPU
-```
-
-
-## References
-
-- `tests/conftest.py` — fixtures
-- [[Docs/00_Getting_Started|Getting Started]] — quick test commands
-- Component docs: [[Docs/04_DeepSeekMoE|MoE]], [[Docs/03_Multi_Head_Latent_Attention|MLA]], [[Docs/05_Multi_Token_Prediction|MTP]]
-
-## Complete Test Inventory
-
-| File | Classes | Focus |
-|---|---|---|
-| `test_models.py` | ~15 classes | MLA, MoE, MTP, Transformer shapes |
-| `test_training.py` | 6 classes | Dataset, Pretrainer, μP, NaN guard |
-| `test_inference.py` | 3 classes | generate(), SpeculativeDecoder |
-| `test_utils.py` | 5 classes | Checkpoint, memory estimation |
-| `test_force_back.py` | 1 class | Triton env-var guard |
-| `test_moe_triton.py` | GPU + CPU | Triton vs stacked equivalence |
-
-**Total:** ~86 `def test_*` functions (run `rg -c "def test_" tests/` to verify).
-
----
-
-## Load-Bearing Test Template
-
-When adding a new invariant, follow this pattern from `test_moe_triton.py`:
-
-```python
-def test_new_invariant(self, small_cfg, device):
-  model = build_model(small_cfg).to(device)
-  # 1. Exercise the code path
-  out = model(input_ids)
-  # 2. Assert the invariant (shape, value, or property)
-  assert not any("gate.bias" in n for n, p in model.named_parameters())
-```
-
-**Rules:**
-- Use `small_cfg` for speed (dim=64)
-- No CUDA required unless `@pytest.mark.gpu`
-- Compare against reference implementation when possible
-
----
-
-## Regression Stories — What Tests Caught
-
-| Bug class | Test that locks it | Doc |
-|---|---|---|
-| MLA absorption drift | `test_sdpa_and_manual_agree` | [[Docs/03_Multi_Head_Latent_Attention|MLA]] |
-| MoE bias in AdamW | `test_bias_not_in_parameters` | [[Docs/04_DeepSeekMoE|MoE]] |
-| MTP alignment off-by-one | `test_forward_short_sequence` | [[Docs/05_Multi_Token_Prediction|MTP]] |
-| Triton silent enable | `test_force_back_*` | [[Docs/08_Training_Pipeline|Training]] |
-| Checkpoint MTP prefix | `test_mtp_weights_roundtrip` | [[Docs/11_Operations_and_Testing|Operations]] |
-| μP LR formula | `test_mup_lr_scaling` | [[Docs/08_Training_Pipeline|Training]] |
-
----
-
-## CI Recommendations
-
-```bash
-# Fast gate (< 3 min)
-python -m pytest tests/ -q --ignore=tests/test_moe_triton.py::TestMoeTritonKernelGPU
-
-# Full gate (GPU runner)
-python -m pytest tests/ -q
-```
-
-Add new tests to the fast gate unless they require CUDA or Triton.
-
-## test_models.py — Class Inventory
-
-Major test classes (grep `class Test` in file):
-
-| Class | Verifies |
-|---|---|
-| `TestTransformer` | Construction, forward shape, nested config unwrap |
-| `TestMLA` | SDPA vs manual, cache read/write, RoPE |
-| `TestDeepSeekMoE` | Routing, expert shapes, bias buffer |
-| `TestMTPModule` | Shared head, alignment, short sequences |
-| `TestMultiTokenPrediction` | Loss computation, depth>0 |
-| `TestAuxLossFreeGate` | Bias is buffer, update_gate_bias |
-
-**Equivalence tests** are the highest value — they catch math bugs that shape tests miss.
-
----
-
-## test_training.py — Key Tests
-
-| Test | Invariant |
-|---|---|
-| `test_mup_lr_scaling` | $\eta_{\text{new}} = \eta_{\text{ref}} \sqrt{N_{\text{ref}}/N}$ |
-| `test_nan_guard_rollback` | 5 NaN steps → checkpoint restore |
-| `test_sharded_cross_boundary` | `__getitem__` stitches shards |
-| `test_optimizer_deduplicates` | Tied weights → one Adam state |
-| `test_construction_with_mtp` | MTP wrap changes param count |
-
----
-
-## Writing a New Test — Checklist
-
-1. Pick `small_cfg` unless you need production aspect ratios (`cfg`)
-2. Use `device` fixture (CPU in CI)
-3. Assert **property**, not implementation detail
-4. Name test `test_<behaviour>_<condition>`
-5. Add one-line docstring referencing doc section if non-obvious
-6. Run `pytest tests/test_yourfile.py -v` before committing
-
-<!-- docs:verified 2026-08-01 · e8553c4 -->
-
-## Appendix D — Technical Walkthroughs & Implementation Notes
-
-### μP LR Scaling Derivation
-
-The μP transfer rule (Yang et al., 2022) lets you tune LR on a small model and scale it to a larger one without re-running a sweep.
-
-**Formula:**
-
-$$
-\eta_{\text{target}} = \eta_{\text{ref}} \times \sqrt{\frac{N_{\text{ref}}}{N_{\text{target}}}}
-$$
-
-where $N$ = total parameter count (including MTP params when MTP wrap is active).
-
-**Worked example (422M config):**
-
-- Reference: $\eta_{\text{ref}} = 6 \times 10^{-4}$ at $N_{\text{ref}} = 757226496$
-- Target: $N_{\text{target}} \approx 422000000$
-
-$$
-\eta = 6 \times 10^{-4} \times \sqrt{\frac{757226496}{422000000}} = 6 \times 10^{-4} \times 1.339 \approx 8.03 \times 10^{-4}
-$$
-
-The YAML sets `lr: 8.0e-4` but μP overrides to ~8.03e-4 at init.
-
-**Why wider models get lower LR:** Wider models average gradients over more parameters per layer → each parameter's update is smaller → lower LR maintains the same effective update magnitude. The $\sqrt{\cdot}$ scaling is the optimal balance point that keeps "update per parameter" constant across scales.
-
-**MTP edge case:** If MTP is enabled, `total` includes MTP head parameters, making the denominator larger and the scaled LR slightly lower. This is a known limitation — the MTP params don't participate in the same μP theory as the trunk.
-
-**Implementation order:** μP scaling runs **after** MTP wrap (step 8 in `__init__`), so it correctly counts the post-wrap parameter total.
-
-```python
-if config.mup_lr:
-    new_lr = config.mup_lr_reference * (config.mup_lr_reference_params / total) ** 0.5
-    config.lr = new_lr
-```
-
-### Sharded Dataset Loading
-
-For large corpora, data is split into binary shard files (`shard_000.bin`, `shard_001.bin`, …). The dataset uses three mechanisms to serve arbitrary indices efficiently:
-
-**Binary-search shard lookup:**
-
-```python
-def _locate(self, global_idx):
-    lo, hi = 0, len(self.shard_offsets) - 1
-    while lo < hi:
-        mid = (lo + hi + 1) // 2
-        if self.shard_offsets[mid] <= global_idx:
-            lo = mid
-        else:
-            hi = mid - 1
-    return lo, global_idx - self.shard_offsets[lo]
-```
-
-This finds which shard a global index belongs to in $O(\log N)$ time. Each shard tracks its cumulative token offset in `shard_offsets`.
-
-**LRU shard cache (capacity = 2):**
-
-```python
-def _load_shard(self, shard_idx):
-    if shard_idx in self._shard_cache:
-        return self._shard_cache[shard_idx]
-    t = torch.load(self.shard_paths[shard_idx], weights_only=True, map_location="cpu")
-    self._shard_cache[shard_idx] = t
-    self._shard_cache_order.append(shard_idx)
-    while len(self._shard_cache_order) > 2:  # evict oldest
-        evict = self._shard_cache_order.pop(0)
-        self._shard_cache.pop(evict, None)
-    return t
-```
-
-Only **2 shards** stay in memory at once — small by design to avoid OOM on machines with limited RAM. With more memory, increasing this reduces disk I/O.
-
-**Cross-shard stitching:**
-
-When a training window spans two shards, tokens are collected sequentially using `.tolist()` to bridge the boundary, then packed into a tensor. This is slower than `torch.cat` (used in GPT-OSS-Lite) but correct and memory-safe — no temporary concatenation tensor is allocated.
-
-### NaN Guard Mechanism
-
-The NaN guard operates at three levels to protect training from divergence:
-
-1. **Skip the step:** If loss is NaN or Inf, skip backward and clear gradients — the optimizer is not updated.
-2. **Count consecutive NaNs:** A `nan_guard_streak` counter increments on each bad step and resets to 0 on any finite loss.
-3. **Rollback after 5 consecutive NaNs:** Restore from the last good checkpoint (weights, optimizer state, scheduler, `_opt_steps` counter).
-
-```python
-if nan_guard_streak >= config.nan_guard_max_consecutive:
-    latest = self._find_latest_checkpoint()
-    if latest is not None:
-        global_step = self.load_checkpoint(latest)
-    else:
-        raise RuntimeError("NaN with no checkpoint to restore")
-    nan_guard_streak = 0
-```
-
-**Why 5?** Sporadic NaNs (1–4 in a row) happen from transient numerical instabilities (rare gradient spikes from MoE routing). The optimizer recovers naturally. Five consecutive NaNs signal true divergence — LR too high, corrupt shard, or dtype bug — requiring rollback.
-
-**Resume behavior after rollback:** Weights, AdamW moments, scheduler state, and `_opt_steps` are all restored from the checkpoint. The DataLoader shuffle order is **not** restored (sampler RNG is not checkpointed) — benign at 8.4B token scale. `global_step` in the `train()` loop resumes from the restored micro-step counter.
-
-**If no checkpoint exists:** Raises `RuntimeError` immediately. The NaN guard is never disabled by default in the 422M YAML (`nan_guard: true`).
-
-### YAML Config Reference
-
-The canonical config (`configs/pretrain_a100_422m.yaml`) has three top-level sections:
-
-```yaml
-model:      # Architecture — consumed by Transformer, MLA, MoE, MTP
-training:   # Loop hyperparameters — consumed by Pretrainer
-data:       # Paths — consumed by Pretrainer and inference/generate.py
-```
-
-**Key model parameters (422M):**
-
-| Parameter | Value | Description |
-|---|---|---|
-| `vocab_size` | 100018 | DeepSeek-Coder-V2-Lite tokenizer length |
-| `dim` | 768 | Hidden dimension |
-| `n_layers` | 18 | 2 dense + 16 MoE |
-| `n_heads` | 12 | MLA attention heads |
-| `n_routed_experts` | 20 | MoE routed experts |
-| `n_activated_experts` | 4 | Top-4 routing per token |
-| `kv_lora_rank` | 192 | KV compression latent dim |
-| `qk_nope_head_dim` | 48 | Content key/query per head |
-| `qk_rope_head_dim` | 24 | Positional key/query per head |
-| `v_head_dim` | 64 | Value per head |
-| `max_seq_len` | 2048 | Training sequence length |
-| `mtp_depth` | 1 | MTP auxiliary heads |
-| `mtp_loss_weight` | 0.3 | λ for MTP loss |
-
-**Key training parameters:**
-
-| Parameter | Value | Description |
-|---|---|---|
-| `micro_batch_size` | 8 | Per-GPU batch |
-| `gradient_accumulation_steps` | 4 | Effective batch = 32 |
-| `total_steps` | 512000 | Micro-steps (128K optimizer steps) |
-| `warmup_steps` | 2000 | Linear LR warmup |
-| `lr` | 8.0e-4 | Overwritten by μP |
-| `min_lr_ratio` | 0.05 | Cosine floor |
-| `weight_decay` | 0.1 | On dim≥2 params only |
-| `grad_clip` | 1.0 | Global norm clip |
-| `compile` | true | torch.compile |
-| `mup_lr` | true | Enable μP scaling |
-| `nan_guard` | true | NaN rollback |
-
-**Key data parameters:**
-
-| Parameter | Value | Description |
-|---|---|---|
-| `train_data_path` | data/pretrain_chinchilla | Shard directory or .bin file |
-| `tokenizer_path` | deepseek-ai/deepseek-coder-v2-lite | HF tokenizer |
-
-**Token budget math:**
-
-$$
-\text{tokens/optimizer-step} = 8 \times 4 \times 2048 = 65536
-$$
-
-$$
-\text{total tokens} = 128000 \times 65536 \approx 8.4\text{B unique} \approx 20 \text{ tokens/param (Chinchilla optimal)}
-$$
-
-**Hardware knobs** (set in `Pretrainer.__init__`):
-
-```python
-torch.backends.cuda.matmul.allow_tf32 = True   # ~8× faster FP32 accum on Ampere
-torch.backends.cudnn.allow_tf32 = True
-torch.set_float32_matmul_precision("high")
-torch.backends.cudnn.benchmark = True           # auto-select best algorithm
-```
-
-**`torch.compile`:** `mode="max-autotune"`, `fullgraph=False` — fuses ops and autotunes CUDA kernels; graph breaks allowed for MoE dispatch and Python control flow.
-
-### Checkpoint Management
-
-Each save at step `N` produces three atomic files:
-
-| File | Format | Contents |
-|---|---|---|
-| `model_step_N.safetensors` | SafeTensors | Transformer weights + `mtp.*` keys |
-| `optim_step_N.pt` | PyTorch pickle | AdamW moments (FP32 master) |
-| `meta_step_N.json` | JSON | step, opt_steps, scheduler, config, has_mtp, tag |
-
-**Atomic write protocol:**
-
-```python
-fd, tmp = tempfile.mkstemp(dir=save_dir, suffix=".safetensors.tmp")
-save_file(deduped_state, tmp)
-os.replace(tmp, final_path)   # atomic on POSIX — no torn checkpoints
-```
-
-On failure: temp file is unlinked, exception re-raised. A checkpoint is only considered complete if **all three** files exist — `latest_step()` ignores partial writes from killed jobs.
-
-**Tied weight deduplication:**
-
-```python
-seen_ptrs = set()
-for k, v in state.items():
-    ptr = v.data_ptr()
-    if ptr in seen_ptrs:
-        deduped[k] = v.contiguous().clone()  # clone tied weights
-    else:
-        seen_ptrs.add(ptr)
-        deduped[k] = v.contiguous()
-```
-
-When `weight_tying: true`, `embed.weight` and `head.weight` share the same `data_ptr()`. safetensors cannot store the same tensor pointer twice — the second occurrence is cloned. `Pretrainer` also drops `head.weight` entirely on save (redundant with embed).
-
-**MTP weight integration:**
-
-```python
-# Saving — merge into same file:
-mtp_state = {f"mtp.{k}": v for k, v in orig.state_dict().items() if k.startswith("mtp_modules.")}
-state.update(mtp_state)
-
-# Loading — strip prefix:
-mtp_state = {k.removeprefix("mtp."): v for k, v in state.items() if k.startswith("mtp.")}
-mtp_wrapper.load_state_dict(mtp_state, strict=False)
-```
-
-MTP weights are saved with `mtp.` prefix in the **same file** as the main model — one file per checkpoint, fully atomic. The `has_mtp` flag in `meta_step_N.json` tells the loader whether to look for MTP keys.
-
-**Metadata structure:**
-
-```json
-{
-    "step": 4000,
-    "scheduler": { "last_epoch": 1000, "_step_count": [1000] },
-    "opt_steps": 1000,
-    "tag": "step_4000",
-    "config": { ... },
-    "has_mtp": true
-}
-```
-
-The scheduler state is saved in JSON (not a separate .pt file), simplifying the checkpoint layout. `_opt_steps` tracks actual optimizer steps (not micro-steps).
-
-**Completeness check:**
-
-```python
-def _checkpoint_complete(self, step):
-    return all((self.save_dir / n).exists() for n in [
-        f"model_step_{step}.safetensors",
-        f"optim_step_{step}.pt",
-        f"meta_step_{step}.json"
-    ])
-```
+<!-- docs:verified 2026-08-04 · 59aeef3 -->

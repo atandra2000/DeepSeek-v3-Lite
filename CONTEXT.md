@@ -1,7 +1,7 @@
 # DeepSeek-v3-Lite — Working Context
 
 > Build target: `/Users/atandrabharati/Desktop/CoreProjects/LLM/DeepSeek-v3-Lite`
-> Status snapshot: 2026-07-30.
+> Status snapshot: 2026-08-03.
 
 ## Scoping note
 
@@ -25,15 +25,15 @@ code/configs/tests, not from `docs/03_Multi_Head_Latent_Attention.md`.
 | Field | Value |
 |---|---|
 | Repo | DeepSeek-v3-Lite (single-A100 80GB faithful V3 reproduction) |
-| Scale | ~422M params, 8.4B Chinchilla-optimal tokens |
-| Wall budget | 13-15h A100 80GB SXM, 35-40% MFU target |
+| Scale | ~412M params (411.6M base / 418.7M with MTP), 8.4B Chinchilla-optimal tokens |
+| Wall budget | ~30-45h (est.) A100 80GB SXM, 35-40% MFU target |
 | Stack | PyTorch 2.x, TF32, SDPA/FA2, `torch.compile(max-autotune)`, dataclasses (not pydantic), safetensors ckpt |
 | Vocab | 100,018 (`deepseek-coder-v2-lite`, has `byte_fallback`) |
 | Topology | dim=768, n_layers=18 (2 dense + 16 MoE), 12 heads |
 | MLA dims | `kv_lora_rank=192`, `qk_rope_head_dim=24`, `qk_nope_head_dim=48`, `v_head_dim=64`, `q_lora_rank=0` |
 | MoE | 20 routed (top-4), 1 shared, `inter_dim=1536` (dense), `moe_inter_dim=384` |
 | RoPE | θ=10000, factor=1.0 (no YaRN scaling at training length) |
-| Optim | AdamW(fused), betas=(0.9, 0.95), wd=0.1, µP LR scaling (ref 6e-4 @ 757M → ~8.07e-4 @ 422M) |
+| Optim | AdamW(fused), betas=(0.9, 0.95), wd=0.1, µP LR scaling (ref 6e-4 @ 757M → ~8.07e-4 @ 418.7M with MTP) |
 | Steps | 512,000 total (with grad_accum=4 ≈ 2,048,000 micro-steps), 2000-step warmup, cosine to 5% |
 | MTP | depth=1, loss_weight=0.3, shared output head, speculative decoder in `inference/speculative.py` |
 
@@ -68,7 +68,7 @@ scripts/
   launch_a100.sh                         # pre-flight + nohup pretrain (PID, log tail)
   microbench_a100.py                     # measure peak VRAM
   step_time_a100.py                      # measure ms/step + MFU (target 30-45%)
-tests/                                   # conftest.py (cfg/small_cfg/nested_cfg/training_cfg/tokens/targets + tmp helpers); CPU-only; 2542 lines
+tests/                                   # conftest.py (cfg/small_cfg/nested_cfg/training_cfg/tokens/targets + tmp helpers); CPU-only; 2863 lines
   test_models.py 934 lines (Transformer, MLA, SwiGLU, Expert, DeepSeekMoE, AuxLossFreeGate, MTP, Generation, CountParameters)
   test_training.py 711 lines (TrainingConfig, scheduler, dataset, pretrainer construction, ckpt roundtrip, train_step, MoE metric, YAML parse, NaN-guard rollback, µP LR boundary, scheduler boundary)
   test_inference.py 322 lines (generate_tokens, SpeculativeDecoder, generate_interactive, helpers)
@@ -92,16 +92,16 @@ graphify-out/                            # prior graphify run artefacts (gitigno
 - **Two MLA paths**: `attn_impl="sdpa"` (default, FA2-friendly) materialises K_nope/V via bmm; manual path implements true absorption (per-batch bmm, 4× FLOPs, debug/ref). Cache is identical.
 - **YaRN/RoPE**: `_extend_rope` doubles to `max_seq_len`; `rope_factor > 1.0` divides inv_freq and adds `mscale`. With factor=1.0 everything is bypassed.
 - **MoE bias (load-bearing)**: `self.bias` is a **buffer** (not Parameter), so it does not receive autograd updates and is not in `state_dict()`. Updates are gated by `bias_update_every` (config: 1). Init zero. Update rule: subtract `speed` if count > avg·(1+upper); add if count < avg·(1-lower). Default upper/lower=0.10.
-- **Stacked MoE dispatch** (`moe_dispatch="stacked"`): builds `_stacked_w1/w2/w3` lazily on first forward, one Python loop over experts (no segment-CuMoE / group-gemm). `_forward_grouped` exists for reference; both should agree per `test_stacked_and_grouped_agree`.
+- **Stacked MoE dispatch** (`moe_dispatch="stacked"`): rebuilds `_stacked_w1/w2/w3` from the expert `nn.Linear`s **every forward** (caching across steps freezes experts after `optimizer.step()` — see `test_stacked_weights_refresh_after_optimizer_step`), then runs one Python loop over experts. `moe_dispatch` is `"stacked"` (default) or `"triton_grouped"` (opt-in, dim-capped); there is no separate `"grouped"` path in this codebase.
 - **MTP wiring**: `MultiTokenPrediction(main_model)` registers `embed = main_model.embed`, shares `main_model.head` via `set_output_head`. MTP states saved under `mtp.` prefix in safetensors, optim state intentionally skipped.
 - **NaN guard**: rolls back to last good checkpoint after `nan_guard_max_consecutive=5` consecutive NaN/Inf; resumes that step's scheduler/optimizer state.
 - **µP LR**: `new_lr = mup_lr_reference * (mup_lr_reference_params / total) ** 0.5`. Note: scaling factor applied AFTER counting total params (post MTP-wrap), so may use mtp_total if wrapping is enabled.
 - **CheckpointManager**: dedups by `data_ptr` (shared embed/head cloned); atomic write via mkstemp + os.replace; restores strict=False with warning. Lists complete checkpoints only (all 3 files present).
-- **PretrainDataset**: single-file layout vs sharded layout (binary-search `_locate`, LRU 2-shard cache, cross-shard stitching). 2-shard eviction LRU is small — may thrash on small RAM.
+- **PretrainDataset**: single-file layout vs sharded layout (binary-search `_locate`, cross-shard stitching via `torch.cat`). All shards are **mmap'd at init** (`torch.load(..., mmap=True)`) — no LRU cache; pages are demand-paged by the OS.
 
 ## Known issues / sharp edges
 
-- **CI is broken**: `.github/workflows/ci.yml` imports `from configs.pretrain_a100_422m import get_config` but that module doesn't exist (only `.yaml`). Smoke step will fail in CI.
+- **CI** (`.github/workflows/ci.yml`, fixed in `2330bb1`): ubuntu CPU runner — import checks (`models.transformer/mla/moe/mtp`), `scripts/check_docs.py`, `pytest tests/ -q --tb=short`, and `scripts/smoke_forward.py` (CPU-safe). No GPU/Triton in CI.
 - **MoE inter_dim vs shared expert count**: yaml says `n_shared_experts: 1` and that's what code builds. ~~README text previously said 2~~ (fixed; see [README.md](../../README.md) MoE section).
 - **`n_dense_layers` semantics**: Transformer swaps to MoE for `layer_id >= n_dense_layers`. With `n_dense_layers=2`, layers 0-1 are dense SwiGLU, layers 2-17 are MoE (16 MoE layers). Config+code have 20 routed + 1 shared.
 - **`mtp_depth` in cfg**: `Pretrainer.__init__` looks up `config.model_config.get("model", config.model_config).get("mtp_depth", 0)` — must be at the top level of the model section (works with both flat and nested YAML).
@@ -112,12 +112,12 @@ graphify-out/                            # prior graphify run artefacts (gitigno
 - **Forward-mode check**: `Transformer.forward(...)` returns logits; when `use_cache=True` it caches for all positions in `start_pos:start_pos+seqlen`. Be careful when slicing.
 - **`models/__init__.py` is empty** — imports are explicit (`from models.x import Y`).
 
-## Test corpus (2021 lines, CPU-only, Mac-friendly)
+## Test corpus (2863 lines, CPU-only, Mac-friendly)
 
 - `tests/conftest.py` provides `cfg` (n_layers=2, dim=640), `small_cfg` (n_layers=2, dim=64, vocab=1024), `training_cfg`, `nested_cfg`, `tokens`, `targets`, `tmp_ckpt_dir`, `tmp_data_file`, `tmp_shard_dir`.
 - Coverage highlights:
   - `TestMLA::test_sdpa_and_manual_agree` — absorption equivalence.
-  - `TestDeepSeekMoE::test_stacked_and_grouped_agree` — dispatch equivalence.
+  - `TestDeepSeekMoE::test_forward_stacked` / `test_stacked_weights_refresh_after_optimizer_step` — dispatch + no-stale-weights.
   - `TestAuxLossFreeGate::test_bias_not_in_parameters` — bias is buffer (load-bearing invariant).
   - `TestAuxLossFreeGate::test_bias_in_state_dict` — bias is persisted via the buffer mechanism (registers survive state_dict via safetensors).
   - `TestPretrainerConstruction::test_optimizer_deduplicates` — handles tied weights.
@@ -135,7 +135,7 @@ graphify-out/                            # prior graphify run artefacts (gitigno
 
 ## Open questions / TODOs user may ask about
 
-1. µP scaling math: 6e-4 × sqrt(757_226_496 / total_params) — for ~422M → ~8.07e-4.
+1. µP scaling math: 6e-4 × sqrt(757_226_496 / total_params) — ~412M (base) → ~8.14e-4; 418.7M (with MTP) → ~8.07e-4.
 4. NaN guard threshold semantics — config flag default in dataclass differs from yaml.
 5. Loss = main + 0.3 × mtp_loss (mean across depths); only `loss` is divided by `gradient_accumulation_steps` in the train_step.
 6. `MTPBlock.attn` uses `nn.MultiheadAttention` (SDPA under the hood), not the MLA module — separate causal mask buffer, no KV cache.
