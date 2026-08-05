@@ -37,28 +37,63 @@ See the ASCII overview at the end of the Architecture section.
 
 ### MLA &mdash; the absorption trick
 
-```mermaid
-flowchart LR
-    X["x (token hidden state)"]:::in --> WDKV["W_DKV<br/>d → kv_lora_rank=96"]:::proj
-    WDKV --> CK["c_KV<br/>(B,T,96) · what we cache"]:::cache
-    CK --> WUK["W_UK<br/>96 → H×D_head"]:::proj2
-    CK --> WUV["W_UV<br/>96 → H×D_head"]:::proj2
-    WUK --> K["K (B,T,H,D)"]
-    WUV --> V["V (B,T,H,D)"]
-    X --> WQ["W_Q"]:::proj
-    WQ --> Q["Q (B,T,H,D)"]
-    Q -->|"Q · Kᵀ" | ATTN["Scaled dot-product<br/>attention"]:::attn
-    K --> ATTN
-    V --> ATTN
-    ATTN --> WO["W_O"]:::proj --> Y["y"]
-
-    WQ -. "W_Q ← W_Q @ W_UKᵀ<br/>absorption: K never materialized" .-> WUK
-
-    classDef in fill:#e0e7ff,stroke:#3730a3,color:#000
-    classDef proj fill:#fde68a,stroke:#b45309,color:#000
-    classDef proj2 fill:#fde68a,stroke:#b45309,color:#000
-    classDef cache fill:#bbf7d0,stroke:#15803d,color:#000
-    classDef attn fill:#dbeafe,stroke:#1d4ed8,color:#000
+```
+    ┌───────────────────────────────────┐
+    │x (token hidden state)             │
+    └────────┬───────────────────┬──────┘
+             │                   │
+             ▼                   ▼
+     ┌───────────────┐   ┌───────────────┐
+     │W_DKV          │   │W_Q            │
+     │d → 96         │   └───────┬───────┘
+     └───────┬───────┘           │
+             │                   │
+             ▼                   ▼
+  ┌─────────────────────┐┌───────────────┐
+  │c_KV (B,T,96)        ││Q (B,T,H,D)    │
+  │what we cache        │└───────┬───────┘
+  └──────┬───────────┬──┘        │
+         │           │           │
+         ▼           ▼           │
+   ┌───────────┐ ┌───────────┐   │
+   │W_UK       │ │W_UV       │   │
+   │96→H×D     │ │96→H×D     │   │
+   └─────┬─────┘ └───┬───────┘   │
+         │           │           │
+         ▼           ▼           │
+  ┌─────────────┐┌─────────────┐ │
+  │K (B,T,H,D)  ││V (B,T,H,D)  │ │
+  └──────┬──────┘└───┬─────────┘ │
+         │           │           │
+         └───────────┴───────────┴
+                     │           │
+                     │           │
+                     │           │
+                     │           │
+                     │           │
+                     │           │
+                     │           │
+                     │           │
+                     │           │
+                                 │
+                     └───────────┴
+                                 │
+                  ┌────────────────────────────┐
+                  │Q·Kᵀ scaled                 │
+                  │dot-product attention       │
+                  └──────────────┬─────────────┘
+                                 │
+                                 │
+                                 ▼
+                         ┌───────────────┐
+                         │W_O            │
+                         └───────┬───────┘
+                                 │
+                         ┌───────────────┐
+                         │y              │
+                         └───────────────┘
+  W_Q ──(absorption)──► W_UK:  W_Q ← W_Q @ W_UKᵀ — K is never materialized;
+  what is cached is the 96-dim c_KV.
 ```
 
 > Cached K is the **96-dim latent**, not H&times;D. ~5&times; KV-cache reduction vs MHA at inference.
@@ -97,17 +132,18 @@ flowchart LR
 
 ### MTP &amp; Speculative Decoding
 
-```mermaid
-sequenceDiagram
-    participant D as Draft (MTP)
-    participant T as Target (main head)
-    participant A as Accept/Reject
-    Note over D: predicts token t+2
-    D->>A: draft token t+2
-    A->>T: verify in parallel with main head
-    T-->>A: target distribution for t+2
-    A-->>D: accept (rate ≈ 0.8) or resample
-    Note over D,T: ≈ 2× throughput vs naive decoding
+```
+Draft (MTP)           Accept/Reject                   Target (main head)
+predicts token t+2          │                               │
+│ ① draft token t+2         │                               │
+│ ──────────────────────►   │                               │
+│                           │ ② verify in parallel          │
+│                           │ ──────────────────────────►   │
+│                           │                               │
+│                           │ ◄─③ target distribution────   │
+│   ④ accept / resample (≈0.8)                              │
+│ ◄──────────────────────   │                               │
+≈ 2× throughput vs naive decoding
 ```
 
 ### Text Alternative (ASCII)

@@ -101,19 +101,20 @@ Work the checklist in order — the last item is the most common real cause.
 
 ### 3.3 Decision tree: `[nan-guard]` fired
 
-```mermaid
-flowchart TD
-    A[nan-guard fired] --> B{First time or streak?}
-    B -- streak < 5 --> C[Inspect: LR in log = μP value? warmup active? balance_loss rising?]
-    B -- 5 consecutive --> D[Rolled back to latest complete checkpoint]
-    C --> E{Root cause found?}
-    E -- no --> F[Reduce LR ~2x for this experiment only, or fix mup_lr wiring]
-    E -- yes --> G[Fix root cause, restart from rolled-back checkpoint]
-    D --> H{Rollback repeats?}
-    H -- no --> I[Run continued]
-    H -- yes --> J{Same step every time?}
-    J -- yes --> K[Deterministic arithmetic bug: LR, init, mask, dtype - not data]
-    J -- no --> L[Data-dependent: corrupt shard or pathological batch]
+```
+[nan-guard] fired
+   │
+   ├─ streak < 5 ────────────────► Inspect: LR in log = μP value? warmup active? balance_loss rising?
+   │                                 │
+   │                                 ├─ root cause found? ──yes──► Fix root cause, restart from rolled-back checkpoint
+   │                                 └─ root cause found? ──no──► Reduce LR ~2x for this experiment only, or fix mup_lr wiring
+   │
+   └─ 5 consecutive ──────────────► Rolled back to latest complete checkpoint
+                                      │
+                                      ├─ rollback repeats? ──no──► Run continued
+                                      └─ rollback repeats? ──yes──► Same step every time?
+                                                                      ├─ yes ──► Deterministic arithmetic bug: LR, init, mask, dtype — not data
+                                                                      └─ no  ──► Data-dependent: corrupt shard or pathological batch
 ```
 
 The single most diagnostic question is **"does rollback land on the same micro-step every time?"** Same step → arithmetic (weights/LR/mask/dtype); different steps → data or routing.
@@ -299,16 +300,16 @@ The reallocation is a **fresh `torch.zeros`** — existing contents are dropped,
 
 ### 7.1 "Loss is not decreasing"
 
-```mermaid
-flowchart TD
-    A[loss flat for 1000+ opt steps] --> B{What does lr= column say?}
-    B -- 0.0 or stuck at warmup start --> C[Scheduler not stepping: check opt_steps horizon = max_steps // grad_accum; warmup in opt-step space]
-    B -- correct μP value 8.14e-4/8.07e-4 --> D{balance_loss growing?}
-    D -- yes --> E[MoE routing collapse: gate bias runaway, check bias_update_speed/every]
-    D -- no --> F{Does a tiny overfit test learn?}
-    F -- no --> G[Model/data wiring: tokenizer mismatch, target shift broken, mask leakage]
-    F -- yes --> H{LR correct but slow?}
-    H -- yes --> I[Expected: 8.4B-token run takes ~30-45h est.; loss falls slowly - compare per-token loss, not per-step]
+```
+loss flat for 1000+ opt steps
+   │
+   ├─ lr = 0.0 or stuck at warmup start ──► Scheduler not stepping: check opt_steps horizon = max_steps // grad_accum; warmup in opt-step space
+   │
+   └─ lr = correct μP value (8.14e-4 / 8.07e-4) ──► balance_loss growing?
+                                                        ├─ yes ──► MoE routing collapse: gate bias runaway, check bias_update_speed/every
+                                                        └─ no  ──► Does a tiny overfit test learn?
+                                                                      ├─ no  ──► Model/data wiring: tokenizer mismatch, target shift broken, mask leakage
+                                                                      └─ yes ──► LR correct but slow? ──yes──► Expected: 8.4B-token run takes ~30-45h est.; loss falls slowly — compare per-token loss, not per-step
 ```
 
 Two decisive experiments, in order:
@@ -318,16 +319,16 @@ Two decisive experiments, in order:
 
 ### 7.2 "Loss is diverging"
 
-```mermaid
-flowchart TD
-    A[loss growing / spiking] --> B{NaN/Inf?}
-    B -- yes --> C[Section 3: same step every rollback = arithmetic, else data/routing]
-    B -- no --> D{Spikes then recovers?}
-    D -- yes --> E[Single bad batch: corrupt shard or pathological sequence - check data around spike step]
-    D -- no --> F{Steady growth from step 0?}
-    F -- yes --> G[LR too high for the schedule: verify μP wiring, warmup, grad_clip]
-    F -- no --> H{Diverges after N steps?}
-    H -- yes --> I[Late-run instability: LR not decaying (horizon bug) or MoE expert collapse]
+```
+loss growing / spiking
+   │
+   ├─ NaN/Inf? ──yes──► Section 3: same step every rollback = arithmetic, else data/routing
+   │
+   └─ NaN/Inf? ──no──► Spikes then recovers?
+                        ├─ yes ──► Single bad batch: corrupt shard or pathological sequence — check data around spike step
+                        └─ no  ──► Steady growth from step 0?
+                                      ├─ yes ──► LR too high for the schedule: verify μP wiring, warmup, grad_clip
+                                      └─ no  ──► Diverges after N steps? ──yes──► Late-run instability: LR not decaying (horizon bug) or MoE expert collapse
 ```
 
 ---

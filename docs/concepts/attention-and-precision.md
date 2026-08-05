@@ -230,6 +230,30 @@ The product `W^{UV} W^O` is precomputed, so the value expansion never materialis
 
 **The absorption trick transforms MLA from a computationally expensive curiosity into the most memory-efficient attention variant available.**
 
+```
+=== Materialized Attention Path (SDPA / Standard Training) ===
+Hidden State x ---> c_KV (B, S, R=192) ---> [Up-Project W_UK/W_UV] ---> Full K, V (B, H, S, d_head)
+                                                                                   |
+Queries q_nope ---> [Dot Product in Full d_head Space] <---------------------------+
+
+=== Absorbed Attention Path (Manual / Inference Decode) ===
+Queries q_nope ---> [Fold W_UK: q_nope * W_UK] ---> Absorbed Query q~ (B, H, S_q, R=192)
+                                                                    |
+Cached Latent c_KV (B, S_kv, R=192) -------------> [Dot Product in Latent R-Space] ---> Score (B, H, S_q, S_kv)
+```
+
+#### Matrix Shape Transformations Across Execution Phases
+
+| Execution Phase | Operand | SDPA Path (`"sdpa"`) | Manual Path (`"manual"`) | Triton Kernel Path (`"triton"`) |
+|---|---|---|---|---|
+| **Prefill** ($S_q > 1$) | Queries | `(B, H, S_q, d_nope+d_rope)` | `q_nope` `(H, B·S_q, d_nope)` | `q_nope` `(B, S_q, H, d_nope)` |
+| | Keys | `(B, H, S_kv, d_nope+d_rope)` | `c_KV` `(B, S_kv, R)` | `c_KV` `(B, S_kv, R)` (HBM) |
+| | Transformed Query | N/A | $\tilde{q} = q \cdot W_{UK}$ `(H, B·S_q, R)` | Materialized in registers |
+| | Scores | `(B, H, S_q, S_kv)` | $\tilde{Q} C_{KV}^\top$ `(B, H, S_q, S_kv)` | Fused online softmax |
+| **Decode** ($S_q = 1$) | Latent Cache Read | `c_KV` `(B, 1, R)` | `c_KV` `(B, 1, R)` | `c_KV` `(B, 1, R)` |
+| | Up-projection | Full $K, V$ computed | Absorbed into $\tilde{q}$ once | Materialized in registers |
+
+
 ### The full two-direction derivation (with the repo's tensors)
 
 The forward pass of `models/mla.py:MultiHeadLatentAttention.forward` contains the absorption algebra as executable tensors. This subsection derives the trick in **both directions**: from the materialised form to the absorbed form (Direction 1, what the manual path computes), and from the absorbed form back to the materialised form (Direction 2, what the SDPA path computes). Both directions anchor to the same two lines of code:

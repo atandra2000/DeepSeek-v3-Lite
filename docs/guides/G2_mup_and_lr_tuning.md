@@ -200,16 +200,16 @@ Keep `mup_lr: true` and scale the **reference**, not `lr` — that keeps the μP
 
 Use the smoothed CE (main loss), not raw per-step noise: compare `loss(opt_step)` at a fixed checkpoint (e.g. opt step 2000) and the slope over the next 2,000 opt steps.
 
-```mermaid
-flowchart TD
-    A[Run arm] --> B{NaN or Inf?}
-    B -- yes --> C[halve c, verify warmup + data, re-run]
-    B -- no --> D{loss at opt-step 2000\nvs control arm}
-    D -- higher by >10% --> E[too high or too low?\ncheck slope]
-    E --> F{slope after warmup}
-    F -- increasing --> G[LR too high: halve c]
-    F -- flat but high loss --> H[LR too low: double c]
-    D -- similar, slope ~flat --> I[keep this c; extend budget\nfor final confirmation]
+```
+Run arm
+   │
+   ├─ NaN or Inf? ──yes──► halve c, verify warmup + data, re-run
+   │
+   └─ NaN/Inf? ──no──► loss at opt-step 2000 vs control arm
+                        ├─ higher by >10% ──► too high or too low? — check slope
+                        │                      ├─ slope increasing ──────────► LR too high: halve c
+                        │                      └─ slope flat but high loss ──► LR too low: double c
+                        └─ similar, slope ~flat ──► keep this c; extend budget for final confirmation
 ```
 
 Thresholds (heuristic — label any result as an estimate until a GPU run measures it):

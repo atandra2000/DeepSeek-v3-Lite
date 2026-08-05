@@ -95,31 +95,32 @@ Procedural, checklist-driven operating manuals.
 
 | Doc | ~Lines | Status |
 |---|---|---|
-| foundations.md | 3,666 | Comprehensive |
-| training.md | 2,823 | Comprehensive |
-| moe-mtp.md | 2,439 | Comprehensive |
-| attention-and-precision.md | 2,383 | Comprehensive |
+| foundations.md | 3,656 | Comprehensive |
+| training.md | 2,815 | Comprehensive |
+| moe-mtp.md | 2,483 | Comprehensive |
+| attention-and-precision.md | 1,950 | Comprehensive |
 | kernels-and-ops.md | 1,364 | Comprehensive |
 | inference.md | 1,007 | Comprehensive |
-| data-pipeline.md | 716 | Comprehensive |
-| R2_transformer_api.md | 473 | Comprehensive |
-| R4_moe_api.md | 453 | Comprehensive |
-| R5_mtp_api.md | 452 | Comprehensive |
-| getting-started.md | 381 | Comprehensive |
-| G1_debugging_playbook.md | 360 | Comprehensive |
-| R6_triton_api.md | 343 | Comprehensive |
-| parallelism.md | 338 | Comprehensive |
+| data-pipeline.md | 712 | Comprehensive |
+| R2_transformer_api.md | 381 | Comprehensive |
+| getting-started.md | 380 | Comprehensive |
+| R4_moe_api.md | 373 | Comprehensive |
+| R6_triton_api.md | 373 | Comprehensive |
+| G1_debugging_playbook.md | 361 | Comprehensive |
+| parallelism.md | 336 | Comprehensive |
+| R5_mtp_api.md | 327 | Comprehensive |
 | R8_utils_api.md | 324 | Comprehensive |
-| R1_config_schema.md | 304 | Comprehensive |
 | R7_training_api.md | 285 | Comprehensive |
 | G5_checkpoint_ops.md | 279 | Comprehensive |
+| G3_triton_development.md | 272 | Comprehensive |
 | R9_inference_api.md | 269 | Comprehensive |
 | G2_mup_and_lr_tuning.md | 266 | Comprehensive |
-| G3_triton_development.md | 258 | Comprehensive |
-| G4_benchmarking.md | 257 | Comprehensive |
+| G4_benchmarking.md | 256 | Comprehensive |
 | R3_mla_api.md | 250 | Comprehensive |
-| contributing.md | 245 | Comprehensive |
-| **Total** | **19,935** | |
+| contributing.md | 241 | Comprehensive |
+| R1_config_schema.md | 219 | Comprehensive |
+| **Total** | **19,179** | |
+
 
 ## References
 

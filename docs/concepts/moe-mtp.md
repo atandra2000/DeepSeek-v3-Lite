@@ -366,6 +366,29 @@ Each optimizer step (when `bias_update_every == 1`), the loop runs once:
 measure counts(c_k) ──► deadband comparator ──► b_{k+1} = b_k + u(c_k) ──► next forward selects with new b
 ```
 
+```
++-----------------------------------------------------------------------------------+
+|                              AuxLossFreeGate Feedback Loop                        |
+|                                                                                   |
+|   Token Input x (B,S,D) ----> [Sigmoid Gate: x @ W_g^T] ---> Raw Scores (B,S,E)    |
+|                                       |                             |             |
+|                                       | + Bias                      | Selection   |
+|                                       v                             v Weights     |
+|                                [Top-k Selection] ----------> [Expert Dispatch]    |
+|                                       |                             |             |
+|                                       v Routing Indices             v Output      |
+|                              [Token Bincount c_e]            y_routed (B,S,D)     |
+|                                       |                                           |
+|                                       v                                           |
+|                              [Deadband Comparator]                                |
+|                      c_e > avg*(1+upper) => b_e -= speed                          |
+|                      c_e < avg*(1-lower) => b_e += speed                          |
+|                                       |                                           |
+|                                       +----> Updated Bias Buffer b (FP32)         |
++-----------------------------------------------------------------------------------+
+```
+
+
 where the control law is
 
 ```
@@ -1478,6 +1501,28 @@ MTP adds auxiliary targets:
 
 ```
 ∀ position t:  predict token_{t+2} from (hidden_t, embed(token_{t+1}))
+```
+
+
+```
+=== Multi-Token Prediction (MTP) Depth-1 Data Flow & Token Alignment ===
+
+Trunk Tokens:  [x_0] --------> [x_1] --------> [x_2] --------> [x_3]
+                 |               |               |               |
+Main Trunk:    [Block 0..17] -> [Block 0..17] -> [Block 0..17] -> [Block 0..17]
+                 |               |               |               |
+Trunk Hidden:   h_0             h_1             h_2             h_3
+                 |               |               |               |
+Main Head:      p(x_1|x_0)      p(x_2|x_0..1)   p(x_3|x_0..2)   p(x_4|x_0..3)
+Target:          x_1             x_2             x_3             x_4
+                 |               |               |
+               +---------------+---------------+
+               | (Concatenate / Linear Projection)
+               v
+MTP Block:     [MTP Layer: MHA + Norm + FFN] (Fused h_t & Embed(x_{t+1}))
+               |
+MTP Logits:    p(x_2|x_0..1)   p(x_3|x_0..2)   p(x_4|x_0..3)
+Target:          x_2             x_3             x_4
 ```
 
 **Benefits:**

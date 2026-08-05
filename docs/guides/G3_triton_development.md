@@ -131,6 +131,20 @@ The two existing files implement this as:
 
 The suite is 199 tests (189 pass + 10 GPU-gated skips) on a CPU laptop; the Triton GPU tests are the bulk of the skips. `tests/test_moe_triton.py:TestMoeTritonKernelGPU.test_forward_422m_config_shape` also locks the cap behavior: at `D=768, I=384` the wrapper must raise `ValueError` matching `"256"`. And `tests/test_mla_triton.py:TestMlaTritonKernelGPU.test_full_model_sdpa_and_triton_agree` builds a full `Transformer` with both dispatch keys under `ENABLE_TRITON_KERNELS=1` and asserts the logits agree at `atol=2e-2` — the end-to-end numerics contract.
 
+
+#### Step-by-Step Procedure for Implementing Reference Tests & Gradchecks
+
+When adding or modifying a Triton kernel in this repository, follow this exact 3-step testing protocol:
+
+1. **Pure PyTorch Reference Verification (CPU)**:
+   Implement the exact algorithm in pure PyTorch (e.g., `grouped_moe_pytorch` in `models/moe_triton.py` or `mla_attention_reference` in `models/mla_triton.py`). Ensure the reference runs natively on CPU without requiring `triton` imports.
+
+2. **Float32 Gradcheck (Autograd Parity)**:
+   Run `torch.autograd.gradcheck` on float32 inputs with small configurations (`eps=1e-3`, `atol=1e-3`) to verify exact analytical vs numerical gradients before testing lower precision.
+
+3. **BF16 Numerical Parity & NaN Stability (GPU)**:
+   Under `@gpu_required`, compare the Triton kernel output against the PyTorch reference using BF16 inputs with `torch.testing.assert_close(..., atol=1e-2, rtol=1e-2)`. Assert `torch.isfinite(output).all()` across random inputs and edge cases (e.g., zero token allocations).
+
 ### 3.8 The ≥1.5× speedup bar
 
 AGENTS.md rule 2: "For the two sanctioned Triton paths, target ≥ 1.5× speedup over the raw-PyTorch path in `scripts/microbench_a100.py`; below that, do not enable by default." Two honest caveats:

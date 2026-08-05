@@ -283,6 +283,36 @@ dispatch = self.moe_dispatch
 if dispatch == "triton_grouped":
     try:
         y_routed = self._routed_forward_triton(flat, indices, weights)
+
+### 4.7 Fallback Exception Decision Tree
+
+```
+                              [Model Construction]
+                                        |
+               Is ENABLE_TRITON_KERNELS == 1 in environment?
+                                   /         \
+                                 NO           YES
+                                /               \
+          [Force-back to "sdpa" & "stacked"]   [Keep Requested Config]
+          (Logged once at init)                 (Attempt Kernel Execution)
+                                                        |
+                                               [Forward Execution]
+                                                        |
+                                          +-------------+-------------+
+                                          |                           |
+                                   ImportError                 ValueError
+                             (No Triton / CPU Host)       (Dim > 256 Register Cap)
+                                          |                           |
+                                          +-------------+-------------+
+                                                        |
+                                                        v
+                                            [Catch Exception in Forward]
+                                            - Warn once per model instance
+                                            - Set fallback permanently:
+                                              * attn_impl -> "sdpa"
+                                              * moe_dispatch -> "stacked"
+```
+
     except (ImportError, ValueError) as exc:
         if not getattr(self, "_triton_fallback_warned", False):
             print(f"[moe] triton_grouped unavailable ({type(exc).__name__}: {exc}); "

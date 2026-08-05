@@ -322,19 +322,19 @@ Follow the 14-chapter sequence under `Docs/`:
 
 The spine is linear (00 → 01 → … → 13), but your next stop depends on *why* you are here:
 
-```mermaid
-flowchart LR
-    S["docs/00 Getting Started"] --> F["docs/01 Foundations"]
-    S --> A["docs/02 Model Architecture"]
-    F --> M["docs/03 MLA"]
-    F --> E["docs/04 DeepSeekMoE"]
-    F --> T["docs/05 MTP"]
-    A --> R["docs/08 Training Pipeline"]
-    R --> D["docs/09 Data Pipeline"]
-    R --> I["docs/10 Inference & Serving"]
-    I --> O["docs/11 Operations & Testing"]
-    I --> K["docs/12 Triton Kernels"]
-    A --> P["docs/13 Portfolio Comparison"]
+```
+docs/00 Getting Started
+├────► docs/01 Foundations
+│      ├────► docs/03 MLA
+│      ├────► docs/04 DeepSeekMoE
+│      └────► docs/05 MTP
+└────► docs/02 Model Architecture
+       ├────► docs/08 Training Pipeline
+       │      ├────► docs/09 Data Pipeline
+       │      └────► docs/10 Inference & Serving
+       │             ├────► docs/11 Operations & Testing
+       │             └────► docs/12 Triton Kernels
+       └────► docs/13 Portfolio Comparison
 ```
 
 - **"I want the theory, from first principles"** → [01 Foundations](../concepts/foundations.md) (RMSNorm, RoPE, weight tying, BF16 numerics, μP intuition).

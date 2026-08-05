@@ -966,6 +966,28 @@ y_routed.index_add_(0, sorted_token_ids, y_sorted)  # scatter back to original o
 
 `★ Insight ─────────────────────────────────────` The kernel works on the **sorted-token layout**: a single `(T, D)` tensor where all tokens routed to expert 0 come first, then expert 1's, etc., delimited by `expert_offsets` (the cumsum boundaries). This is the trick that makes a *grouped* GEMM possible — instead of 20 separate `chunk @ w[e]` calls, the kernel walks the sorted tensor block by block, switching which expert's `w1/w2/w3` slice it uses at each boundary. One launch, all experts. The weights carry gradient back to the gate (the `weights`/`indices` tensors are *not* detached — only the `_last_*` snapshots used for the balance metric are). `─────────────────────────────────────────────────`
 
+```
+=== Sorted-Token MoE Dispatch Workflow ===
+Tokens Input (B, S, D) ---> [AuxLossFreeGate] ---> Top-k Indices & Routing Weights
+           |                                              |
+           +------------------> [Gather / Sort] <---------+
+                                     |
+                                     v
+                       Sorted Tokens x_sorted (T, D)
+                       [ Expert 0 Tokens | Expert 1 Tokens | ... | Expert E-1 Tokens ]
+                       expert_offsets: [0, count_0, count_0+count_1, ..., T]
+                                     |
+                                     v
+                   triton_grouped_moe_dispatch (Single Kernel Launch)
+                                     |
+                                     v
+                       Sorted Outputs y_sorted (T, D)
+                                     |
+                                     v
+                       index_add_ (Scatter Back to (B, S, D)) ---> Routed Output y_routed
+```
+
+
 The reference `models/moe_triton.py:grouped_moe_pytorch` is the same arithmetic routed through the sorted layout, used by CPU tests so the kernel's numerics are verified without a GPU. `expert_offsets` is an `(E+1,)` INT64 tensor whose entries are the cumulative token counts per expert (the `start`/`end` of each expert's contiguous slice); the kernel loads `start`/`end` per program directly from it.
 
 ### 5.3 The forward kernel — one program per (expert, token-block)

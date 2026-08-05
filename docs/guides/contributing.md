@@ -127,17 +127,18 @@ python tests/test_doc_refs.py
 
 `python -m pytest tests/ -q --tb=short` runs the full 199-node suite, under 20 s on a laptop, no GPU required. `scripts/smoke_forward.py:main` then builds the canonical 411.6M-param `Transformer` from `configs/pretrain_a100_422m.yaml` (with `max_seq_len` shrunk to 16) and asserts the logits shape `(2, 16, vocab_size)` — the closest CI comes to the real model. Note that steps 3–6 run even if the suite fails, so a push cannot hide doc drift behind a test failure.
 
-```mermaid
-graph TD
-    A[Your change] --> B{pytest green?}
-    B -->|no| C[Fix code, not gates]
-    B -->|yes| D{check_docs green?}
-    D -->|no| E[Fix prose: links, paths, stale numbers]
-    D -->|yes| F{test_doc_refs green?}
-    F -->|no| G[Fix anchors: symbols exist, no lines, no JIT]
-    F -->|yes| H[smoke_forward green?]
-    H -->|no| I[Architecture broke at canonical scale]
-    H -->|yes| J[Commit: authored by Atandra Bharati, no Co-Authored-By]
+```
+Your change
+   │
+   ├─ pytest green? ──no──► Fix code, not gates
+   │
+   └─ pytest green? ──yes──► check_docs green?
+                               ├─ no ──► Fix prose: links, paths, stale numbers
+                               └─ yes ──► test_doc_refs green?
+                                             ├─ no ──► Fix anchors: symbols exist, no lines, no JIT
+                                             └─ yes ──► smoke_forward green?
+                                                           ├─ no ──► Architecture broke at canonical scale
+                                                           └─ yes ──► Commit: authored by Atandra Bharati, no Co-Authored-By
 ```
 
 ## 4. Test Conventions
