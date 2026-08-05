@@ -103,9 +103,7 @@ We train by maximizing the likelihood of the data, equivalently **minimizing the
 
 $$\mathcal{L}_{\text{CE}}(\theta) = -\sum_{t=1}^{T} \log p_\theta(x_t \mid x_{<t})$$
 
-`★ Insight ─────────────────────────────────────`
-Cross-entropy is *negative log-likelihood* — it is the number of bits (in nats) the model "needs" to encode the true token under its distribution. A perfect model assigns probability 1 to the right token (loss 0); a uniform-over-vocab model assigns $1/V$ (loss $\log V$). The gradient $\nabla_\theta \mathcal{L}_{\text{CE}}$ flows only through the position being predicted, which is why the causal mask (§7) is essential: without it, position $t$ could "see" $x_t$ and the loss would be trivially zero.
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` Cross-entropy is *negative log-likelihood* — it is the number of bits (in nats) the model "needs" to encode the true token under its distribution. A perfect model assigns probability 1 to the right token (loss 0); a uniform-over-vocab model assigns $1/V$ (loss $\log V$). The gradient $\nabla_\theta \mathcal{L}_{\text{CE}}$ flows only through the position being predicted, which is why the causal mask (§7) is essential: without it, position $t$ could "see" $x_t$ and the loss would be trivially zero. `─────────────────────────────────────────────────`
 
 The connection to information theory: cross-entropy decomposes as
 
@@ -441,9 +439,7 @@ $$\langle \text{RoPE}(q, m), \text{RoPE}(k, n) \rangle = q^\top R(m\theta)^\top 
 
 The dot product of two rotated vectors depends only on the **relative** position $n - m$ — absolute positions cancel. This is the entire magic: attention scores become translation-equivariant, and the model can generalize to positions it never trained on (length generalization follows from the same property).
 
-`★ Insight ─────────────────────────────────────`
-RoPE is a *multiplicative* position encoding, injected into Q and K (not V). The rotation is applied *before* the dot product, so relative position falls out of $QK^\top$ for free. This is why DeepSeek can do **decoupled RoPE** in MLA: a small dedicated RoPE subspace (`d_R = 24` dims) is rotated separately from the content subspace, so the position information — which cannot be absorbed into the latent — stays outside the compressed cache. See [03 Multi Head Latent Attention](../concepts/attention-and-precision.md) §Decoupled RoPE.
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` RoPE is a *multiplicative* position encoding, injected into Q and K (not V). The rotation is applied *before* the dot product, so relative position falls out of $QK^\top$ for free. This is why DeepSeek can do **decoupled RoPE** in MLA: a small dedicated RoPE subspace (`d_R = 24` dims) is rotated separately from the content subspace, so the position information — which cannot be absorbed into the latent — stays outside the compressed cache. See [03 Multi Head Latent Attention](../concepts/attention-and-precision.md) §Decoupled RoPE. `─────────────────────────────────────────────────`
 
 ### 6.4 Implementation via complex numbers
 
@@ -932,9 +928,7 @@ $$\text{lr}_{\text{target}} = \text{lr}_{\text{ref}} \cdot \left(\frac{N_{\text{
 
 with reference $\text{lr}_{\text{ref}} = 6.0\text{e-4}$ at $N_{\text{ref}} = 757\,226\,496$ params. The canonical config sets `mup_lr: true`, so the configured `lr: 8.0e-4` is overridden by the μP-scaled value ($\approx 8.07\text{e-4}$ with MTP, $8.14\text{e-4}$ for the 411.6M base).
 
-`★ Insight ─────────────────────────────────────`
-The intuition: wider models have more parameters contributing to each update; if every param updates at the same LR, the aggregate update to the *function* grows with width and destabilizes training. The $\sqrt{N}$ scaling keeps the effective update magnitude stable as width grows — it is the continuous analog of averaging more independent estimates. This is why μP lets you tune hyperparameters on a cheap small model and lift them to the expensive large one, instead of retuning on the target. See [08 Training Pipeline](../training.md) §μP Learning Rate Scaling.
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` The intuition: wider models have more parameters contributing to each update; if every param updates at the same LR, the aggregate update to the *function* grows with width and destabilizes training. The $\sqrt{N}$ scaling keeps the effective update magnitude stable as width grows — it is the continuous analog of averaging more independent estimates. This is why μP lets you tune hyperparameters on a cheap small model and lift them to the expensive large one, instead of retuning on the target. See [08 Training Pipeline](../training.md) §μP Learning Rate Scaling. `─────────────────────────────────────────────────`
 
 **Caveat:** the count $N$ is measured *after* the MTP wrap, so the MTP head's ~7M params inflate the denominator slightly. This is documented and locked by `test_mup_lr_scaling`.
 
@@ -3306,9 +3300,7 @@ This repo uses `nn.Embedding(vocab_size, dim)` directly — no custom embedding 
 
 ### Weight Tying — Savings Math
 
-Without tying: `2 × 100,018 × 768 = 153.6M` (embedding + head).
-With tying: `100,018 × 768 = 76.8M` (single shared tensor).
-**Savings: 76.8M** — 18.7% of the 411.6M total.
+Without tying: `2 × 100,018 × 768 = 153.6M` (embedding + head). With tying: `100,018 × 768 = 76.8M` (single shared tensor). **Savings: 76.8M** — 18.7% of the 411.6M total.
 
 ```python
 self.head = nn.Linear(dim, vocab_size, bias=False)  # 768 → 100,018

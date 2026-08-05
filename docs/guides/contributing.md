@@ -1,7 +1,6 @@
 # DeepSeek-v3-Lite — Contributing
 
-> **Status:** guide · **Applies to:** every change — code, tests, docs, CI.
-> **Depends on:** [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) · **Read next:** [Triton Kernels](../concepts/kernels-and-ops.md) (before touching kernels), [Getting Started](../guides/getting-started.md) (if you are new)
+> **Status:** guide · **Applies to:** every change — code, tests, docs, CI. **Depends on:** [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) · **Read next:** [Triton Kernels](../concepts/kernels-and-ops.md) (before touching kernels), [Getting Started](../guides/getting-started.md) (if you are new)
 
 ## 60-Second Summary
 
@@ -225,17 +224,13 @@ The repo's comment rules (AGENTS.md rule 9), with verifiable targets:
 
 ## 8. Check Your Understanding
 
-**Q1.** You cite a kernel symbol defined under `if HAS_TRITON:` — say `_mla_flash_fwd_kernel` with a `models/mla_triton.py:` prefix — in a doc. What happens in CI?
-**A.** The gate fails with `JIT symbol (cite host wrapper)`. Cite `models/mla_triton.py:triton_mla_attention` — the always-defined wrapper — instead.
+**Q1.** You cite a kernel symbol defined under `if HAS_TRITON:` — say `_mla_flash_fwd_kernel` with a `models/mla_triton.py:` prefix — in a doc. What happens in CI? **A.** The gate fails with `JIT symbol (cite host wrapper)`. Cite `models/mla_triton.py:triton_mla_attention` — the always-defined wrapper — instead.
 
-**Q2.** Why must expert weights be re-stacked every forward rather than cached?
-**A.** The optimizer mutates the per-expert parameters in place each step; a cached `_stacked_w*` would silently train a stale copy (AGENTS.md rule; see §5.2).
+**Q2.** Why must expert weights be re-stacked every forward rather than cached? **A.** The optimizer mutates the per-expert parameters in place each step; a cached `_stacked_w*` would silently train a stale copy (AGENTS.md rule; see §5.2).
 
-**Q3.** `ENABLE_TRITON_KERNELS=1` is set inside your launch script's body, and the log still shows the force-back warning. What happened?
-**A.** The env-var must prefix the process launch (`ENABLE_TRITON_KERNELS=1 python training/pretrain.py …`); exporting it after Python starts doesn't reach `models/_triton_dispatch.py:enforce_triton_env_var`.
+**Q3.** `ENABLE_TRITON_KERNELS=1` is set inside your launch script's body, and the log still shows the force-back warning. What happened? **A.** The env-var must prefix the process launch (`ENABLE_TRITON_KERNELS=1 python training/pretrain.py …`); exporting it after Python starts doesn't reach `models/_triton_dispatch.py:enforce_triton_env_var`.
 
-**Q4.** Your change touches the MoE gate. What must you not do?
-**A.** Do not move the bias into the Triton kernel and do not add an auxiliary loss: the out-of-band `AuxLossFreeGate.update_bias` mechanism is a hard rule, and the kernel fuses only the forward (§5.3).
+**Q4.** Your change touches the MoE gate. What must you not do? **A.** Do not move the bias into the Triton kernel and do not add an auxiliary loss: the out-of-band `AuxLossFreeGate.update_bias` mechanism is a hard rule, and the kernel fuses only the forward (§5.3).
 
 ## References
 

@@ -1,7 +1,6 @@
 # DeepSeek-v3-Lite — Benchmarking
 
-> **Status:** guide · **Applies to:** anyone who quotes a throughput, VRAM, or MFU number
-> **Depends on:** [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md), [Training Pipeline](../training.md) · **Read next:** [G2 — μP & LR Tuning](G2_mup_and_lr_tuning.md), [G3 — Triton Development](G3_triton_development.md)
+> **Status:** guide · **Applies to:** anyone who quotes a throughput, VRAM, or MFU number **Depends on:** [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md), [Training Pipeline](../training.md) · **Read next:** [G2 — μP & LR Tuning](G2_mup_and_lr_tuning.md), [G3 — Triton Development](G3_triton_development.md)
 
 ## 60-Second Summary
 

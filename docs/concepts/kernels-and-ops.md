@@ -64,9 +64,7 @@ Tests do not build the 412 M model — they use two miniature configs that prese
 
 Both config fixtures are `scope="session"`, so every test in the run shares one constructed model config dict — the per-test cost is construction of the tiny model, not the config. When a training test needs a `TrainingConfig` object, the helper `_build_training_config(cfg, tmp_ckpt_dir)` in `tests/test_training.py` fills in loop parameters (`batch_size=2`, `gradient_accumulation_steps=2`, `max_steps=4`, `nan_guard=False`, `fused=False` for CPU AdamW).
 
-`★ Insight ─────────────────────────────────────`
-The fixture configs are the reason the suite is fast and portable: they exercise the **real** `Transformer`/`Pretrainer`/`CheckpointManager` code, just at a scale where a forward pass is microseconds. A bug in MLA's matrix absorption or in sharded-dataset `_locate` will fire on `small_cfg` exactly as it would on the 412 M config — the shapes are smaller, the control flow is identical. This is why "CPU-testable" is a design goal, not a convenience.
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` The fixture configs are the reason the suite is fast and portable: they exercise the **real** `Transformer`/`Pretrainer`/`CheckpointManager` code, just at a scale where a forward pass is microseconds. A bug in MLA's matrix absorption or in sharded-dataset `_locate` will fire on `small_cfg` exactly as it would on the 412 M config — the shapes are smaller, the control flow is identical. This is why "CPU-testable" is a design goal, not a convenience. `─────────────────────────────────────────────────`
 
 ### 3.3 What the suite guards (the invariants with teeth)
 
@@ -127,9 +125,7 @@ def _atomic_write(self, path: Path, suffix: str):
         raise
 ```
 
-`★ Insight ─────────────────────────────────────`
-Writing the temp file in the *same directory* as the target is load-bearing: `os.replace` is only atomic within a single filesystem mount. A naive `tempfile.NamedTemporaryFile()` defaults to `/tmp`, which on many systems is a separate tmpfs mount — renaming across mounts degrades to a copy+delete (non-atomic). Forcing `dir=self.save_dir` keeps the rename on one mount and the atomicity guarantee holds.
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` Writing the temp file in the *same directory* as the target is load-bearing: `os.replace` is only atomic within a single filesystem mount. A naive `tempfile.NamedTemporaryFile()` defaults to `/tmp`, which on many systems is a separate tmpfs mount — renaming across mounts degrades to a copy+delete (non-atomic). Forcing `dir=self.save_dir` keeps the rename on one mount and the atomicity guarantee holds. `─────────────────────────────────────────────────`
 
 The exception path matters as much as the rename: on *any* failure the temp file is unlinked before the exception re-raises. `tests/test_utils.py:TestCheckpointManagerAdditional.test_atomic_save_crash_recovery` proves it end-to-end by patching `safetensors.torch.save_file` to raise `RuntimeError("disk full")` and asserting the directory afterwards contains no `.safetensors` and no `.tmp` file.
 
@@ -220,9 +216,7 @@ def _kv_cache_bytes(model: nn.Module, seq_len: int, batch_size: int, dtype_bytes
 
 Three things are deliberately encoded here. **First**, `_deduped_numel` counts shared tensors once by `id(p)` — the tied head contributes zero extra — which is exactly why the estimator agrees with `count_parameters` (411\,632\,256). **Second**, the KV cache stores the *compressed latent* per token: `kv_lora_rank + qk_rope_head_dim = 192 + 24 = 216` floats/token/layer, independent of head count — the whole point of MLA. **Third**, the activation factor `utils/memory.py:_activation_bytes` is `24×` with gradient checkpointing and `36×` without: the PaLM Appendix-A constants. Gradient checkpointing trades ~30% recompute for the memory headroom that lets micro-batch 8 fit; disabling it raises the activation term from 10.13 to 15.19 GiB and the subtotal from 15.61 to 20.67 GiB (also verified by running the estimator with `grad_checkpoint=False`).
 
-`★ Insight ─────────────────────────────────────`
-The KV cache line is where MLA earns its keep. A **standard MHA** at this config would cache K+V at `2 × n_heads × d_head = 2 × 12 × 64 = 1536` floats/token/layer → `8 × 2048 × 1536 × 18 × 2 ≈ 0.90 GB`. MLA caches only the **compressed latent** `(d_c + d_R) = 216` floats/token/layer regardless of head count — **~0.12 GB, a ~7.1× reduction.** This is why the old "0.75 GB" figure in earlier notes was wrong: it used uncompressed head dimensions, not the latent. The reduction is the entire point of MLA (see [03 Multi Head Latent Attention](../concepts/attention-and-precision.md)).
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` The KV cache line is where MLA earns its keep. A **standard MHA** at this config would cache K+V at `2 × n_heads × d_head = 2 × 12 × 64 = 1536` floats/token/layer → `8 × 2048 × 1536 × 18 × 2 ≈ 0.90 GB`. MLA caches only the **compressed latent** `(d_c + d_R) = 216` floats/token/layer regardless of head count — **~0.12 GB, a ~7.1× reduction.** This is why the old "0.75 GB" figure in earlier notes was wrong: it used uncompressed head dimensions, not the latent. The reduction is the entire point of MLA (see [03 Multi Head Latent Attention](../concepts/attention-and-precision.md)). `─────────────────────────────────────────────────`
 
 ### 5.2 Overhead and the headline
 
@@ -339,9 +333,7 @@ python tests/test_doc_refs.py                            # or as a script
 
 A failure lists the offending doc, line, and reason (`missing-symbol: X`, `line anchor banned`, `JIT symbol (cite host wrapper)`, `missing-file`). The practical effect for writers: **every anchor in a doc is a compile-time reference** — if you rename a method, the gate tells you which prose claims to update, and if you cite a symbol that doesn't exist, CI turns red before the docs mislead anyone.
 
-`★ Insight ─────────────────────────────────────`
-Why symbols and not line numbers? A line anchor says "the interesting code is *here*" — it is true for exactly one commit. A symbol anchor says "this thing exists and has this name" — it stays true until the name changes, and when the name *does* change, the gate fires so the prose is fixed in the same commit. The gate converts documentation from a liability that decays into an asset that is checked on every push.
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` Why symbols and not line numbers? A line anchor says "the interesting code is *here*" — it is true for exactly one commit. A symbol anchor says "this thing exists and has this name" — it stays true until the name changes, and when the name *does* change, the gate fires so the prose is fixed in the same commit. The gate converts documentation from a liability that decays into an asset that is checked on every push. `─────────────────────────────────────────────────`
 
 ## 8. Debugging Recipes
 
@@ -581,9 +573,7 @@ def enforce_triton_env_var(model_cfg, log):
             f"forcing {', '.join(forced)}.")
 ```
 
-`★ Insight ─────────────────────────────────────`
-This guard exists because of a workspace rule (AGENTS #7): *a default-config run must never silently switch to a Triton path.* Without it, a config checked in with `attn_impl: triton` would either crash (no Triton on Mac) or silently take a different code path than the CPU tests verified — two failure modes that are painful to debug because they only appear on certain machines. Forcing back to the PyTorch default unless the env var is explicitly set makes "same config, same code path" hold everywhere by default. The single source-of-truth `_DISPATCH` table replaced an earlier pair of dicts enforced in lockstep by a dedicated test (`tests/test_force_back.py`, 8 cases).
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` This guard exists because of a workspace rule (AGENTS #7): *a default-config run must never silently switch to a Triton path.* Without it, a config checked in with `attn_impl: triton` would either crash (no Triton on Mac) or silently take a different code path than the CPU tests verified — two failure modes that are painful to debug because they only appear on certain machines. Forcing back to the PyTorch default unless the env var is explicitly set makes "same config, same code path" hold everywhere by default. The single source-of-truth `_DISPATCH` table replaced an earlier pair of dicts enforced in lockstep by a dedicated test (`tests/test_force_back.py`, 8 cases). `─────────────────────────────────────────────────`
 
 There is a **second** layer of defense at the call site: even if the guard is bypassed (env var set but Triton missing at runtime), `MultiHeadLatentAttention.forward` and `DeepSeekMoE.forward` catch `ImportError`/`ValueError` from the kernel import and fall back to the PyTorch path with a one-shot warning (`_triton_fallback_warned`). So there are two independent safety nets: config-time force-back and runtime fallback.
 
@@ -708,9 +698,7 @@ def flash_attn_skeleton(q_ptr, k_ptr, v_ptr, o_ptr, S, softmax_scale, BLOCK_Q: t
 
 That is the entire engine. The MLA kernel is this skeleton plus two jobs: materialising `K_nope`/`V` *inside* the loop from the compressed latent (§4.4), and the causal `q_start` masking (§4.5).
 
-`★ Pitfall ─────────────────────────────────────`
-`tl.arange` with a non-power-of-2 length fails at compile time with a cryptic error. The repo's universal answer is `_next_pow2`: `BLOCK_R = _next_pow2(R)`, `BLOCK_D = _next_pow2(D)`, and so on — every block size in `models/mla_triton.py` and `models/moe_triton.py` is a power of two computed from a real dimension, and the masked loads of §3.3 absorb the difference between `BLOCK_*` and the true dim. When you extend these kernels, reach for `_next_pow2` first and `mask=` second.
-`─────────────────────────────────────────────────`
+`★ Pitfall ─────────────────────────────────────` `tl.arange` with a non-power-of-2 length fails at compile time with a cryptic error. The repo's universal answer is `_next_pow2`: `BLOCK_R = _next_pow2(R)`, `BLOCK_D = _next_pow2(D)`, and so on — every block size in `models/mla_triton.py` and `models/moe_triton.py` is a power of two computed from a real dimension, and the masked loads of §3.3 absorb the difference between `BLOCK_*` and the true dim. When you extend these kernels, reach for `_next_pow2` first and `mask=` second. `─────────────────────────────────────────────────`
 
 ## 4. Fused MLA Attention Kernel (`models/mla_triton.py`)
 
@@ -763,9 +751,7 @@ store out[q_block]
 
 The key move: `wkv_b_k` and `wkv_b_v` are loaded **once per program** and held in registers across the entire K-block loop. `K_nope` and `V` are produced by `tl.dot(kv_tile, tl.trans(w_k))` **inside** the loop — they live in registers, never in HBM. The only HBM traffic for keys/values is the compressed `ctx_kv` (R=192 floats/token) and the small `ctx_pe` (D_rope=24 floats/token), which is exactly the MLA cache savings made into a kernel savings.
 
-`★ Insight ─────────────────────────────────────`
-The fused kernel is the *inference-time* form of the matrix-absorption trick (see [03 Multi Head Latent Attention](../concepts/attention-and-precision.md)). At inference, MLA absorbs the K/V up-projection into the query so attention runs directly on the latent. The kernel does the complementary thing for training (where you need gradients to flow to `wkv_b`): it keeps `wkv_b` resident and re-materialises `K_nope`/`V` per K-block, so the forward never writes them to HBM but the backward still has the graph it needs. Same savings, different mechanism.
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` The fused kernel is the *inference-time* form of the matrix-absorption trick (see [03 Multi Head Latent Attention](../concepts/attention-and-precision.md)). At inference, MLA absorbs the K/V up-projection into the query so attention runs directly on the latent. The kernel does the complementary thing for training (where you need gradients to flow to `wkv_b`): it keeps `wkv_b` resident and re-materialises `K_nope`/`V` per K-block, so the forward never writes them to HBM but the backward still has the graph it needs. Same savings, different mechanism. `─────────────────────────────────────────────────`
 
 ### 4.3 Grid and launch — who runs which tile
 
@@ -945,9 +931,7 @@ This is **correct but not optimal**: the recompute is the PyTorch reference, so 
 
 `_TritonMlaAttentionFunction.apply(...)` is the seam between the kernel and PyTorch autograd. Forward saves `q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v` for backward (`ctx.save_for_backward`) plus the scalar shapes/scale. The public entry `models/mla_triton.py:triton_mla_attention` raises `ImportError` with a helpful message if `triton` is not installed — caught by `mla.py`'s try/except to trigger the SDPA fallback.
 
-`★ Pitfall ─────────────────────────────────────`
-The backward's return tuple must have exactly one entry per forward input, in order. The MLA forward takes 9 arguments (6 tensors + `softmax_scale`, `is_causal`, `q_start`), so backward returns 6 grads (each `None`-guarded with `torch.zeros_like`, because a `None` grad for a non-None input is an autograd error) followed by three `None`s. Get the count wrong and training dies at the first backward with a "function returned an invalid number of gradient tensors" error — one of the most common custom-operator bugs, and one this repo carefully avoids in both kernels (§6).
-`─────────────────────────────────────────────────`
+`★ Pitfall ─────────────────────────────────────` The backward's return tuple must have exactly one entry per forward input, in order. The MLA forward takes 9 arguments (6 tensors + `softmax_scale`, `is_causal`, `q_start`), so backward returns 6 grads (each `None`-guarded with `torch.zeros_like`, because a `None` grad for a non-None input is an autograd error) followed by three `None`s. Get the count wrong and training dies at the first backward with a "function returned an invalid number of gradient tensors" error — one of the most common custom-operator bugs, and one this repo carefully avoids in both kernels (§6). `─────────────────────────────────────────────────`
 
 ## 5. Fused Grouped-GEMM MoE Kernel (`models/moe_triton.py`)
 
@@ -980,9 +964,7 @@ y_routed = torch.zeros_like(flat)
 y_routed.index_add_(0, sorted_token_ids, y_sorted)  # scatter back to original order
 ```
 
-`★ Insight ─────────────────────────────────────`
-The kernel works on the **sorted-token layout**: a single `(T, D)` tensor where all tokens routed to expert 0 come first, then expert 1's, etc., delimited by `expert_offsets` (the cumsum boundaries). This is the trick that makes a *grouped* GEMM possible — instead of 20 separate `chunk @ w[e]` calls, the kernel walks the sorted tensor block by block, switching which expert's `w1/w2/w3` slice it uses at each boundary. One launch, all experts. The weights carry gradient back to the gate (the `weights`/`indices` tensors are *not* detached — only the `_last_*` snapshots used for the balance metric are).
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` The kernel works on the **sorted-token layout**: a single `(T, D)` tensor where all tokens routed to expert 0 come first, then expert 1's, etc., delimited by `expert_offsets` (the cumsum boundaries). This is the trick that makes a *grouped* GEMM possible — instead of 20 separate `chunk @ w[e]` calls, the kernel walks the sorted tensor block by block, switching which expert's `w1/w2/w3` slice it uses at each boundary. One launch, all experts. The weights carry gradient back to the gate (the `weights`/`indices` tensors are *not* detached — only the `_last_*` snapshots used for the balance metric are). `─────────────────────────────────────────────────`
 
 The reference `models/moe_triton.py:grouped_moe_pytorch` is the same arithmetic routed through the sorted layout, used by CPU tests so the kernel's numerics are verified without a GPU. `expert_offsets` is an `(E+1,)` INT64 tensor whose entries are the cumulative token counts per expert (the `start`/`end` of each expert's contiguous slice); the kernel loads `start`/`end` per program directly from it.
 
@@ -1118,9 +1100,7 @@ dx = tl.dot(dgate_pre, w1_re) + tl.dot(dup, w3_re)
 
 $dx = dg \, W_1 + du \, W_3$ (note: no transpose — the dots are `(BLOCK_T, BLOCK_I) @ (BLOCK_I, BLOCK_D)`, the "reverse" GEMM of the forward's `W^T` layout).
 
-`★ Pitfall ─────────────────────────────────────`
-`w1_re`/`w3_re` are loaded with `+ d_b[None, :]` — **no `stride_w1_d` term**. This hard-codes a unit stride along the last (D) axis, i.e. row-major contiguous weights. It is safe today only because `DeepSeekMoE.forward` re-stacks the experts with `torch.stack(...)` every forward, which always yields contiguous tensors (§10). If anyone ever passed a transposed or sliced weight tensor to `triton_grouped_moe_dispatch`, this load would silently read wrong memory. The forward kernel and the dw kernel carry the full stride terms; the dx kernel does not — worth fixing when the kernel is next touched.
-`─────────────────────────────────────────────────`
+`★ Pitfall ─────────────────────────────────────` `w1_re`/`w3_re` are loaded with `+ d_b[None, :]` — **no `stride_w1_d` term**. This hard-codes a unit stride along the last (D) axis, i.e. row-major contiguous weights. It is safe today only because `DeepSeekMoE.forward` re-stacks the experts with `torch.stack(...)` every forward, which always yields contiguous tensors (§10). If anyone ever passed a transposed or sliced weight tensor to `triton_grouped_moe_dispatch`, this load would silently read wrong memory. The forward kernel and the dw kernel carry the full stride terms; the dx kernel does not — worth fixing when the kernel is next touched. `─────────────────────────────────────────────────`
 
 ### 5.6 The backward dw kernel — one program per expert, no atomics
 
@@ -1215,9 +1195,7 @@ The design choices, and why:
 
 When is the re-compute pattern the right call? The tradeoff is recompute FLOPs against activation bytes. For attention, the saved `P` matrix grows quadratically in sequence length while the recompute grows linearly (each K-block re-materialised once) — re-compute wins decisively at long context. For the MoE, the activations are `(T, I)` per expert — small at smoke scale — but saving them would force a second HBM round-trip; recompute-in-registers avoids it entirely. The repo's choice of *saving inputs + recomputing* is the standard answer for both.
 
-`★ Insight ─────────────────────────────────────`
-There is a subtle interplay between the re-compute pattern and grad checkpointing (`use_checkpoint=True` in `Transformer.__init__`). The MLA kernel backward re-runs `mla_attention_reference` inside autograd; if the *layer* forward was also checkpointed, the checkpoint re-runs the whole layer forward (including the kernel launch) *and then* the kernel's backward re-runs the reference — two recomputes for the price of one. Still correct (checkpointing just re-executes the graph), still memory-cheap, but a reminder that "recompute" costs stack. A fused MLA backward (§4.7's documented upgrade path) would remove the second one.
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` There is a subtle interplay between the re-compute pattern and grad checkpointing (`use_checkpoint=True` in `Transformer.__init__`). The MLA kernel backward re-runs `mla_attention_reference` inside autograd; if the *layer* forward was also checkpointed, the checkpoint re-runs the whole layer forward (including the kernel launch) *and then* the kernel's backward re-runs the reference — two recomputes for the price of one. Still correct (checkpointing just re-executes the graph), still memory-cheap, but a reminder that "recompute" costs stack. A fused MLA backward (§4.7's documented upgrade path) would remove the second one. `─────────────────────────────────────────────────`
 
 ## 7. Register-pressure math: where the 256 cap comes from
 

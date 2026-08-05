@@ -169,9 +169,7 @@ Stage i timeline:
        ↑ overlapped ↑            ↑ overlapped ↑
 ```
 
-`★ Insight ─────────────────────────────────────`
-The deep idea is **bidirectional symmetry as a scheduling resource.** A one-directional pipeline has nothing to do during a communication stall — the work all flows the same way, so a wait is a wait. A *bidirectional* pipeline always has a counter-stream whose compute is independent of the stalled collective. DualPipe pairs each communication with the opposing stream's compute by construction; the bubble is not eliminated (the dependency still exists) but it is *hidden* because the GPU is never asked to be idle while it has an independent task queued. This is the same principle as async I/O overlap, applied to the pipeline graph.
-`─────────────────────────────────────────────────`
+`★ Insight ─────────────────────────────────────` The deep idea is **bidirectional symmetry as a scheduling resource.** A one-directional pipeline has nothing to do during a communication stall — the work all flows the same way, so a wait is a wait. A *bidirectional* pipeline always has a counter-stream whose compute is independent of the stalled collective. DualPipe pairs each communication with the opposing stream's compute by construction; the bubble is not eliminated (the dependency still exists) but it is *hidden* because the GPU is never asked to be idle while it has an independent task queued. This is the same principle as async I/O overlap, applied to the pipeline graph. `─────────────────────────────────────────────────`
 
 Because the two streams move in opposite directions, their fill/drain phases are anti-correlated: while stream A is still *filling* (upstream stages waiting), stream B is already *draining* (downstream stages finishing) — one stream's bubble coincides with the other stream's busy time. The combined idle is therefore about half of what either stream would produce alone, and the fill/drain cost $(P-1)(F+B)$ is shared across $2M$ micro-batches of work (the two streams double the throughput of the pipe for the same warm-up cost).
 

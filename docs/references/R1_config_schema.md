@@ -1,27 +1,12 @@
 # DeepSeek-v3-Lite — R1 Config Schema Reference
 
-> Reference chapter · Part of the DeepSeek-V3-Lite API reference (R1–R9).
-> Companion learning chapters: [08 Training Pipeline](../training.md) (training loop semantics), [09 Data Pipeline](../concepts/data-pipeline.md) (data keys), [11 Operations and Testing](../concepts/kernels-and-ops.md) (fixture configs), [G2 mup and lr tuning](../guides/G2_mup_and_lr_tuning.md) (μP LR).
+> Reference chapter · Part of the DeepSeek-V3-Lite API reference (R1–R9). Companion learning chapters: [08 Training Pipeline](../training.md) (training loop semantics), [09 Data Pipeline](../concepts/data-pipeline.md) (data keys), [11 Operations and Testing](../concepts/kernels-and-ops.md) (fixture configs), [G2 mup and lr tuning](../guides/G2_mup_and_lr_tuning.md) (μP LR).
 
 ## 1. What this is
 
-The training entry point is a single YAML file: `--config configs/pretrain_a100_422m.yaml`
-(the canonical 411.6M run) or `configs/pretrain_1650_2m.yaml` (the ~2M smoke run).
-This reference documents **every key** in both files — type, effective default when
-absent, the code that reads it (symbol-anchored), and the interactions that make a
-key inert or overridden. Two configs exist; there is no config-schema class — the
-schema *is* the union of `.get(...)`/`[...]` accesses in the readers listed below.
+The training entry point is a single YAML file: `--config configs/pretrain_a100_422m.yaml` (the canonical 411.6M run) or `configs/pretrain_1650_2m.yaml` (the ~2M smoke run). This reference documents **every key** in both files — type, effective default when absent, the code that reads it (symbol-anchored), and the interactions that make a key inert or overridden. Two configs exist; there is no config-schema class — the schema *is* the union of `.get(...)`/`[...]` accesses in the readers listed below.
 
-**Loaders.** `training/pretrain.py:main` does `yaml.safe_load`, splits the dict into
-`training` and `data` sections, and maps the training keys onto a
-`training/pretrain.py:TrainingConfig` dataclass. The *whole* YAML dict is passed
-through as `model_config`, and both `models/transformer.py:Transformer.__init__` and
-`models/mtp.py:MultiTokenPrediction.__init__` call `config.get("model", config)`, so
-a config with a bare `model:` section and one with the keys at top level are both
-valid. `models/_triton_dispatch.py:enforce_triton_env_var` mutates the same dict
-**in place** inside `Transformer.__init__` (before any layers are built), which is
-why the Triton-dispatch keys below must be read from the model-config dict, not from
-the file.
+**Loaders.** `training/pretrain.py:main` does `yaml.safe_load`, splits the dict into `training` and `data` sections, and maps the training keys onto a `training/pretrain.py:TrainingConfig` dataclass. The *whole* YAML dict is passed through as `model_config`, and both `models/transformer.py:Transformer.__init__` and `models/mtp.py:MultiTokenPrediction.__init__` call `config.get("model", config)`, so a config with a bare `model:` section and one with the keys at top level are both valid. `models/_triton_dispatch.py:enforce_triton_env_var` mutates the same dict **in place** inside `Transformer.__init__` (before any layers are built), which is why the Triton-dispatch keys below must be read from the model-config dict, not from the file.
 
 ## 2. The two files, side by side
 
@@ -102,14 +87,7 @@ the file.
 | `max_seq_len` | int | 2048 | 128 | `models/transformer.py:Transformer.__init__`; `models/mla.py:MultiHeadLatentAttention.__init__` (KV-cache bound, RoPE growth cap in `_extend_rope`); `training/pretrain.py:main` → `TrainingConfig.max_seq_len` → `PretrainDataset` window size |
 | `rope_theta` | float | 10000 | 10000 | `models/mla.py:MultiHeadLatentAttention.__init__` → `_extend_rope` (base of the inverse-frequency schedule) |
 
-**Purpose (one line each).** `vocab_size` = token-id universe, must equal `len(tokenizer)`
-(the DeepSeek tokenizer is 100,018 with `byte_fallback`, see [09 Data Pipeline](../concepts/data-pipeline.md));
-`dim` = residual-stream width; `n_layers` = total blocks; `n_heads` = attention heads;
-`n_dense_layers` = how many leading blocks use dense FFNs; `n_routed_experts` /
-`n_shared_experts` / `n_activated_experts` = MoE fan-out; `inter_dim` vs `moe_inter_dim`
-= dense vs expert FFN width; `kv_lora_rank` / `q_lora_rank` = MLA compression ranks;
-`qk_nope_head_dim` / `qk_rope_head_dim` / `v_head_dim` = per-head MLA dims;
-`max_seq_len` = context window and cache cap; `rope_theta` = RoPE base.
+**Purpose (one line each).** `vocab_size` = token-id universe, must equal `len(tokenizer)` (the DeepSeek tokenizer is 100,018 with `byte_fallback`, see [09 Data Pipeline](../concepts/data-pipeline.md)); `dim` = residual-stream width; `n_layers` = total blocks; `n_heads` = attention heads; `n_dense_layers` = how many leading blocks use dense FFNs; `n_routed_experts` / `n_shared_experts` / `n_activated_experts` = MoE fan-out; `inter_dim` vs `moe_inter_dim` = dense vs expert FFN width; `kv_lora_rank` / `q_lora_rank` = MLA compression ranks; `qk_nope_head_dim` / `qk_rope_head_dim` / `v_head_dim` = per-head MLA dims; `max_seq_len` = context window and cache cap; `rope_theta` = RoPE base.
 
 ### 3.2 Scaled / gated keys (defaulted with `.get`)
 
@@ -126,51 +104,21 @@ the file.
 **Interactions.**
 
 - **`moe_dispatch="triton_grouped"`** routes routed-expert compute to
-  `models/moe_triton.py:triton_grouped_moe_dispatch` via
-  `models/moe.py:DeepSeekMoE._routed_forward_triton`. It is gated twice:
-  (a) `models/_triton_dispatch.py:enforce_triton_env_var` force-backs it to `"stacked"`
-  (with one warning) unless `ENABLE_TRITON_KERNELS=1`; (b) at canonical dims
-  (`moe_inter_dim=384`, `dim=768`), `triton_grouped_moe_dispatch` raises `ValueError`
-  (BLOCK_I/BLOCK_D exceed the 256 register cap) and `DeepSeekMoE.forward` falls back
-  to `"stacked"` with a one-time warning. **Consequence: the Triton MoE path is
-  unreachable in the canonical config** — it only runs at smoke-config dims
-  (`moe_inter_dim=32`, `dim=64`), and only with the env var set.
+  `models/moe_triton.py:triton_grouped_moe_dispatch` via `models/moe.py:DeepSeekMoE._routed_forward_triton`. It is gated twice: (a) `models/_triton_dispatch.py:enforce_triton_env_var` force-backs it to `"stacked"` (with one warning) unless `ENABLE_TRITON_KERNELS=1`; (b) at canonical dims (`moe_inter_dim=384`, `dim=768`), `triton_grouped_moe_dispatch` raises `ValueError` (BLOCK_I/BLOCK_D exceed the 256 register cap) and `DeepSeekMoE.forward` falls back to `"stacked"` with a one-time warning. **Consequence: the Triton MoE path is unreachable in the canonical config** — it only runs at smoke-config dims (`moe_inter_dim=32`, `dim=64`), and only with the env var set.
 - **`attn_impl="triton"`** routes the MLA core to
-  `models/mla_triton.py:triton_mla_attention` via
-  `models/mla.py:MultiHeadLatentAttention._forward_triton`. Same dispatch guard:
-  force-backed to `"sdpa"` without `ENABLE_TRITON_KERNELS=1`; on CPU/Mac the Triton
-  import raises `ImportError` and `models/mla.py:MultiHeadLatentAttention.forward`
-  falls back to `"sdpa"` (one-time, sticky). Canonical dims are valid for this kernel.
+  `models/mla_triton.py:triton_mla_attention` via `models/mla.py:MultiHeadLatentAttention._forward_triton`. Same dispatch guard: force-backed to `"sdpa"` without `ENABLE_TRITON_KERNELS=1`; on CPU/Mac the Triton import raises `ImportError` and `models/mla.py:MultiHeadLatentAttention.forward` falls back to `"sdpa"` (one-time, sticky). Canonical dims are valid for this kernel.
 - **`rope_factor > 1.0`** switches on YaRN rescaling in
-  `models/mla.py:MultiHeadLatentAttention.__init__`:
-  `mscale = 0.1 * mscale_raw * log(rope_factor) + 1.0`.
+  `models/mla.py:MultiHeadLatentAttention.__init__`: `mscale = 0.1 * mscale_raw * log(rope_factor) + 1.0`.
 - **`mscale` is doubly inert** at canonical settings: with `rope_factor = 1.0` the
-  formula above is skipped (mscale stays raw), and `softmax_scale =
-  qk_head_dim**-0.5 * mscale**2` is only used when `max_seq_len > 4096` — the
-  canonical 2048 and smoke 128 both take `softmax_scale = qk_head_dim**-0.5`.
+  formula above is skipped (mscale stays raw), and `softmax_scale = qk_head_dim**-0.5 * mscale**2` is only used when `max_seq_len > 4096` — the canonical 2048 and smoke 128 both take `softmax_scale = qk_head_dim**-0.5`.
 - **`mtp_depth` and `mtp_loss_weight` gate each other.** The MTP wrapper is built in
-  `training/pretrain.py:Pretrainer.__init__` only when
-  `mtp_depth > 0 and config.mtp_weight > 0.0`. `mtp_depth: 1` with `mtp_loss_weight: 0.0`
-  silently disables MTP (params drop from 418.7M to 411.6M); `mtp_depth: 0` disables
-  it regardless of the weight. When active, `MultiTokenPrediction.compute_loss` adds
-  `mtp_weight * mtp_loss` to the main loss. `MultiTokenPrediction.__init__` reads the
-  keys as `config["mtp_depth"]` / `config.get("mtp_loss_weight", 0.3)` when the keys
-  are present at top level of the config it receives (it is handed the full YAML dict,
-  so the `model:` section matches), else falls back to an optional `mtp:` block
-  (`depth`, `weight` — absent from both configs).
+  `training/pretrain.py:Pretrainer.__init__` only when `mtp_depth > 0 and config.mtp_weight > 0.0`. `mtp_depth: 1` with `mtp_loss_weight: 0.0` silently disables MTP (params drop from 418.7M to 411.6M); `mtp_depth: 0` disables it regardless of the weight. When active, `MultiTokenPrediction.compute_loss` adds `mtp_weight * mtp_loss` to the main loss. `MultiTokenPrediction.__init__` reads the keys as `config["mtp_depth"]` / `config.get("mtp_loss_weight", 0.3)` when the keys are present at top level of the config it receives (it is handed the full YAML dict, so the `model:` section matches), else falls back to an optional `mtp:` block (`depth`, `weight` — absent from both configs).
 - **`weight_tying: true`** aliases `head.weight = embed.weight` in
-  `Transformer.__init__`; `Pretrainer.save_checkpoint` then omits `head.weight` from
-  the safetensors state (≈`vocab_size × dim × 4` bytes saved), and
-  `training/pretrain.py:Pretrainer.load_checkpoint` restores it through the shared
-  `embed.weight` (load uses `strict=False`).
+  `Transformer.__init__`; `Pretrainer.save_checkpoint` then omits `head.weight` from the safetensors state (≈`vocab_size × dim × 4` bytes saved), and `training/pretrain.py:Pretrainer.load_checkpoint` restores it through the shared `embed.weight` (load uses `strict=False`).
 
 ## 4. Training section
 
-All keys are read by `training/pretrain.py:main` and mapped onto
-`training/pretrain.py:TrainingConfig` fields (field name in parentheses); the loop
-then consumes the dataclass. Defaults below are the `t.get(key, <default>)` values in
-`main` — note several differ from the dataclass defaults, because `main` always
-passes an explicit value.
+All keys are read by `training/pretrain.py:main` and mapped onto `training/pretrain.py:TrainingConfig` fields (field name in parentheses); the loop then consumes the dataclass. Defaults below are the `t.get(key, <default>)` values in `main` — note several differ from the dataclass defaults, because `main` always passes an explicit value.
 
 | Key → `TrainingConfig` field | Type | Default | Canonical | Smoke | Consumed by |
 |---|---|---|---|---|---|
@@ -198,39 +146,18 @@ passes an explicit value.
 | `bias_update_every` | int | `10` | 1 | 1 | `Pretrainer.train_step` — bias update every N **optimizer** steps |
 | `save_dir` → `checkpoint_dir` | str | `"checkpoints/pretrain"` | `"checkpoints/pretrain_a100"` | `"checkpoints/pretrain_1650_2m"` | `main` (`or args.checkpoint_dir`) → `CheckpointManager(config.checkpoint_dir)` |
 
-**Purpose (one line each).** `micro_batch_size` = tokens-per-forward batch; 
-`gradient_accumulation_steps` = micro-batches per optimizer step; `total_steps` =
-micro-batch budget (global-step loop bound); `warmup_steps`/`lr`/`min_lr_ratio` =
-schedule; `weight_decay`/`beta1`/`beta2`/`grad_clip` = optimizer; `grad_checkpoint`
-= activation recompute; `compile` = `torch.compile`; `save_interval`/`log_interval`
-= cadence; `mup_lr*` = μP LR rescaling; `nan_guard*` = NaN rollback; 
-`log_per_component_params` = startup param audit; `bias_update*` = aux-loss-free MoE
-gate-bias schedule; `save_dir` = checkpoint root.
+**Purpose (one line each).** `micro_batch_size` = tokens-per-forward batch;  `gradient_accumulation_steps` = micro-batches per optimizer step; `total_steps` = micro-batch budget (global-step loop bound); `warmup_steps`/`lr`/`min_lr_ratio` = schedule; `weight_decay`/`beta1`/`beta2`/`grad_clip` = optimizer; `grad_checkpoint` = activation recompute; `compile` = `torch.compile`; `save_interval`/`log_interval` = cadence; `mup_lr*` = μP LR rescaling; `nan_guard*` = NaN rollback;  `log_per_component_params` = startup param audit; `bias_update*` = aux-loss-free MoE gate-bias schedule; `save_dir` = checkpoint root.
 
 ### 4.1 Interactions that change semantics
 
 - **`mup_lr: true` discards `lr`.** In `training/pretrain.py:Pretrainer.__init__`:
-  `new_lr = mup_lr_reference * (mup_lr_reference_params / total_params) ** 0.5`, then
-  `config.lr = new_lr`. With the canonical config the effective LR is
-  $6.0\times10^{-4}\sqrt{757\,226\,496 / N}$, i.e. **8.14e-4** at $N = 411\,632\,256$
-  (base) and **8.07e-4** at $N = 418\,713\,984$ (with MTP) — the YAML's `lr: 8.0e-4`
-  is never used in the canonical run. The smoke config sets `mup_lr: false`, so its
-  `lr: 1.0e-3` is used verbatim. The two `mup_lr_reference*` keys are therefore inert
-  in the smoke config (present in neither, and not consulted).
+  `new_lr = mup_lr_reference * (mup_lr_reference_params / total_params) ** 0.5`, then `config.lr = new_lr`. With the canonical config the effective LR is $6.0\times10^{-4}\sqrt{757\,226\,496 / N}$, i.e. **8.14e-4** at $N = 411\,632\,256$ (base) and **8.07e-4** at $N = 418\,713\,984$ (with MTP) — the YAML's `lr: 8.0e-4` is never used in the canonical run. The smoke config sets `mup_lr: false`, so its `lr: 1.0e-3` is used verbatim. The two `mup_lr_reference*` keys are therefore inert in the smoke config (present in neither, and not consulted).
 - **`total_steps` is in micro-batch space; the cosine horizon is in optimizer-step
-  space.** `Pretrainer.__init__` computes `opt_steps = max(1, max_steps //
-  gradient_accumulation_steps)` and feeds that to `make_warmup_cosine_lambda`; the
-  loop budget `global_step < max_steps` counts micro-batches. Canonical: 512,000
-  micro-batches → 128,000 optimizer steps; warmup 2,000 opt-steps ≈ 1.6% of the arc.
-  Changing `gradient_accumulation_steps` therefore changes the LR trajectory, not
-  just the update cadence.
+  space.** `Pretrainer.__init__` computes `opt_steps = max(1, max_steps // gradient_accumulation_steps)` and feeds that to `make_warmup_cosine_lambda`; the loop budget `global_step < max_steps` counts micro-batches. Canonical: 512,000 micro-batches → 128,000 optimizer steps; warmup 2,000 opt-steps ≈ 1.6% of the arc. Changing `gradient_accumulation_steps` therefore changes the LR trajectory, not just the update cadence.
 - **`grad_checkpoint` is a training-time-only switch** (`if self.use_checkpoint and
-  self.training` in `models/transformer.py:Transformer._run_layers`) — irrelevant for
-  inference, which never passes it.
+  self.training` in `models/transformer.py:Transformer._run_layers`) — irrelevant for inference, which never passes it.
 - **`bias_update_every` counts optimizer steps**, so with
-  `gradient_accumulation_steps: 4` the canonical gate bias is touched every 4 micro
-  steps (`_opt_steps % bias_update_every == 0` in `Pretrainer.train_step`), i.e.
-  once per optimizer step at the canonical setting of 1.
+  `gradient_accumulation_steps: 4` the canonical gate bias is touched every 4 micro steps (`_opt_steps % bias_update_every == 0` in `Pretrainer.train_step`), i.e. once per optimizer step at the canonical setting of 1.
 
 ## 5. Data section
 
@@ -239,34 +166,22 @@ gate-bias schedule; `save_dir` = checkpoint root.
 | `train_data_path` | str | `"data/pretrain_data.bin"` | `"data/pretrain_chinchilla"` | `"data/pretrain_chinchilla"` | `training/pretrain.py:main` (`or args.data_path`) → `TrainingConfig.data_path` → `training/pretrain.py:PretrainDataset.__init__` — a **directory** selects the sharded layout (`shard_*.bin`, mmap'd, `PretrainDataset._locate` bisect), a **file** the single-tensor layout |
 | `tokenizer_path` | str | `"deepseek-ai/deepseek-coder-v2-lite"` | `"deepseek-ai/deepseek-coder-v2-lite"` | `"gpt2"` | **Only `inference/generate.py:main`** (`AutoTokenizer.from_pretrained`). **Inert in training** — `Pretrainer` never touches it; the data pipeline fixes the tokenizer in `data/prepare_data.py` (see [09 Data Pipeline](../concepts/data-pipeline.md)) |
 
-The tokenizer choice must agree with `vocab_size`: the canonical pair is
-`deepseek-coder-v2-lite` (100,018 rows, `byte_fallback`), the smoke pair is `gpt2`
-(50,257 rows, no HF auth). `training/pretrain.py:main` also reads two *model-section*
-keys into `TrainingConfig` (`vocab_size`, `max_seq_len`) for dataset sizing; the
-model code reads them again from the dict. There is no check that the two agree —
-that is a run-configuration invariant (test-guarded; see [11 Operations and Testing](../concepts/kernels-and-ops.md)).
+The tokenizer choice must agree with `vocab_size`: the canonical pair is `deepseek-coder-v2-lite` (100,018 rows, `byte_fallback`), the smoke pair is `gpt2` (50,257 rows, no HF auth). `training/pretrain.py:main` also reads two *model-section* keys into `TrainingConfig` (`vocab_size`, `max_seq_len`) for dataset sizing; the model code reads them again from the dict. There is no check that the two agree — that is a run-configuration invariant (test-guarded; see [11 Operations and Testing](../concepts/kernels-and-ops.md)).
 
 ## 6. Dispatch, env vars, and CLI overrides
 
-**Triton dispatch** — `models/_triton_dispatch.py:enforce_triton_env_var`, called from
-`models/transformer.py:Transformer.__init__`, rewrites the model dict in place:
+**Triton dispatch** — `models/_triton_dispatch.py:enforce_triton_env_var`, called from `models/transformer.py:Transformer.__init__`, rewrites the model dict in place:
 
 | Config value | Rewritten to | Unless |
 |---|---|---|
 | `attn_impl: "triton"` | `"sdpa"` | `ENABLE_TRITON_KERNELS=1` |
 | `moe_dispatch: "triton_grouped"` | `"stacked"` | `ENABLE_TRITON_KERNELS=1` |
 
-A single warning is logged listing every forced key. Both canonical and smoke configs
-set the PyTorch defaults, so the guard is a no-op for them.
+A single warning is logged listing every forced key. Both canonical and smoke configs set the PyTorch defaults, so the guard is a no-op for them.
 
-**Other env vars.** `TORCH_COMPILE_MODE` (default `"max-autotune"`) selects the
-`torch.compile` mode in `Pretrainer.__init__`. `ENABLE_TRITON_KERNELS` is the only
-Triton gate; without it the fused kernels are unreachable regardless of config.
+**Other env vars.** `TORCH_COMPILE_MODE` (default `"max-autotune"`) selects the `torch.compile` mode in `Pretrainer.__init__`. `ENABLE_TRITON_KERNELS` is the only Triton gate; without it the fused kernels are unreachable regardless of config.
 
-**CLI overrides** (`training/pretrain.py:main`): `--data-path` / `--checkpoint-dir`
-override `data.train_data_path` / `training.save_dir`; `--resume <step>` loads a
-checkpoint before training; `--no-checkpoint` / `--no-compile` force-disable
-`grad_checkpoint` / `compile` even when the YAML says `true` (`and not args.…`).
+**CLI overrides** (`training/pretrain.py:main`): `--data-path` / `--checkpoint-dir` override `data.train_data_path` / `training.save_dir`; `--resume <step>` loads a checkpoint before training; `--no-checkpoint` / `--no-compile` force-disable `grad_checkpoint` / `compile` even when the YAML says `true` (`and not args.…`).
 
 ## 7. Keys read from the same dict but absent from both configs
 

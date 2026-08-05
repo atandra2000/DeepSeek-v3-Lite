@@ -19,18 +19,9 @@ A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, desig
 Two configurations ship in `configs/`:
 
 - **`pretrain_a100_422m.yaml`** — the canonical Chinchilla-optimal
-  recipe for a single A100 80GB SXM. Full MLA + MoE + MTP. The target
-  end-to-end run described throughout the README and the rest of the
-  docs.
+  recipe for a single A100 80GB SXM. Full MLA + MoE + MTP. The target end-to-end run described throughout the README and the rest of the docs.
 - **`pretrain_1650_2m.yaml`** — a ~2M-param tiny config for the
-  **GTX 1650 4GB** end-to-end smoke test. Same architecture features
-  (MLA, MoE aux-loss-free, MTP) scaled down to fit 4 GB: `dim=64,
-  n_layers=4 (2 dense + 2 MoE × 4 experts)`, GPT-2 vocab (avoids
-  HuggingFace auth for the deepseek-coder tokenizer). All MLA / MoE
-  / MTP invariants are preserved. Useful for verifying the full
-  training loop, Triton kernel paths (gated on CUDA), and inference
-  on hardware too small for the real run. Used by
-  `tests/conftest.py::small_cfg` and the 1650 smoke test suite.
+  **GTX 1650 4GB** end-to-end smoke test. Same architecture features (MLA, MoE aux-loss-free, MTP) scaled down to fit 4 GB: `dim=64, n_layers=4 (2 dense + 2 MoE × 4 experts)`, GPT-2 vocab (avoids HuggingFace auth for the deepseek-coder tokenizer). All MLA / MoE / MTP invariants are preserved. Useful for verifying the full training loop, Triton kernel paths (gated on CUDA), and inference on hardware too small for the real run. Used by `tests/conftest.py::small_cfg` and the 1650 smoke test suite.
 
 TF32 forward, `F.scaled_dot_product_attention` (Flash-Attn-2), `torch.compile(mode="max-autotune")`, zero custom CUDA.
 
@@ -102,9 +93,7 @@ flowchart LR
                                 MoE output
 ```
 
-> No auxiliary loss contaminates the task gradient. The bias is updated
-> out-of-band from the observed token count deviation.
-```
+> No auxiliary loss contaminates the task gradient. The bias is updated out-of-band from the observed token count deviation.
 
 ### MTP &amp; Speculative Decoding
 

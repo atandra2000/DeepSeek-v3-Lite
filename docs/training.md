@@ -1860,8 +1860,7 @@ dim: 768
 lr: 8e-4
 ```
 
-`Transformer`: `config.get("model", config)`
-`Pretrainer`: passes full YAML as `model_config`; sub-components unwrap as needed.
+`Transformer`: `config.get("model", config)` `Pretrainer`: passes full YAML as `model_config`; sub-components unwrap as needed.
 
 ---
 
@@ -1973,14 +1972,11 @@ Model architecture keys have **no CLI override** — edit YAML or use test fixtu
 
 ## FAQ
 
-**Q: Can I train 422M config on 24GB GPU?**
-A: No without major changes — halve batch and seq len, possibly disable MTP/compile.
+**Q: Can I train 422M config on 24GB GPU?** A: No without major changes — halve batch and seq len, possibly disable MTP/compile.
 
-**Q: Why two configs?**
-A: 422M = production research. 1650 2M = structural smoke test on 4GB.
+**Q: Why two configs?** A: 422M = production research. 1650 2M = structural smoke test on 4GB.
 
-**Q: Where is `seed` in YAML?**
-A: Not in 422M YAML — defaults to 42 in `TrainingConfig`. Add `seed: N` under `training:` to override.
+**Q: Where is `seed` in YAML?** A: Not in 422M YAML — defaults to 42 in `TrainingConfig`. Add `seed: N` under `training:` to override.
 
 - `configs/pretrain_a100_422m.yaml`
 - `configs/pretrain_1650_2m.yaml`
@@ -2731,17 +2727,13 @@ print(t.dtype, t.numel())
 
 ## Check Your Understanding
 
-**Q1: Why does `PretrainDataset._locate` use `bisect_right` instead of `bisect_left`?**
-A: `bisect_right` returns the insertion point *after* all elements `<= global_idx`. For a `global_idx` exactly equal to `shard_offsets[k]` — the first token of shard `k` — the insertion point is `k+1`, so `lo = k` and the offset is 0: the boundary token maps to the shard that physically holds it. `bisect_left` would put it in the *previous* shard with an offset equal to that shard's size — one past the end — and the slice `shard[offset:offset+take]` would silently be empty. The off-by-one is the whole point.
+**Q1: Why does `PretrainDataset._locate` use `bisect_right` instead of `bisect_left`?** A: `bisect_right` returns the insertion point *after* all elements `<= global_idx`. For a `global_idx` exactly equal to `shard_offsets[k]` — the first token of shard `k` — the insertion point is `k+1`, so `lo = k` and the offset is 0: the boundary token maps to the shard that physically holds it. `bisect_left` would put it in the *previous* shard with an offset equal to that shard's size — one past the end — and the slice `shard[offset:offset+take]` would silently be empty. The off-by-one is the whole point.
 
-**Q2: The corpus target is 8.0B tokens, but repo scripts say "~8.4B". Which is right?**
-A: 8.0B — it is the value in `mixture.yaml` (`total_tokens`), `UNIVERSAL_TOTAL_TOKENS` in `shared_data/config.py`, and the generated `data/data_config.yaml`, and it is what the pipeline enforces. "~8.4B" is the Chinchilla rationale (~20 tokens/param × 418.7M params with MTP ≈ 8.4B) quoted loosely; the realized budget is 8.0B → 160 shards of 50M tokens → 32 GB.
+**Q2: The corpus target is 8.0B tokens, but repo scripts say "~8.4B". Which is right?** A: 8.0B — it is the value in `mixture.yaml` (`total_tokens`), `UNIVERSAL_TOTAL_TOKENS` in `shared_data/config.py`, and the generated `data/data_config.yaml`, and it is what the pipeline enforces. "~8.4B" is the Chinchilla rationale (~20 tokens/param × 418.7M params with MTP ≈ 8.4B) quoted loosely; the realized budget is 8.0B → 160 shards of 50M tokens → 32 GB.
 
-**Q3: A window of `S + 1 = 2049` tokens starts at global index 49,999,999 (the last token of shard 0). How many shards does it touch, and what does `_locate` return for the first `cursor`?**
-A: Two shards. `_locate(49_999_999)` returns `(0, 49_999_999)` — `shard_offsets[0] = 0`, and `bisect_right([0, 50_000_000], 49_999_999) - 1 = 0`. `take = min(2049, 50_000_000 - 49_999_999) = 1`, so one token is taken from shard 0; the next `_locate(50_000_000)` returns `(1, 0)` (boundary token belongs to shard 1) and the remaining 2048 tokens come from shard 1.
+**Q3: A window of `S + 1 = 2049` tokens starts at global index 49,999,999 (the last token of shard 0). How many shards does it touch, and what does `_locate` return for the first `cursor`?** A: Two shards. `_locate(49_999_999)` returns `(0, 49_999_999)` — `shard_offsets[0] = 0`, and `bisect_right([0, 50_000_000], 49_999_999) - 1 = 0`. `take = min(2049, 50_000_000 - 49_999_999) = 1`, so one token is taken from shard 0; the next `_locate(50_000_000)` returns `(1, 0)` (boundary token belongs to shard 1) and the remaining 2048 tokens come from shard 1.
 
-**Q4: Why is the final partial window dropped instead of padded with PAD (100,016)?**
-A: Padding would inject fake next-token targets — the model would be trained to predict PAD at the tail of every epoch, and the effective data distribution would include synthetic continuations. Dropping the tail wastes at most `S` tokens per 8.0B and keeps every training pair real. This is also why `add_special_tokens: false` + manual EOS is used: the only synthetic token in the stream is the document-boundary EOS, which is a genuine, learnable event.
+**Q4: Why is the final partial window dropped instead of padded with PAD (100,016)?** A: Padding would inject fake next-token targets — the model would be trained to predict PAD at the tail of every epoch, and the effective data distribution would include synthetic continuations. Dropping the tail wastes at most `S` tokens per 8.0B and keeps every training pair real. This is also why `add_special_tokens: false` + manual EOS is used: the only synthetic token in the stream is the document-boundary EOS, which is a genuine, learnable event.
 
 ---
 

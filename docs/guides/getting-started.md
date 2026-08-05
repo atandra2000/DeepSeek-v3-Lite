@@ -66,8 +66,7 @@ MTP Module (Depth 1) ───> Predicts t+2 Token ───> MTP Loss (Weight =
 | `vocab_size` | **100,018** | DeepSeek BPE Tokenizer |
 | `mtp_depth` / `mtp_loss_weight` | **1 / 0.3** | MTP depth & auxiliary loss weight |
 
-> [!NOTE]
-> Configuration file: [`configs/pretrain_a100_422m.yaml`](../../configs/pretrain_a100_422m.yaml). The filename's "422m" is a **historical nominal** — the actual deduped parameter count is 411,632,256 (411.6M base; 418.7M with the MTP head's ~7.1M). Never quote "422M" as a parameter count.
+> [!NOTE] Configuration file: [`configs/pretrain_a100_422m.yaml`](../../configs/pretrain_a100_422m.yaml). The filename's "422m" is a **historical nominal** — the actual deduped parameter count is 411,632,256 (411.6M base; 418.7M with the MTP head's ~7.1M). Never quote "422M" as a parameter count.
 
 ---
 

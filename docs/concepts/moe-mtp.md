@@ -925,8 +925,7 @@ y = y_routed + y_shared ≈ [0.954, 0.454, 0.954, 0.454]
 
 ## Appendix B — The Triton grouped-GEMM path
 
-**File:** `models/moe_triton.py`
-**Replaces:** the `for e in range(E)` loop in `_routed_forward_stacked`.
+**File:** `models/moe_triton.py` **Replaces:** the `for e in range(E)` loop in `_routed_forward_stacked`.
 
 ### Design
 
