@@ -5,7 +5,7 @@ from typing import Tuple, Optional
 
 
 class AuxLossFreeGate(nn.Module):
-    """Auxiliary-Loss-Free Load Balancing Gate (DeepSeek-V3 §2.3.3)."""
+    """Select routed experts with sigmoid scores and an auxiliary-loss-free bias."""
     def __init__(self, config: dict):
         super().__init__()
         self.dim = config["dim"]
@@ -20,12 +20,14 @@ class AuxLossFreeGate(nn.Module):
 
     @torch.no_grad()
     def update_bias(self, counts: torch.Tensor, speed: float = 0.001) -> None:
+        """Nudge expert biases away from over- or under-utilized experts."""
         counts = counts.float()
         avg = counts.mean()
         self.bias[counts > avg * (1.0 + self.bias_upper)] -= speed
         self.bias[counts < avg * (1.0 - self.bias_lower)] += speed
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return normalized top-k weights and their expert indices."""
         T = x.size(0)
         scores = F.linear(x, self.weight).sigmoid()
         biased = scores + self.bias.to(scores.dtype)
@@ -36,27 +38,26 @@ class AuxLossFreeGate(nn.Module):
 
 
 class Expert(nn.Module):
-    """Single SwiGLU expert: W2(silu(W1(x)) * W3(x))."""
+    """Single SwiGLU expert: ``W2(silu(W1(x)) * W3(x))``."""
     def __init__(self, dim: int, inter_dim: int):
         super().__init__()
         self.w1 = nn.Linear(dim, inter_dim, bias=False)
         self.w2 = nn.Linear(inter_dim, dim, bias=False)
         self.w3 = nn.Linear(dim, inter_dim, bias=False)
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the expert's gated feed-forward transformation."""
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 
 class DeepSeekMoE(nn.Module):
-    """DeepSeekMoE with shared experts and aux-loss-free load balancing. Single-GPU BF16."""
+    """DeepSeekMoE with routed experts, shared experts, and bias balancing."""
     def __init__(self, config: dict):
         super().__init__()
         self.dim = config["dim"]
         self.n_routed_experts = config["n_routed_experts"]
         self.n_shared_experts = config["n_shared_experts"]
         self.moe_inter_dim = config["moe_inter_dim"]
-        # `moe_dispatch="triton_grouped"` uses the fused grouped-GEMM kernel
-        # in models/moe_triton.py. Gated on `moe_inter_dim <= 256`; values above
-        # that auto-fall-back to "stacked" with a one-time warning.
+        # The grouped kernel is limited by register pressure at larger widths.
         self.moe_dispatch = config.get("moe_dispatch", "stacked")
         self.gate = AuxLossFreeGate(config)
         self.experts = nn.ModuleList([Expert(self.dim, self.moe_inter_dim) for _ in range(self.n_routed_experts)])
@@ -71,6 +72,7 @@ class DeepSeekMoE(nn.Module):
         self._last_indices: Optional[torch.Tensor] = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Route flattened tokens through routed and shared experts."""
         shape = x.shape
         flat = x.view(-1, self.dim)
         T = flat.size(0)
@@ -78,8 +80,7 @@ class DeepSeekMoE(nn.Module):
         self._last_weights = weights.detach()
         self._last_indices = indices.detach()
         E, I, D = self.n_routed_experts, self.moe_inter_dim, self.dim
-        # Re-stack every forward: caching across steps leaves stale copies
-        # after optimizer.step() (experts would be frozen at init values).
+        # Rebuild views after optimizer steps; cached copies would become stale.
         self._stacked_w1 = torch.stack([ex.w1.weight for ex in self.experts], dim=0).to(device=flat.device, dtype=flat.dtype)
         self._stacked_w2 = torch.stack([ex.w2.weight for ex in self.experts], dim=0).to(device=flat.device, dtype=flat.dtype)
         self._stacked_w3 = torch.stack([ex.w3.weight for ex in self.experts], dim=0).to(device=flat.device, dtype=flat.dtype)
@@ -88,7 +89,7 @@ class DeepSeekMoE(nn.Module):
             try:
                 y_routed = self._routed_forward_triton(flat, indices, weights)
             except (ImportError, ValueError) as exc:
-                # One-shot fallback: warn once per model, subsequent calls are silent.
+                # Keep the fallback quiet after the first backend warning.
                 if not getattr(self, "_triton_fallback_warned", False):
                     print(f"[moe] triton_grouped unavailable ({type(exc).__name__}: {exc}); "
                           f"falling back to 'stacked' for this model.")
@@ -102,9 +103,7 @@ class DeepSeekMoE(nn.Module):
         return y.view(shape)
 
     def _routed_forward_stacked(self, flat: torch.Tensor, indices: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
-        """Original per-expert Python loop. Always available; used as
-        both the default and the auto-fallback for the Triton path.
-        """
+        """Dispatch tokens through the portable per-expert implementation."""
         T = flat.size(0)
         flat_idx = indices.reshape(-1)
         flat_w = weights.reshape(-1)
@@ -134,14 +133,7 @@ class DeepSeekMoE(nn.Module):
         return y_routed
 
     def _routed_forward_triton(self, flat: torch.Tensor, indices: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
-        """Triton grouped-GEMM SwiGLU path. See models/moe_triton.py.
-
-        `weights`/`indices` carry grad to the gate (unlike the detached
-        `_last_*` snapshots used only for the balance metric / bias update).
-
-        Raises ImportError (no triton) or ValueError (dim > 256); both are
-        caught by `forward()` and fall back to the stacked path.
-        """
+        """Dispatch sorted tokens through the optional grouped-GEMM kernel."""
         from .moe_triton import triton_grouped_moe_dispatch
         T = flat.size(0)
         flat_idx = indices.reshape(-1)
@@ -157,7 +149,7 @@ class DeepSeekMoE(nn.Module):
 
         x_sorted = flat[sorted_token_ids].contiguous()
 
-        # Kernel autograd backward casts dw to w.dtype; pass BF16 weights directly.
+        # Keep weights in the input dtype; the kernel casts gradient buffers back.
         y_sorted = triton_grouped_moe_dispatch(
             x_sorted=x_sorted,
             w1=self._stacked_w1,
@@ -166,16 +158,16 @@ class DeepSeekMoE(nn.Module):
             sorted_weights=sorted_weights_1d,
             expert_offsets=expert_offsets,
         )
-        # Scatter back to original token positions.
+        # Restore the original token order after grouped dispatch.
         y_routed = torch.zeros_like(flat)
         y_routed.index_add_(0, sorted_token_ids, y_sorted)
         return y_routed
 
     def _shared_forward(self, flat: torch.Tensor) -> torch.Tensor:
-        """Batched shared-expert forward. Stacks weights lazily so 1 bmm per SwiGLU projection."""
+        """Run all shared experts with one batched matrix multiply per projection."""
         if self.n_shared_experts == 0:
             return torch.zeros_like(flat)
-        # Re-stack every forward (same staleness bug as the routed path).
+        # Rebuild stacked weights so optimizer updates are visible immediately.
         self._shared_w1 = torch.stack([e.w1.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
         self._shared_w2 = torch.stack([e.w2.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
         self._shared_w3 = torch.stack([e.w3.weight for e in self.shared_experts], dim=0).to(device=flat.device, dtype=flat.dtype)
@@ -187,6 +179,7 @@ class DeepSeekMoE(nn.Module):
         return out.sum(dim=0)
 
     def get_load_balance_loss(self) -> torch.Tensor:
+        """Return the diagnostic load-balance loss from the latest forward."""
         if self._last_weights is None or self._last_indices is None:
             return torch.tensor(0.0, device=self.gate.weight.device)
         weights = self._last_weights
@@ -199,6 +192,7 @@ class DeepSeekMoE(nn.Module):
         return (f * P).sum() * self.n_routed_experts
 
     def update_gate_bias(self, speed: float = 0.001) -> None:
+        """Update routing bias using counts captured by the latest forward."""
         if self._last_indices is None:
             return
         # Keep counts on the bias's device: boolean indexing in update_bias

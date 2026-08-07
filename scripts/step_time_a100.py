@@ -9,6 +9,7 @@ GPU_BF16_PEAK_TFLOPS = 312.0
 
 
 def main() -> None:
+    """Measure compiled training-step latency and model utilization."""
     p = argparse.ArgumentParser()
     p.add_argument("--steps", type=int, default=20)
     p.add_argument("--warmup", type=int, default=5)
@@ -44,6 +45,7 @@ def main() -> None:
         print("  torch.compile: disabled")
 
     def step():
+        """Run one synthetic forward/backward optimizer step."""
         x = torch.randint(0, cfg["model"]["vocab_size"], (bs, seq), device="cuda")
         y = m(x)
         y.sum().backward()

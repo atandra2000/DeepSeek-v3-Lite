@@ -1,8 +1,7 @@
-"""Triton dispatch contract: force-back guard for `ENABLE_TRITON_KERNELS`.
+"""Centralize the opt-in policy for Triton model backends.
 
-Without `ENABLE_TRITON_KERNELS=1`, `enforce_triton_env_var` rewrites any
-Triton dispatch key (`attn_impl='triton'`, `moe_dispatch='triton_grouped'`)
-to its PyTorch default with a single warning — never per-layer.
+Unset or disabled environments force Triton configuration keys to their
+portable PyTorch defaults and emit one startup warning.
 """
 from __future__ import annotations
 
@@ -10,11 +9,7 @@ import os
 from typing import Callable
 
 
-# Triton dispatch keys + their PyTorch defaults. A config with the
-# Triton value for any of these is force-backed to the PyTorch default
-# when ENABLE_TRITON_KERNELS != '1'.
-# Single tuple table — earlier _TRITON_DISPATCH_KEYS + _PYTORCH_DEFAULTS pair
-# was enforced in lockstep via a dedicated test; one source of truth now.
+# Each entry maps a Triton config value to its portable default.
 _DISPATCH = {
     ("attn_impl",    "triton"):         "sdpa",
     ("moe_dispatch", "triton_grouped"): "stacked",

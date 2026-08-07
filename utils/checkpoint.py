@@ -1,4 +1,4 @@
-"""Atomic safetensors checkpoint manager with shared-tensor dedup and step discovery."""
+"""Atomically persist model, optimizer, and metadata checkpoints."""
 import json, logging, os, tempfile
 from pathlib import Path
 from typing import Optional
@@ -9,23 +9,25 @@ logger = logging.getLogger(__name__)
 
 
 class CheckpointManager:
-    """Save/load model checkpoints. Files: model_step_N.safetensors, optim_step_N.pt, meta_step_N.json."""
+    """Manage step-numbered weights, optimizer state, and metadata files."""
     def __init__(self, save_dir: str):
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, model: torch.nn.Module, optimizer: torch.optim.Optimizer, step: int,
              extra_meta: Optional[dict] = None, state_dict: Optional[dict] = None) -> None:
+        """Atomically save weights, optimizer state, and step metadata."""
         state = state_dict if state_dict is not None else model.state_dict()
         self._atomic_save_safetensors(state, self.save_dir / f"model_step_{step}.safetensors")
         self._atomic_save_torch(optimizer.state_dict(), self.save_dir / f"optim_step_{step}.pt")
-        # `step` always comes from the function arg; ignore any caller-supplied key.
+        # The filename step is authoritative over caller-provided metadata.
         meta: dict = {"step": step, **{k: v for k, v in (extra_meta or {}).items() if k != "step"}}
         self._atomic_save_json(meta, self.save_dir / f"meta_step_{step}.json")
         logger.info("[checkpoint] saved step %d → %s", step, self.save_dir)
 
     def load(self, model: torch.nn.Module, step: int, device: str = "cuda",
              optimizer: Optional[torch.optim.Optimizer] = None, strict: bool = True) -> dict:
+        """Load a step and optionally restore optimizer state."""
         weight_path = self.save_dir / f"model_step_{step}.safetensors"
         if not weight_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {weight_path}\nAvailable steps: {self._list_steps()}")
@@ -53,10 +55,10 @@ class CheckpointManager:
         return meta
 
     def latest_step(self) -> Optional[int]:
+        """Return the newest step with all checkpoint files present."""
         steps = self._list_steps()
         return next((s for s in sorted(steps, reverse=True) if self._checkpoint_complete(s)), None)
 
-    # Only callers were tests; training loop uses save + latest_step. Add back when retention is wired in.
 
     import contextlib
     @contextlib.contextmanager
@@ -74,9 +76,7 @@ class CheckpointManager:
             raise
 
     def _atomic_save_safetensors(self, state: dict, path: Path) -> None:
-        # True dedup: a shared tensor (weight tying) must appear once. The
-        # duplicate key is dropped; load_state_dict(strict=False) restores
-        # it through the surviving shared storage.
+        # Safetensors rejects duplicated storage, so retain one shared key.
         seen_ptrs: set = set()
         deduped: dict = {}
         for k, v in state.items():

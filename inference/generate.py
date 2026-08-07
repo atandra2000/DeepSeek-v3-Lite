@@ -1,4 +1,4 @@
-"""Interactive generation: standard KV-cache decode and speculative MTP decoding."""
+"""Interactive CLI for cached and speculative DeepSeek-V3-Lite generation."""
 import os, sys
 from pathlib import Path
 from argparse import ArgumentParser
@@ -10,10 +10,7 @@ from models.mtp import MTPModule
 from utils.checkpoint import CheckpointManager
 from inference.speculative import SpeculativeDecoder
 
-# `transformers` is only required for the interactive `main()` entry point
-# (tokenizer loading). The pure-decode helpers used by tests import this
-# module without `transformers` installed; the optional import keeps the
-# test collection green on a CPU/Mac dev box.
+# Keep tokenizer loading optional so decode helpers work on CPU-only installs.
 try:
     from transformers import AutoTokenizer
     HAS_TRANSFORMERS = True
@@ -23,6 +20,7 @@ except ImportError:
 
 
 def load_config(path: str) -> dict:
+    """Load and validate a YAML config containing a ``model`` section."""
     if not os.path.exists(path):
         raise FileNotFoundError(f"Config not found: {path}")
     with open(path) as f:
@@ -34,6 +32,7 @@ def load_config(path: str) -> dict:
 
 @torch.inference_mode()
 def generate_interactive(model: torch.nn.Module, tokenizer, args, mtp_module: Optional[MTPModule] = None) -> None:
+    """Run the prompt loop and maintain the conversation context."""
     print("DeepSeek-V3-Lite  |  /exit to quit  |  /clear to reset context")
     messages = []
     decoder: Optional[SpeculativeDecoder] = None
@@ -65,6 +64,7 @@ def generate_interactive(model: torch.nn.Module, tokenizer, args, mtp_module: Op
 
 
 def main():
+    """Load a checkpoint and start the interactive generation CLI."""
     if not HAS_TRANSFORMERS:
         raise RuntimeError(
             "The `transformers` package is required for `python -m inference.generate`. "
@@ -105,8 +105,7 @@ def main():
     if args.use_speculative:
         mtp_module = MTPModule(model_cfg, depth=1).to(args.device)
         mtp_module.eval()
-        # Without the shared head, MTPModule.forward raises on the first
-        # draft step ("output_head not set").
+        # MTP reuses the main model's vocabulary projection for draft logits.
         mtp_module.set_output_head(model.head)
         weight_path = Path(ckpt_dir) / f"model_step_{step}.safetensors"
         if weight_path.exists():

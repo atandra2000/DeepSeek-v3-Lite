@@ -1,18 +1,7 @@
-"""
-Multi-Head Latent Attention (MLA) layer from DeepSeek-V3.
+"""DeepSeek-V3 Multi-Head Latent Attention (MLA).
 
-Mechanism:
-- The MLA layer takes an input tensor of shape (B, S, D) where B is the batch size, S is the sequence length, and D is the embedding dimension.
-- It computes queries (Q), keys (K), and values (V) using linear projections, with optional LoRA (Low-Rank Adaptation) for Q and K/V.
-- The queries are split into two parts: one for standard attention (Q_nope) and one for RoPE (Q_pe).
-- The keys are also split into two parts: one for standard attention (K_nope) and one for RoPE (K_pe).
-- The attention scores are computed using scaled dot-product attention, combining both the standard and RoPE components.
-- The output is computed by applying the attention scores to the values and projecting back to the original dimension.
-- The layer supports caching of K and V for efficient autoregressive generation.
-
-The implementation supports two attention mechanisms:
-1. Standard Dot-Product Attention (SDPA): Uses PyTorch's built-in scaled dot-product attention function.
-2. Triton-based fused attention: A custom implementation that fuses the materialization of K and V, RoPE application, and attention computation into a single kernel for improved performance
+The layer keeps the KV representation in a low-rank latent space, applies RoPE
+only to the positional component, and supports SDPA or the optional Triton path.
 """
 
 import math
@@ -23,7 +12,7 @@ from typing import Optional
 
 
 class MultiHeadLatentAttention(nn.Module):
-    """ Multi-Head Latent Attention (MLA) layer with optional LoRA and RoPE support."""
+    """MLA layer with low-rank KV compression, RoPE, and optional KV caching."""
 
     def __init__(self, config: dict, layer_idx: int = 0):
         super().__init__()
@@ -41,7 +30,7 @@ class MultiHeadLatentAttention(nn.Module):
         self.n_local_heads = self.n_heads
         self.rope_theta = config["rope_theta"]
         self.rope_factor = config.get("rope_factor", 1.0)
-        # The mscale factor is used to scale the softmax in attention.
+        # YaRN adjusts the scale only when context extension is enabled.
         mscale_raw = config.get("mscale", 1.0)
         if self.rope_factor > 1.0:
             self.mscale = 0.1 * mscale_raw * math.log(self.rope_factor) + 1.0
@@ -98,11 +87,13 @@ class MultiHeadLatentAttention(nn.Module):
         self._cache_batch = new_bsz
 
     def reset_cache(self) -> None:
+        """Discard cached latent keys and positional keys."""
         self.kv_cache = None
         self.pe_cache = None
         self._cache_batch = 0
 
     def forward(self, x: torch.Tensor, start_pos: int = 0, mask: Optional[torch.Tensor] = None, use_cache: bool = True) -> torch.Tensor:
+        """Apply MLA to ``(batch, sequence, dim)`` hidden states."""
         bsz, seqlen, _ = x.shape
         end_pos = start_pos + seqlen
         if end_pos > self.max_seq_len:
@@ -143,8 +134,7 @@ class MultiHeadLatentAttention(nn.Module):
         q_nope_proj = q_nope_proj_h.reshape(h, bsz, seqlen_q, self.kv_lora_rank).permute(1, 2, 0, 3).contiguous()
 
         if self.attn_impl == "triton":
-            # Try the fused triton kernel. If unavailable, fall back to SDPA
-            # (one-time, then stick to it for this model).
+            # Persist the fallback so an unavailable backend is reported once.
             try:
                 return self._forward_triton(
                     q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v,
@@ -160,7 +150,7 @@ class MultiHeadLatentAttention(nn.Module):
         if self.attn_impl == "sdpa":
             seqlen_k = ctx_kv.size(1)
             ctx_kv_bmm = ctx_kv.reshape(bsz * seqlen_k, self.kv_lora_rank).unsqueeze(0).expand(h, -1, -1)
-            # Fused: one bmm over ctx_kv produces K_nope and V together.
+            # Materialize K and V together to avoid a second latent-space pass.
             wkv_b_kv = torch.cat([wkv_b_k, wkv_b_v], dim=1)
             KV_nope_h = torch.bmm(ctx_kv_bmm, wkv_b_kv.transpose(-1, -2))
             K_nope_h, V_h = KV_nope_h.split([self.qk_nope_head_dim, self.v_head_dim], dim=-1)
@@ -204,15 +194,13 @@ class MultiHeadLatentAttention(nn.Module):
         start_pos: int,
         use_cache: bool,
     ) -> torch.Tensor:
-        """Fused MLA materialise+RoPE+attn path. See models/mla_triton.py.
-        Re-arranges the input tensors to match the expected layout of the triton kernel, and calls it."""
-        
+        """Run fused MLA attention after adapting tensors to the kernel layout."""
+
         from .mla_triton import triton_mla_attention
-        # Kernel layout: q_nope (B, H, S_q, D_nope), q_pe (B, H, S_q, D_rope)
+        # Triton expects heads before the query sequence dimension.
         q_nope_k = q_nope.permute(0, 2, 1, 3).contiguous()
         q_pe_k = q_pe.permute(0, 2, 1, 3).contiguous()
-        # Causal within the current block: queries are offset by `start_pos`
-        # in the KV context, so pass it as q_start (0 for cache-free).
+        # Offset cached queries so the kernel applies global causal positions.
         is_causal = mask is not None
         q_start = start_pos if (is_causal and use_cache) else 0
         out = triton_mla_attention(
@@ -226,5 +214,5 @@ class MultiHeadLatentAttention(nn.Module):
             is_causal=is_causal,
             q_start=q_start,
         )
-        # out: (B, S_q, H, D_v) — flatten to (B, S_q, H*D_v) for wo.
+        # The output projection consumes the flattened head dimension.
         return self.wo(out.flatten(2))

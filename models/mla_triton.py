@@ -1,8 +1,7 @@
-"""Fused MLA attention Triton kernel.
+"""Optional Triton MLA attention with a PyTorch reference implementation.
 
-Fuses K_nope/V materialisation, RoPE, and SDPA into a single
-FlashAttention-2-style kernel. Replaces models/mla.py:127-143.
-See `docs/12_Triton_Kernels.md` §4 for the design.
+The kernel fuses latent K/V materialization, RoPE-aware scoring, and online
+softmax; the reference path keeps CPU tests independent of Triton.
 """
 
 from __future__ import annotations
@@ -25,8 +24,7 @@ except ImportError:
     HAS_TRITON = False
 
 
-# Pure-PyTorch reference for the SDPA path. Self-contained (no KV cache,
-# no RoPE pre-application). Used by CPU tests.
+# CPU reference used for numerics and autograd checks.
 def mla_attention_reference(
     q_nope: torch.Tensor,        # (B, H, S_q, D_nope)
     q_pe: torch.Tensor,          # (B, H, S_q, D_rope)
@@ -38,7 +36,7 @@ def mla_attention_reference(
     is_causal: bool = False,
     q_start: int = 0,
 ) -> torch.Tensor:
-    """Returns (B, S_q, H, D_v)."""
+    """Return attention output with shape ``(B, S_q, H, D_v)``."""
     B, H, S_q, D_nope = q_nope.shape
     D_rope = q_pe.shape[-1]
     S_kv = ctx_kv.size(1)
@@ -69,9 +67,7 @@ def mla_attention_reference(
     return out.permute(0, 2, 1, 3).contiguous()
 
 
-# -----------------------------------------------------------------------------
-# Triton forward kernel — FA2-style fused MLA attention
-# -----------------------------------------------------------------------------
+# Triton forward kernel: FA2-style fused MLA attention.
 if HAS_TRITON:
 
     @triton.jit
@@ -198,9 +194,7 @@ def _check_mla_dim_limits(R: int, D_nope: int, D_rope: int, D_v: int) -> None:
             )
 
 
-# -----------------------------------------------------------------------------
-# Public autograd Function
-# -----------------------------------------------------------------------------
+# Public autograd wrapper.
 if HAS_TRITON:
 
     class _TritonMlaAttentionFunction(torch.autograd.Function):
@@ -218,6 +212,7 @@ if HAS_TRITON:
             is_causal: bool,
             q_start: int,
         ) -> torch.Tensor:
+            """Launch the fused forward kernel and save inputs for recomputation."""
             B, H, S_q, D_nope = q_nope.shape
             S_kv = ctx_kv.size(1)
             R = ctx_kv.size(-1)
@@ -274,9 +269,8 @@ if HAS_TRITON:
         def backward(
             ctx: Any, *grad_outputs: torch.Tensor,
         ) -> Tuple[torch.Tensor, ...]:
-            # v1 stub: re-run the reference forward and use PyTorch
-            # autograd. Correct but not yet the optimal re-compute
-            # backward. See `docs/12_Triton_Kernels.md` §4.
+            """Recompute the reference graph and return input gradients."""
+            # Recompute the reference graph to keep backward correct and compact.
             dout = grad_outputs[0]
             if dout is None:
                 return (None,) * 9

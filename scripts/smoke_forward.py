@@ -20,6 +20,7 @@ from models.transformer import Transformer
 
 
 def main() -> None:
+    """Build a reduced model and verify one CPU forward-pass shape."""
     cfg_path = Path("configs/pretrain_a100_422m.yaml")
     with open(cfg_path) as f:
         cfg = yaml.safe_load(f)["model"]

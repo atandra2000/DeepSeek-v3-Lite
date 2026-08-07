@@ -59,6 +59,7 @@ def _synthetic_source(num_docs: int):
         "speculative decoding accepts draft tokens when the main model agrees with their probability. ",
     ]
     def gen():
+        """Yield deterministic topic-mixed documents."""
         for i in range(num_docs):
             h = hashlib.sha256(f"doc-{i}".encode()).digest()
             n_paragraphs = 4 + (h[0] % 5)
@@ -121,6 +122,7 @@ def build_shard(
 
 
 def main() -> int:
+    """Parse shard options and build the requested token file."""
     parser = argparse.ArgumentParser(description="Build a small pretrain shard")
     parser.add_argument("--tokenizer", default="gpt2")
     parser.add_argument("--source", default="fineweb-edu",

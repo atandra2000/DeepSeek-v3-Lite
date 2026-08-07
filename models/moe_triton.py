@@ -1,8 +1,7 @@
-"""Fused grouped-GEMM SwiGLU kernel for DeepSeekMoE routed-expert dispatch.
+"""Optional Triton grouped-GEMM dispatch for routed MoE experts.
 
-Replaces the `for e in range(E): ...` Python loop in DeepSeekMoE.forward
-with one Triton launch over a sorted-token layout. See
-`docs/12_Triton_Kernels.md` §3 for the design.
+Tokens are sorted by expert for one fused launch; the PyTorch reference keeps
+CPU tests and the portable fallback independent of Triton.
 """
 
 from __future__ import annotations
@@ -25,8 +24,7 @@ except ImportError:
     HAS_TRITON = False
 
 
-# Pure-PyTorch reference. Same arithmetic as the `stacked` path but
-# routed through the sorted-token layout; used by CPU tests.
+# Reference implementation for CPU tests and fallback validation.
 def grouped_moe_pytorch(
     x_sorted: torch.Tensor,         # (T, D)
     w1: torch.Tensor,               # (E, I, D)
@@ -53,9 +51,7 @@ def grouped_moe_pytorch(
     return y_sorted
 
 
-# -----------------------------------------------------------------------------
-# Triton forward kernel — fused grouped-GEMM SwiGLU
-# -----------------------------------------------------------------------------
+# Triton forward kernel: fused grouped-GEMM SwiGLU.
 if HAS_TRITON:
 
     @triton.jit
@@ -388,9 +384,7 @@ def _check_dim_limits(I: int, D: int) -> None:
         )
 
 
-# -----------------------------------------------------------------------------
-# Public autograd Function
-# -----------------------------------------------------------------------------
+# Public autograd wrapper.
 if HAS_TRITON:
 
     class _TritonGroupedMoeFunction(torch.autograd.Function):
@@ -404,6 +398,7 @@ if HAS_TRITON:
             w3: torch.Tensor,               # (E, I, D) BF16
             expert_offsets: torch.Tensor,   # (E+1,) INT64
         ) -> torch.Tensor:
+            """Launch grouped forward and retain inputs for backward recomputation."""
             T, D = x_sorted.shape
             E, I, _ = w1.shape
             _check_dim_limits(I, D)
@@ -445,6 +440,7 @@ if HAS_TRITON:
             ctx: Any, *grad_outputs: torch.Tensor,
         ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
                    torch.Tensor, None]:
+            """Launch recompute kernels and return gradients for expert weights."""
             dy_sorted = grad_outputs[0]
             if dy_sorted is None:
                 return None, None, None, None, None
@@ -513,14 +509,11 @@ def triton_grouped_moe_dispatch(
     sorted_weights: torch.Tensor,
     expert_offsets: torch.Tensor,
 ) -> torch.Tensor:
-    """Fused grouped-GEMM SwiGLU forward. Returns y_sorted (T, D).
+    """Return grouped expert outputs in sorted-token order.
 
-    The gate-weight multiply is applied outside the autograd Function so the
-    gate receives a gradient (the kernel returns the unweighted expert output).
-
-    Raises:
-        ImportError: triton not installed.
-        ValueError:  I or D exceeds 256.
+    Gate weights are applied outside the autograd function so routing receives
+    gradients. Raises ``ImportError`` without Triton or ``ValueError`` above
+    the kernel's dimension limit.
     """
     if not HAS_TRITON:
         raise ImportError(

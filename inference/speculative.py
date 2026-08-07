@@ -1,4 +1,4 @@
-"""Speculative decoding via Multi-Token Prediction (MTP): main model → draft → accept/reject."""
+"""Speculative decoding with a main model and an MTP draft prediction."""
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
@@ -10,7 +10,7 @@ from models.transformer import Transformer
 
 
 class SpeculativeDecoder:
-    """MTP-based speculative decoder: main model predicts T1, draft predicts T2; verify and accept or fall back."""
+    """Generate a main token, propose a draft token, then accept or reject it."""
 
     def __init__(self, main_model: nn.Module, mtp_module: MTPModule, acceptance_threshold: float = 0.8):
         self.main_model = main_model
@@ -19,10 +19,10 @@ class SpeculativeDecoder:
 
     @torch.inference_mode()
     def generate_step(self, last_token: torch.Tensor, start_pos: int, temperature: float = 1.0) -> Tuple[torch.Tensor, torch.Tensor, bool]:
+        """Generate one main token and its draft successor."""
         main_logits = self.main_model(last_token, start_pos=start_pos, use_cache=True)
         main_probs = torch.softmax(main_logits[:, -1, :], dim=-1)
-        # Sample the main token with temperature (argmax when temperature == 0);
-        # the draft stays greedy (its most-likely continuation is what we verify).
+        # The main model follows sampling settings; the draft remains greedy.
         token_main = Transformer._sample(main_logits[:, -1, :], temperature, top_p=1.0, top_k=0).squeeze(0)
         t1_pos = start_pos + 1
         _, hidden = self.main_model.forward_with_hidden(token_main.unsqueeze(0), start_pos=t1_pos, use_cache=True)
@@ -31,7 +31,7 @@ class SpeculativeDecoder:
         draft_logits, _ = self.mtp(hidden_last, token_main_emb)
         draft_probs = torch.softmax(draft_logits[:, -1, :], dim=-1)
         token_draft = draft_probs.argmax(dim=-1)
-        # Acceptance compares raw (unscaled) probabilities of the draft token.
+        # Compare unscaled probabilities for the proposed draft token.
         p_main_of_draft = main_probs[0, token_draft[0]].item()
         p_draft_of_draft = draft_probs[0, token_draft[0]].item()
         return token_main, token_draft, p_main_of_draft >= self.threshold * max(p_draft_of_draft, 1e-12)
@@ -39,6 +39,7 @@ class SpeculativeDecoder:
     @torch.inference_mode()
     def generate(self, input_ids: torch.Tensor, max_new_tokens: int = 512, temperature: float = 1.0,
                  eos_token_id: Optional[int] = None) -> torch.Tensor:
+        """Generate tokens while accepting valid one-token draft extensions."""
         output = input_ids.clone()
         n_generated = 0
         if hasattr(self.main_model, "reset_cache"):

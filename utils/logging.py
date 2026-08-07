@@ -1,11 +1,11 @@
-"""Single-GPU training logger with optional WandB integration (enable with WANDB_PROJECT env var)."""
+"""Step-based training metrics with optional Weights & Biases forwarding."""
 import os, time
 from typing import Dict, Optional
 import torch
 
 
 class TrainingLogger:
-    """Step-driven logger: prints a rolling-window summary every log_interval steps; optionally forwards to WandB."""
+    """Aggregate loss over an interval and report throughput and metrics."""
 
     def __init__(self, log_interval: int = 10, seq_len: int = 1024, batch_size: int = 1):
         self.log_interval = log_interval
@@ -25,6 +25,7 @@ class TrainingLogger:
                 print("[logging] wandb not installed -- skipping WandB integration")
 
     def log(self, step: int, loss: float, metrics: Optional[Dict[str, float]] = None, lr: float = 0.0) -> None:
+        """Record a step and emit an interval summary when due."""
         self._loss_window.append(loss)
         if step % self.log_interval != 0 or not self._loss_window:
             return
@@ -45,18 +46,19 @@ class TrainingLogger:
         self._loss_window = []
         self._step_start = time.time()
 
-    # save_log/finish removed — zero callers. Add back when log persistence or wandb teardown is wired in.
 
 
 _logger: Optional[TrainingLogger] = None
 
 
 def init_logging(log_interval: int = 10, seq_len: int = 1024, batch_size: int = 1) -> None:
+    """Initialize the process-wide training logger."""
     global _logger
     _logger = TrainingLogger(log_interval=log_interval, seq_len=seq_len, batch_size=batch_size)
 
 
 def get_logger() -> TrainingLogger:
+    """Return the process-wide logger, creating the default lazily."""
     global _logger
     if _logger is None:
         _logger = TrainingLogger()

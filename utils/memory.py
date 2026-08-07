@@ -1,7 +1,6 @@
-"""Memory-budget estimation for DeepSeek-V3-Lite training (CPU-friendly arithmetic helpers).
+"""Estimate training and inference memory without allocating model tensors.
 
-Component bytes (BF16, AdamW FP32): params = 2×N, optim = 12×N, KV = batch·seq·(kv_lora+qk_rope)·2,
-activations = 24×B·S·D·L (with grad-ckpt) or 36× (without). Used by `scripts/microbench_a100.py`.
+The formulas assume BF16 parameters and FP32 AdamW state.
 """
 from __future__ import annotations
 
@@ -9,13 +8,12 @@ import torch
 import torch.nn as nn
 
 
-# Approx peak overhead from CUDA context + NCCL + caching allocator
-# (A100 80GB, PyTorch 2.x). Empirically <= 17% of device total.
+# Conservative allowance for CUDA context, NCCL, and allocator overhead.
 STATIC_PYTORCH_OVERHEAD_GB = 13.7
 
 
 def _deduped_numel(model: nn.Module) -> int:
-    """Total parameter count with shared tensors (weight tying) counted once."""
+    """Count parameters once, including models with tied weights."""
     seen: set[int] = set()
     total = 0
     for p in model.parameters():
@@ -28,17 +26,17 @@ def _deduped_numel(model: nn.Module) -> int:
 
 
 def _parameter_bytes(model: nn.Module) -> int:
-    """Model weights in BF16 (2 bytes per param)."""
+    """Return BF16 parameter storage in bytes."""
     return _deduped_numel(model) * 2
 
 
 def _optimiser_bytes(model: nn.Module) -> int:
-    """AdamW state: FP32 master copy (4) + first moment (4) + second moment (4) = 12 bytes/param."""
+    """Return AdamW master and moment storage in bytes."""
     return _deduped_numel(model) * 12
 
 
 def _kv_cache_bytes(model: nn.Module, seq_len: int, batch_size: int, dtype_bytes: int = 2) -> int:
-    """Total MLA KV-cache bytes: `batch·seq·(kv_lora_rank + qk_rope_head_dim)·dtype_bytes` summed over layers."""
+    """Return KV-cache storage across all attention layers."""
     total = 0
     layers = list(model.layers) if hasattr(model, "layers") else []
     for layer in layers:
@@ -67,7 +65,7 @@ def _activation_bytes(
 
 
 def _infer_dim_n_layers(model: nn.Module) -> tuple[int, int]:
-    """(hidden_dim, n_layers) for a `Transformer`-shaped model, (0, 0) for stubs."""
+    """Read ``(hidden_dim, n_layers)`` from a Transformer-like module."""
     if hasattr(model, "embed") and hasattr(model.embed, "embedding_dim"):
         dim = int(model.embed.embedding_dim)
     else:
@@ -80,7 +78,7 @@ def _infer_dim_n_layers(model: nn.Module) -> tuple[int, int]:
 
 
 def _detect_overhead_gb() -> float:
-    """PyTorch + CUDA context overhead in GB. CPU: 2 GB. CUDA: min(13.7, 0.17*total)."""
+    """Estimate framework overhead in GB for the current device."""
     if not torch.cuda.is_available():
         return 2.0
     total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
@@ -92,13 +90,7 @@ def estimate_model_memory_gb(
     grad_checkpoint: bool = True, overhead_gb: float | None = None,
     dtype_bytes: int = 2, inference: bool = False,
 ) -> float:
-    """Sum of params + optim + kv + activations + overhead, in GB.
-
-    `overhead_gb=None` autodetects via `_detect_overhead_gb()`. `inference=True`
-    drops the optimiser and activation bytes — at inference we don't carry
-    the AdamW state, and the forward-only activations are dominated by
-    the KV cache anyway.
-    """
+    """Estimate total model memory in GB for training or inference."""
     if overhead_gb is None:
         overhead_gb = _detect_overhead_gb()
     hidden_dim, n_layers = _infer_dim_n_layers(model)
@@ -116,7 +108,7 @@ def estimate_model_memory_gb(
 
 
 def assert_fits_in_available_gpu(estimate_gb: float, safety_margin_gb: float = 0.0) -> None:
-    """No-op on CPU. On CUDA, raise RuntimeError if estimate > available - margin."""
+    """Raise if a CUDA estimate exceeds available memory after the margin."""
     if not torch.cuda.is_available():
         return
     available_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3

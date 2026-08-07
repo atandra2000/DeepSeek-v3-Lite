@@ -1,4 +1,4 @@
-"""DeepSeek-v3-Lite data prep: thin shim over the universal pipeline (deepseek-coder-v2-lite tokenizer, vocab 100,018)."""
+"""Configure the shared data pipeline for the DeepSeek tokenizer and vocabulary."""
 import argparse
 import sys
 from pathlib import Path
@@ -21,7 +21,7 @@ DEEPSEEK_PAD_TOKEN_ID = 100_016
 
 
 def _ensure_deepseek_data_config(project_root: Path) -> Path:
-    """Materialise a project-local data_config.yaml with DeepSeek's vocab."""
+    """Write a project-local config with DeepSeek tokenizer identifiers."""
     from shared_data.config import UNIVERSAL_DATA_CONFIG_PATH
     from shared_data.common import load_yaml
 
@@ -42,6 +42,7 @@ def _ensure_deepseek_data_config(project_root: Path) -> Path:
 
 
 def _apply_deepseek_defaults() -> Path:
+    """Print the selected corpus settings and materialize the local config."""
     from shared_data.config import UNIVERSAL_TOTAL_TOKENS
     print(f"[data/deepseek] universal corpus: {UNIVERSAL_TOTAL_TOKENS:,} tokens")
     print(f"[data/deepseek] tokenizer: {DEEPSEEK_TOKENIZER_NAME} "
@@ -51,6 +52,7 @@ def _apply_deepseek_defaults() -> Path:
 
 
 def main() -> int:
+    """Parse data-preparation options and delegate to the shared pipeline."""
     parser = argparse.ArgumentParser(
         description="DeepSeek-v3-Lite data prep (delegates to universal pipeline)",
     )

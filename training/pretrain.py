@@ -1,3 +1,5 @@
+"""Single-GPU DeepSeek-V3-Lite pre-training loop and packed-token dataset."""
+
 import argparse, math, os, sys
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
@@ -19,7 +21,9 @@ from utils.logging import init_logging, get_logger
 
 
 def make_warmup_cosine_lambda(warmup_steps: int, total_steps: int, min_lr_ratio: float = 0.1):
+    """Build a linear-warmup, cosine-decay learning-rate schedule."""
     def lr_lambda(step: int) -> float:
+        """Return the multiplicative learning-rate factor for one step."""
         if step < warmup_steps:
             return step / max(1, warmup_steps)
         if step >= total_steps:
@@ -31,6 +35,7 @@ def make_warmup_cosine_lambda(warmup_steps: int, total_steps: int, min_lr_ratio:
 
 @dataclass
 class TrainingConfig:
+    """Runtime settings for model, optimization, checkpointing, and logging."""
     model_config: dict = field(default_factory=dict)
     data_path: str = "data/pretrain_data.bin"
     checkpoint_dir: str = "checkpoints/pretrain"
@@ -128,8 +133,9 @@ class PretrainDataset(Dataset):
 class Pretrainer:
     """BF16 pre-training loop for single GPU."""
     def __init__(self, config: TrainingConfig):
+        """Initialize device, model, optimizer, scheduler, and checkpoint state."""
         self.config = config
-        # Seed before model construction for reproducible init + data order.
+        # Seed before model construction for reproducible init and data order.
         torch.manual_seed(config.seed)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if not torch.cuda.is_available():
@@ -144,8 +150,7 @@ class Pretrainer:
         self.logger = get_logger()
 
         self._log("Initialising model...")
-        # AGENTS rule #7: default-config run must never silently switch to a Triton path.
-        # Guard already ran in Transformer.__init__; this is a no-op.
+        # Transformer already enforced the Triton opt-in policy; this is defensive context.
         raw_model = Transformer(config.model_config, use_checkpoint=config.grad_checkpoint).to(self.device)
         total, trainable = count_parameters(raw_model)
         self._log(f"Parameters: {total:,} total / {trainable:,} trainable")
@@ -191,11 +196,8 @@ class Pretrainer:
             {"params": no_decay_params, "weight_decay": 0.0},
         ], lr=config.lr, betas=(config.beta1, config.beta2), fused=torch.cuda.is_available())
 
-        # The LR schedule lives in optimizer-step space: the loop budget
-        # `max_steps` counts micro-batches, so the cosine horizon (and the
-        # run's final LR) is `max_steps // gradient_accumulation_steps`.
-        # Without this, the canonical run would traverse only the first
-        # quarter of the cosine arc and never reach min_lr_ratio.
+        # Schedule optimizer steps, not micro-batches, so accumulation preserves
+        # the intended warmup and final learning-rate horizon.
         opt_steps = max(1, config.max_steps // config.gradient_accumulation_steps)
         lr_lambda = make_warmup_cosine_lambda(warmup_steps=config.warmup_steps, total_steps=opt_steps, min_lr_ratio=config.min_lr_ratio)
         self.scheduler = LambdaLR(self.optimizer, lr_lambda)
@@ -254,11 +256,9 @@ class Pretrainer:
         self._log(f"    {'TOTAL':25s}: {total:>12,}  ({total / 1e6:.2f} M)")
 
     def train_step(self, tokens: torch.Tensor, targets: torch.Tensor, micro_step: int) -> Optional[Dict[str, Optional[float]]]:
+        """Run one micro-batch and step the optimizer when accumulation is due."""
         is_opt_step = (micro_step + 1) % self.config.gradient_accumulation_steps == 0
-        # Cast uint32 → int64 at the boundary. PretrainDataset stores tokens as
-        # uint32 for memory efficiency (4 bytes vs 8), but `nn.Embedding` and
-        # `F.cross_entropy` both require Long indices. Doing the cast here keeps
-        # the dataset's storage compact and the training path dtype-correct.
+        # Keep compact uint32 storage in the dataset; PyTorch indexing needs int64.
         if tokens.dtype != torch.long:
             tokens = tokens.to(torch.long)
         if targets.dtype != torch.long:
@@ -267,7 +267,7 @@ class Pretrainer:
             if self.mtp_wrapper is not None:
                 main_logits, mtp_pairs = self.model(tokens)
                 total_loss, main_loss, mtp_loss = self.mtp_wrapper.compute_loss(main_logits, targets, mtp_pairs)
-                # Defer host round-trip to the logger (avoids per-step GPU sync).
+                # Keep metrics on-device until the logging interval.
                 _ce_loss_val = main_loss.detach()
                 _mtp_loss_val = mtp_loss.detach() if mtp_pairs else None
                 loss = total_loss / self.config.gradient_accumulation_steps
@@ -297,11 +297,10 @@ class Pretrainer:
         return {"loss": _ce_loss_val, "mtp_loss": _mtp_loss_val, "balance_loss": balance_loss}
 
     def save_checkpoint(self, step: int, tag: str = "") -> None:
+        """Persist model, optimizer, scheduler metadata, and optional MTP state."""
         model_to_save = self.raw_model
         state = model_to_save.state_dict()
-        # Weight tying: head.weight IS embed.weight (same tensor). Dropping the
-        # duplicate saves ~vocab×dim×4B per checkpoint; load_state_dict(strict=False)
-        # leaves head.weight missing, but the shared tensor is restored via embed.
+        # Omit the duplicate tied-head tensor; loading restores the shared storage.
         if getattr(model_to_save, "weight_tying", False):
             state = {k: v for k, v in state.items() if k != "head.weight"}
         if self.mtp_wrapper is not None:
@@ -315,6 +314,7 @@ class Pretrainer:
         self._log(f"Checkpoint saved at step {step}")
 
     def load_checkpoint(self, step: int) -> int:
+        """Restore a checkpoint and return the resumed training step."""
         from safetensors.torch import load_file
         meta = self.ckpt_manager.load(self.raw_model, step, device=str(self.device), optimizer=self.optimizer, strict=False)
         if self.mtp_wrapper is not None and meta.get("has_mtp", False):
@@ -338,12 +338,10 @@ class Pretrainer:
         return self.ckpt_manager.latest_step()
 
     def train(self) -> None:
+        """Run the resumable training loop until ``max_steps`` is reached."""
         dataset = PretrainDataset(self.config.data_path, self.config.max_seq_len, self.config.vocab_size)
-        # Shuffle with a seeded generator so each epoch reshuffles (no more
-        # identical sequential order every epoch). Resume does not restore the
-        # sampler RNG, so order differs across a restart — benign at this scale
-        # (samples are seen ~uniformly); exact resume would need sampler
-        # checkpointing.
+        # A seeded generator reshuffles each epoch; sampler state is not part of
+        # checkpoints, so exact sample order is not restored after a restart.
         g = torch.Generator().manual_seed(self.config.seed)
         loader = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True, generator=g,
                             num_workers=8, pin_memory=True,
@@ -383,7 +381,7 @@ class Pretrainer:
                 nan_guard_streak = 0
                 if global_step % self.config.log_every == 0:
                     lr = self.scheduler.get_last_lr()[0]
-                    # Single .item() per log step (not per micro-step) — avoids 3-4 forced GPU syncs.
+                    # Convert metrics to host values only at the logging boundary.
                     log_metrics = {"balance_loss": float(metrics["balance_loss"].item()) if isinstance(metrics["balance_loss"], torch.Tensor) else float(metrics["balance_loss"])}
                     if metrics.get("mtp_loss") is not None:
                         log_metrics["mtp_loss"] = float(metrics["mtp_loss"].item()) if isinstance(metrics["mtp_loss"], torch.Tensor) else float(metrics["mtp_loss"])
@@ -397,6 +395,7 @@ class Pretrainer:
 
 
 def main() -> None:
+    """Load YAML settings, construct a trainer, and start pre-training."""
     parser = argparse.ArgumentParser(description="DeepSeek-V3-Lite pre-training (single GPU)")
     parser.add_argument("--config", type=str, default="configs/pretrain_a100_422m.yaml")
     parser.add_argument("--data-path", type=str, default=None)

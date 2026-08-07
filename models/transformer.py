@@ -9,18 +9,19 @@ from ._triton_dispatch import enforce_triton_env_var
 
 
 class SwiGLUFFN(nn.Module):
-    """SwiGLU FFN: W2(silu(W1(x)) * W3(x))."""
+    """Feed-forward block using the gated SwiGLU activation."""
     def __init__(self, dim: int, inter_dim: int):
         super().__init__()
         self.w1 = nn.Linear(dim, inter_dim, bias=False)
         self.w2 = nn.Linear(inter_dim, dim, bias=False)
         self.w3 = nn.Linear(dim, inter_dim, bias=False)
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the gated feed-forward transformation."""
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 
 class TransformerBlock(nn.Module):
-    """Pre-norm MLA + pre-norm SwiGLU/MoE FFN. First `n_dense_layers` are dense."""
+    """Pre-norm MLA block with dense or MoE feed-forward layers."""
     def __init__(self, layer_id: int, config: dict):
         super().__init__()
         self.layer_id = layer_id
@@ -32,17 +33,18 @@ class TransformerBlock(nn.Module):
         self.ffn = SwiGLUFFN(self.dim, config["inter_dim"]) if layer_id < self.n_dense_layers else DeepSeekMoE(config)
 
     def forward(self, x: torch.Tensor, start_pos: int = 0, mask: Optional[torch.Tensor] = None, use_cache: bool = True) -> torch.Tensor:
+        """Apply attention and feed-forward residual blocks."""
         x = x + self.attn(self.attn_norm(x), start_pos, mask, use_cache)
         x = x + self.ffn(self.ffn_norm(x))
         return x
 
 
 class Transformer(nn.Module):
-    """DeepSeek-V3-style Transformer: MLA attention, MoE FFN, optional MTP."""
+    """DeepSeek-V3-style Transformer with MLA and configurable FFN routing."""
     def __init__(self, config: dict, use_checkpoint: bool = False):
         super().__init__()
         model_cfg = config.get("model", config)
-        # Same guard as training.pretrain — covers model construction outside the pretrain entry point.
+        # Enforce the backend policy even when callers construct the model directly.
         enforce_triton_env_var(model_cfg, print)
         self.use_checkpoint = use_checkpoint
         self.max_seq_len = model_cfg["max_seq_len"]
@@ -86,19 +88,23 @@ class Transformer(nn.Module):
         return h
 
     def reset_cache(self) -> None:
+        """Clear attention caches in every transformer block."""
         for layer in self.layers:
             if hasattr(layer.attn, "reset_cache"):
                 layer.attn.reset_cache()
 
     def moe_layers(self):
+        """Yield the MoE layers for diagnostics and bias updates."""
         for layer in self.layers:
             if isinstance(layer.ffn, DeepSeekMoE):
                 yield layer.ffn
 
     def forward(self, tokens: torch.Tensor, start_pos: int = 0, use_cache: bool = True) -> torch.Tensor:
-        """(bsz, seqlen) -> (bsz, seqlen, vocab_size). start_pos: KV-cache offset."""
-        # `nn.Embedding` requires Long indices. Accept uint32 (common from mmap'd
-        # token shards) by casting at the boundary.
+        """Return logits with shape ``(batch, sequence, vocab)``.
+
+        ``start_pos`` is the offset used by the KV cache; integer token buffers
+        are normalized to ``torch.long`` at the embedding boundary.
+        """
         if tokens.dtype != torch.long:
             tokens = tokens.to(torch.long)
         bsz, seqlen = tokens.shape
@@ -113,8 +119,7 @@ class Transformer(nn.Module):
         return self.head(self.norm(h))
 
     def forward_with_hidden(self, tokens: torch.Tensor, start_pos: int = 0, use_cache: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Returns (logits, h). h is the pre-norm trunk hidden (V3 feeds this
-        to MTP blocks, which apply their own norms); logits use the normed h."""
+        """Return logits and the pre-final-norm hidden state used by MTP."""
         if tokens.dtype != torch.long:
             tokens = tokens.to(torch.long)
         bsz, seqlen = tokens.shape
@@ -131,7 +136,7 @@ class Transformer(nn.Module):
     @torch.inference_mode()
     def generate(self, input_ids: torch.Tensor, max_new_tokens: int = 512, temperature: float = 1.0,
                  top_p: float = 0.9, top_k: int = 0, eos_token_id: Optional[int] = None) -> torch.Tensor:
-        """Autoregressive generation with KV-cache, top-p and top-k sampling."""
+        """Generate tokens autoregressively with cached attention and sampling."""
         if temperature < 0.0:
             raise ValueError(f"temperature must be >= 0, got {temperature}")
         was_training = self.training
@@ -159,7 +164,7 @@ class Transformer(nn.Module):
 
     @staticmethod
     def _sample(logits: torch.Tensor, temperature: float, top_p: float, top_k: int) -> torch.Tensor:
-        """Temperature + top-k + top-p sampling. Temperature==0 -> argmax."""
+        """Sample with temperature, top-k, and top-p filtering."""
         if temperature == 0.0:
             return logits.argmax(dim=-1, keepdim=True)
         logits = logits / temperature
@@ -180,7 +185,7 @@ class Transformer(nn.Module):
 
 
 def count_parameters(model: nn.Module) -> Tuple[int, int]:
-    """(total, trainable) — deduplicated by tensor id (shared weights counted once)."""
+    """Return deduplicated ``(total, trainable)`` parameter counts."""
     seen = set()
     total = 0
     trainable = 0

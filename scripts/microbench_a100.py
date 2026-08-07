@@ -8,6 +8,7 @@ from utils.memory import estimate_model_memory_gb, assert_fits_in_available_gpu
 
 
 def main() -> None:
+    """Estimate and measure peak memory for the canonical A100 config."""
     cfg_path = Path(__file__).resolve().parent.parent / "configs" / "pretrain_a100_422m.yaml"
     cfg = yaml.safe_load(open(cfg_path))
     bs = cfg["training"]["micro_batch_size"]
