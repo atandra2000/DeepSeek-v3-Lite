@@ -44,3 +44,6 @@ wandb/
 
 # Graphify auto-generated output
 graphify-out/
+
+# HTML Documentation (Generated locally)
+docs_html/

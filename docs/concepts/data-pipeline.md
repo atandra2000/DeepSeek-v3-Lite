@@ -40,7 +40,7 @@ Everything in this chapter is verified against the current sources (`data/prepar
 
 ## Why a Shared Pipeline?
 
-The sibling projects under `LLM/` (per `LLM/shared_data/README.md`: Mamba-2-Lite, GPT-OSS-Lite, HyMo, DeepSeek-V3-Lite, LLaMA-3-Lite) all target a ~400–500M-param model trained on roughly the same corpus budget. Without a shared pipeline, each project would independently:
+The sibling projects under `LLM/` (per `LLM/shared_data/README.md`: Mamba-3-Lite, GPT-OSS-Lite, HyMo, DeepSeek-V3-Lite, LLaMA-3-Lite) all target a ~400–500M-param model trained on roughly the same corpus budget. Without a shared pipeline, each project would independently:
 
 - Re-download FineWeb-Edu (~1.3 TB at full scale) and re-run cleaning — weeks of duplicated bandwidth and compute.
 - Drift apart on the *meaning* of a source: "fineweb-edu" with different configs, different filters, different weights makes cross-project loss comparisons meaningless.

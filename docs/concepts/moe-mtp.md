@@ -11,7 +11,7 @@
 ## Table of Contents
 
 1. [Abstract](#abstract)
-2. [Motivation — Capacity Without Dense Compute](#motivation-capacity-without-dense-compute)
+2. [Motivation — Capacity Without Dense Compute](#motivation--capacity-without-dense-compute)
 3. [DeepSeek MoE Design](#deepseek-moe-design)
 4. [Mathematical Formulation (DeepSeek-V3 Paper)](#mathematical-formulation-deepseek-v3-paper)
 5. [Expert Capacity and Sparsity Math](#expert-capacity-and-sparsity-math)
