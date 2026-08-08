@@ -189,19 +189,27 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
     table_headers = []
     table_rows = []
     
-    in_list = False
-    list_type = None
-    
+    # Stack of open list contexts; each entry keeps its own <li> open until the
+    # next item or a flush, so nested lists and wrapped items render correctly.
+    list_stack = []  # [{'indent': int, 'tag': str, 'li_open': bool}]
+    h1_seen = False  # the first H1 duplicates the page's doc-title; suppressed
+
     in_blockquote = False
     blockquote_type = "normal"
     blockquote_lines = []
 
+    def close_li():
+        nonlocal list_stack
+        if list_stack and list_stack[-1]['li_open']:
+            html_lines.append("</li>")
+            list_stack[-1]['li_open'] = False
+
     def flush_list():
-        nonlocal in_list, list_type
-        if in_list:
-            html_lines.append(f"</{list_type}>")
-            in_list = False
-            list_type = None
+        nonlocal list_stack
+        while list_stack:
+            close_li()
+            html_lines.append(f"</{list_stack[-1]['tag']}>")
+            list_stack.pop()
 
     def flush_blockquote():
         nonlocal in_blockquote, blockquote_type, blockquote_lines
@@ -240,10 +248,15 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             table_headers = []
             table_rows = []
 
+    def escape_preserving_entities(text: str) -> str:
+        """Escape `<`, `>` and stray `&`, but leave valid HTML entities intact
+        (``&nbsp;``, ``&rarr;``, ``&#8230;``, ...) so source entities survive."""
+        text = re.sub(r'&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#x[0-9a-fA-F]+);)', '&amp;', text)
+        return text.replace('<', '&lt;').replace('>', '&gt;')
+
     def render_inline_formatting(text: str) -> str:
-        # Escape html chars for safety (except placeholders)
-        # Note: < and > in prose get escaped
-        text = html.escape(text, quote=False)
+        # Escape html chars for safety (except placeholders), preserving entities
+        text = escape_preserving_entities(text)
         
         # Bold **text**
         text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
@@ -341,13 +354,19 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
                     'title': clean_title,
                     'id': heading_id
                 })
-                
-            html_lines.append(
-                f'<h{level} id="{heading_id}" class="heading-anchor">'
-                f'{rendered_heading}'
-                f'<a href="#{heading_id}" class="anchor-link" aria-label="Link to section">#</a>'
-                f'</h{level}>'
-            )
+
+            # The first H1 duplicates the page's doc-title; suppress the visible
+            # heading but keep its id so deep links (e.g. #deepseek-v3-lite) resolve.
+            if level == 1 and not h1_seen:
+                h1_seen = True
+                html_lines.append(f'<span class="doc-anchor" id="{heading_id}"></span>')
+            else:
+                html_lines.append(
+                    f'<h{level} id="{heading_id}" class="heading-anchor">'
+                    f'{rendered_heading}'
+                    f'<a href="#{heading_id}" class="anchor-link" aria-label="Link to section">#</a>'
+                    f'</h{level}>'
+                )
             i += 1
             continue
 
@@ -367,28 +386,47 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             flush_table()
             continue
 
-        # Lists (unordered - or *, ordered 1.)
+        # Lists (unordered - or *, ordered 1.) — nested by leading indentation
         ul_match = re.match(r'^[\*\-]\s+(.+)$', stripped)
         ol_match = re.match(r'^\d+\.\s+(.+)$', stripped)
         if ul_match or ol_match:
             flush_table()
             flush_blockquote()
-            target_type = 'ul' if ul_match else 'ol'
+            tag = 'ul' if ul_match else 'ol'
             item_text = (ul_match or ol_match).group(1).strip()
-            
-            if not in_list or list_type != target_type:
-                flush_list()
-                in_list = True
-                list_type = target_type
-                html_lines.append(f'<{list_type} class="doc-list">')
-                
+            indent = len(line) - len(line.lstrip(' '))
+
+            # Close lists nested deeper than this item's indent
+            while list_stack and indent < list_stack[-1]['indent']:
+                close_li()
+                html_lines.append(f"</{list_stack[-1]['tag']}>")
+                list_stack.pop()
+            # Same indent but a different list type → close the old list
+            if list_stack and list_stack[-1]['indent'] == indent and list_stack[-1]['tag'] != tag:
+                close_li()
+                html_lines.append(f"</{list_stack[-1]['tag']}>")
+                list_stack.pop()
+            # Open a new list when none exists at this indent
+            if not list_stack or list_stack[-1]['indent'] != indent:
+                list_stack.append({'indent': indent, 'tag': tag, 'li_open': False})
+                html_lines.append(f'<{tag} class="doc-list">')
+            else:
+                close_li()  # next item in the same list
+
             task_match = re.match(r'^\[([ xX])\]\s+(.+)$', item_text)
             if task_match:
                 checked = 'checked' if task_match.group(1).lower() == 'x' else ''
                 item_content = render_inline_formatting(task_match.group(2))
-                html_lines.append(f'<li class="task-item"><input type="checkbox" disabled {checked}> {item_content}</li>')
+                html_lines.append(f'<li class="task-item"><input type="checkbox" disabled {checked}> {item_content}')
             else:
-                html_lines.append(f'<li>{render_inline_formatting(item_text)}</li>')
+                html_lines.append(f'<li>{render_inline_formatting(item_text)}')
+            list_stack[-1]['li_open'] = True
+            i += 1
+            continue
+
+        # Continuation of an open list item (indented prose that belongs to it)
+        if list_stack and list_stack[-1]['li_open'] and line[:1] in (' ', '\t'):
+            html_lines.append("<br> " + render_inline_formatting(stripped))
             i += 1
             continue
 
@@ -1101,6 +1139,8 @@ body {
     transition: opacity 0.2s;
 }
 .heading-anchor:hover .anchor-link { opacity: 1; }
+
+.doc-anchor { display: block; height: 0; }
 
 .markdown-body h2 { font-size: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem; }
 .markdown-body h3 { font-size: 1.25rem; }
