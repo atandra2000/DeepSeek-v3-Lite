@@ -1,6 +1,17 @@
 # AGENTS.md — DeepSeek-v3-Lite
 
-> **CRITICAL RULE:** You must also read, understand, and strictly obey all workspace-level rules defined in the top-level `CoreProjects/AGENTS.md` and `CoreProjects/.agents/AGENTS.md` files. Those higher-level instructions apply globally to all projects.
+> **CRITICAL RULE:** You must also read, understand, and strictly obey all higher-level rules: the workspace `LLM/AGENTS.md` (shared-data pipeline rules, repo boundaries, cross-project invariants) and the top-level `CoreProjects/AGENTS.md` / `CoreProjects/.agents/AGENTS.md`. Those instructions apply globally to all projects; this file wins only on DeepSeek-v3-Lite-specific conflicts.
+
+## Quick checks (run before claiming work is done)
+
+```bash
+cd LLM/DeepSeek-v3-Lite
+python3 -m pytest tests/ -q                 # 199 tests: 189 pass + 10 GPU-gated skips
+python3 tests/test_doc_refs.py              # doc↔code symbol anchors
+python3 scripts/check_docs.py               # links + stale-pattern lint
+# Tiny end-to-end smoke on small hardware:
+#   configs/pretrain_1650_2m.yaml (~2M params, GTX 1650 4GB-class)
+```
 
 
 > **Project:** `LLM/DeepSeek-v3-Lite/` · **Type:** faithful V3 reproduction
@@ -102,9 +113,11 @@ split-K) and can reason about HBM bandwidth vs compute trade-offs.
 
 **Data:** Universal 8.0B-token pipeline (lives at `LLM/shared_data/` in the
 workspace umbrella; this project imports it via `sys.path` in
-`data/prepare_data.py` — it is not vendored here). Mixture: FineWeb-Edu
-0.5 / FineWeb 0.2 / the-stack-python 0.15 / OpenMathInstruct-2 0.10 / arxiv
-0.05. Tokenized with `deepseek-ai/deepseek-coder-v2-lite` tokenizer (vocab
+`data/prepare_data.py` — it is not vendored here). Mixture (canonical 7
+sources in `LLM/shared_data/config/mixture.yaml`): fineweb-edu 0.40 /
+dclm-baseline 0.15 / the-stack-v2-python 0.15 / the-stack-v2-jupyter 0.05 /
+openmath 0.10 / arxiv 0.10 / cosmopedia 0.05. Tokenized with
+`deepseek-ai/deepseek-coder-v2-lite` tokenizer (vocab
 100,018). See `docs/training.md` (data pipeline) and `docs/concepts/data-pipeline.md`.
 
 **Doc routing:** implementation questions → `models/*.py` first; theory → `docs/<component>.md`; API reference (signatures, shape contracts, defaults) → `docs/references/R<n>_*.md`; operational procedures → `docs/guides/G<n>_*.md`; invariants → `tests/` + `docs/concepts/kernels-and-ops.md`. MLA deep-dive → `docs/concepts/attention-and-precision.md`. Doc↔code alignment is machine-checked by `tests/test_doc_refs.py` (every code-symbol citation — file path + class/method — must resolve; line anchors and JIT-kernel citations are banned) and `scripts/check_docs.py` (links, paths, stale patterns) — both run in CI; stale docs fail the build.
