@@ -1308,7 +1308,8 @@ html.booting body > *:not(#boot-overlay) { visibility: hidden; }
 }
 
 /* ----- Expandable code seam --------------------------------------------- */
-.code-wrapper.collapsed pre { max-height: 15.5rem; overflow: hidden; }
+/* 17.3rem = CODE_SHOWN (12, in portal.js) visible lines + pre padding. */
+.code-wrapper.collapsed pre { max-height: 17.3rem; overflow: hidden; }
 .code-wrapper.collapsed::after {
     content: "";
     position: absolute;
