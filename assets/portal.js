@@ -220,7 +220,7 @@
         ' h[768] \u2500 W_k \u2500\u25b8 k [12 \u00d7 48]  \u251c\u2500\u25b8 attn(q, k, v) \u25b8 out',
         ' h[768] \u2500 W_v \u2500\u25b8 v [12 \u00d7 64]  \u2518',
         '',
-        ' KV cache / token : 12 \u00d7 (48 + 64) = 1,344 dims'
+        ' KV cache / token : 2 \u00d7 12 \u00d7 64 = 1,536 dims'
     ].join('\n');
 
     var MLA_ABSORBED = [
@@ -230,7 +230,7 @@
         ' c \u2500\u25b8 W_U \u00b7 W_q absorbed into q\u2032 \u2500\u25b8 attn \u25b8 out',
         '',
         ' KV cache / token : 192 + 24 = 216 dims',
-        ' compression      : 1,344 \u25b8 216 (\u2248 6.2\u00d7)'
+        ' compression      : 1,536 \u25b8 216 (\u2248 7.1\u00d7)'
     ].join('\n');
 
     function initMlaToggle() {

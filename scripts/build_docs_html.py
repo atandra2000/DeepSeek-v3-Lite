@@ -124,7 +124,7 @@ MLA_WIDGET = """<div class="ascii-widget" id="widget-mla-absorb">
  c \u2500\u25b8 W_U \u00b7 W_q absorbed into q\u2032 \u2500\u25b8 attn \u25b8 out
 
  KV cache / token : 192 + 24 = 216 dims
- compression      : 1,344 \u25b8 216 (\u2248 6.2\u00d7)</pre>
+ compression      : 1,536 \u25b8 216 (\u2248 7.1\u00d7)</pre>
 </div>"""
 
 # rel path -> widget injected between the article and the footer nav.
