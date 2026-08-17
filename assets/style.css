@@ -1,0 +1,1434 @@
+/* DeepSeek-v3-Lite documentation — "latent blueprint" design system.
+   --------------------------------------------------------------------
+   Subject-grounded: this is a technical drawing of an LLM, not a SaaS page.
+   Every choice is a deliberate response to the model:
+
+     • The whole page is set like a draftsman's plate: a deep blueprint
+       ink, hairline rules, and one warm ember mark reserved for the
+       "one active expert among many" signal. Decoration never borrows
+       that ember.
+
+     • Two typefaces, on purpose:
+         IBM Plex Serif  — runs the prose (math + spec belong in this face)
+         IBM Plex Mono   — runs every heading, label, code, coordinate,
+                           and key. The typeface itself says "this came out
+                           of a machine."
+       No third "display" face. The prior Space Grotesk felt like a
+       marketing site; using one mono for everything structural makes the
+       page read as a single, unforgeable editorial voice.
+
+     • The hero figure is a coordinate ruler over an MLA bottleneck. The
+       bottleneck motif recurs as the section break ornament — one SVG
+       path, reused.
+
+     • Sidebar items are prefixed with `01 / 02 / 03` style marks and a
+       leading tick on the active page, not "→" or pills.
+
+     • Numbered eyebrow marks (`FIG · 00`, `01 · params`, `§1`) carry
+       information that the section actually does have order — no fake
+       numbering.
+
+     • Section headings use a leading § mark, sized down, inked in
+       dim, so the heading reads as a labeled row of a ledger.
+
+   This file is the single source of truth; `scripts/build_docs_html.py`
+   copies it into `docs_html/assets/style.css` during the build. */
+
+
+
+/* =====================================================================
+   1. TOKENS
+   ===================================================================== */
+
+:root {
+    /* Surfaces — ink, paper, the two planes of the drawing. */
+    --ink:           #06090f;
+    --paper:         #0b1120;
+    --paper-2:       #111a2e;
+    --paper-3:       #18233e;
+    --paper-hover:   #1a2543;
+
+    /* Hairlines and ticks. Very low contrast — these are structural,
+       never decorative. */
+    --ruler:         #1b2542;
+    --ruler-strong:  #2a3656;
+
+    /* Type */
+    --ink-text:      #e3e7f2;
+    --dim:           #97a4c8;
+    --note:          #6a759b;
+    --faint:         #475173;
+
+    /* One warm risk color. Used ONLY for:
+         (a) the "active expert" spark in the bottleneck SVG,
+         (b) the active sidebar tick,
+         (c) the § in headings, never the heading itself.
+       Nowhere else. */
+    --ember:         #ff8556;
+    --ember-tint:    rgba(255, 133, 86, 0.10);
+    --ember-glow:    rgba(255, 133, 86, 0.35);
+
+    /* The spark color — same as ember, used in SVG */
+    --spark:         #ff8556;
+
+    /* The actual structural accent: a cool, dim slate-blue. It does the
+       work of dimension (rules, marks, ticks, sidebar hairlines) without
+       ever shouting. */
+    --rule:          #6c80b0;
+    --rule-tint:     rgba(108, 128, 176, 0.12);
+    --rule-mark:     #8aa0d8;
+
+    /* Math code surface */
+    --code-ink:      #06090f;
+    --code-paper:    #0a1120;
+    --code-rule:     #1c2742;
+
+    /* Header chrome — uses a touch of backdrop tint */
+    --header-bg:     rgba(6, 9, 15, 0.85);
+
+    /* Status callouts — the same three + ember as a single standout */
+    --callout-note-bg:    rgba(108, 128, 176, 0.07);
+    --callout-note-rule:  #6c80b0;
+    --callout-tip-bg:     rgba(255, 133, 86, 0.08);
+    --callout-tip-rule:   #ff8556;
+    --callout-warn-bg:    rgba(232, 96, 110, 0.08);
+    --callout-warn-rule:  #e8606e;
+
+    /* Focus ring — accessible, high-contrast, never decorative */
+    --focus-ring:    rgba(138, 160, 216, 0.5);
+
+    /* Type families — the portal is mono end-to-end; --font-prose is an
+       alias kept so the existing prose rules keep resolving. */
+    --font-mono:     'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --font-prose:    var(--font-mono);
+}
+
+/* =====================================================================
+   2. RESET + SCROLLBARS
+   ===================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Custom scrollbars — thin, unobtrusive, matching the blueprint aesthetic */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: var(--ink);
+    border-left: 1px solid var(--ruler);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--paper-3);
+    border: 1px solid var(--ruler-strong);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--rule);
+}
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+    margin: 0;
+    background-color: var(--ink);
+    color: var(--ink-text);
+    font-family: var(--font-prose);
+    font-size: 15px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "kern", "liga", "onum";
+}
+
+/* Subtle paper grain — a 16×16 dot noise tiled across the page.
+   Only ~3% opacity; reads as texture, not pattern. */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background-image:
+        radial-gradient(circle at center, var(--paper-2) 0.5px, transparent 0.6px),
+        radial-gradient(circle at center, var(--paper-2) 0.5px, transparent 0.6px);
+    background-size: 18px 18px, 23px 23px;
+    background-position: 0 0, 9px 11px;
+    opacity: 0.45;
+    mix-blend-mode: lighten;
+}
+
+/* All real content sits above the grain overlay. */
+.site-header, .app-layout, .hero-banner, .toc-sidebar, .sidebar {
+    position: relative;
+    z-index: 2;
+}
+
+
+
+/* =====================================================================
+   3. TYPE — prose, headings, labels
+   ===================================================================== */
+
+/* Headings are mono. The whole page reads as editorial chrome until you
+   land on a body sentence that drops into IBM Plex Serif. That contrast
+   IS the voice. */
+.brand-name, .doc-title, .hero-title, .hero-coords, .hero-figure .lbl,
+.hero-figure .lbl-key, .portal-section-mark, .portal-section-title,
+.card-heading, .card-tag, .nav-card .card-title, .nav-card .card-label,
+.nav-group-title, .nav-link, .toc-title, .toc-link,
+.breadcrumb, .doc-meta, .meta-item,
+.code-header, .code-lang, .copy-btn, .code-wrapper pre,
+.inline-code, .math-block,
+.spec-sheet-rule, .spec-key, .spec-val, .spec-val .unit,
+.heading-anchor, .hero-subtitle,
+.callout-header, .callout-title,
+.brand-badge, .header-link,
+.mobile-toggle, .sidebar-search input,
+.doc-footer-nav {
+    font-family: var(--font-mono);
+}
+
+/* Long prose paragraphs (markdown body) → serif. */
+.markdown-body p,
+.markdown-body li,
+.markdown-body blockquote,
+.hero-subtitle {
+    font-family: var(--font-prose);
+}
+
+p { margin: 0 0 1.1em 0; }
+
+a { color: var(--rule-mark); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+a:hover { color: var(--ink-text); text-decoration-color: var(--ember); }
+
+/* Focus-visible: high-contrast ring, only on keyboard nav */
+:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+::selection { background: var(--rule-tint); color: var(--ink-text); }
+
+
+
+/* =====================================================================
+   4. HEADER CHROME
+   ===================================================================== */
+
+.site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.65rem 1.6rem;
+    background: var(--header-bg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--ruler);
+}
+
+/* Subtle inner glow along the header bottom — a refinement that reads as "lit edge" */
+.site-header::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(to right,
+        transparent 0%,
+        var(--rule-tint) 15%,
+        var(--rule-tint) 85%,
+        transparent 100%);
+    pointer-events: none;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+}
+
+.brand-logo {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    text-decoration: none;
+    color: var(--ink-text);
+}
+
+.logo-glyph { display: inline-flex; flex: 0 0 auto; }
+
+.brand-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.brand-badge {
+    font-size: 0.62rem;
+    padding: 3px 8px;
+    border: 1px solid var(--ruler-strong);
+    color: var(--dim);
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border-radius: 0;
+    background: var(--paper);
+}
+
+.header-right { display: flex; align-items: center; gap: 1.2rem; }
+
+.header-link {
+    color: var(--dim);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+.header-link:hover { color: var(--ink-text); }
+
+.mobile-toggle {
+    background: transparent;
+    border: 1px solid var(--ruler-strong);
+    color: var(--dim);
+    padding: 5px 11px;
+    border-radius: 0;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.mobile-toggle:hover {
+    color: var(--ink-text);
+    border-color: var(--rule-mark);
+    background: var(--rule-tint);
+}
+
+.mobile-toggle { display: none; }
+
+
+
+/* =====================================================================
+   5. APP LAYOUT (sidebar / main / TOC)
+   ===================================================================== */
+
+.app-layout {
+    display: grid;
+    grid-template-columns: 264px minmax(0, 1fr) 232px;
+    max-width: 1560px;
+    margin: 0 auto;
+    min-height: calc(100vh - 50px);
+}
+
+.sidebar {
+    border-right: 1px solid var(--ruler);
+    background: var(--paper);
+    position: sticky;
+    top: 50px;
+    height: calc(100vh - 50px);
+    overflow-y: auto;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+}
+
+.sidebar-inner { padding: 1.3rem 1.1rem; }
+
+.sidebar-search input {
+    width: 100%;
+    padding: 7px 11px;
+    background: var(--ink);
+    border: 1px solid var(--ruler-strong);
+    border-radius: 0;
+    color: var(--ink-text);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    margin-bottom: 1.5rem;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.sidebar-search input:focus {
+    border-color: var(--rule-mark);
+    box-shadow: 0 0 0 2px var(--focus-ring);
+}
+.sidebar-search input::placeholder { color: var(--faint); }
+
+.nav-group { margin-bottom: 1.6rem; }
+
+.nav-group-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--note);
+    margin-bottom: 0.55rem;
+    padding-left: 10px;
+    border-left: 2px solid var(--ruler);
+}
+
+.nav-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.nav-item {
+    margin: 0;
+    counter-increment: navitem;
+}
+
+.nav-link {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    padding: 6px 10px;
+    color: var(--dim);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 400;
+    line-height: 1.4;
+    border-left: 2px solid transparent;
+    margin-left: -2px;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: 0 2px 2px 0;
+}
+.nav-link::before {
+    content: counter(navitem, decimal-leading-zero);
+    color: var(--faint);
+    font-size: 0.68rem;
+    flex: 0 0 auto;
+    letter-spacing: 0.04em;
+    transition: color 0.15s ease;
+}
+.nav-link:hover {
+    color: var(--ink-text);
+    background: var(--rule-tint);
+}
+.nav-link.active {
+    color: var(--ember);
+    border-left-color: var(--ember);
+    background: var(--ember-tint);
+    font-weight: 500;
+}
+.nav-link.active::before { color: var(--ember); }
+.nav-link.active:hover {
+    background: var(--ember-tint);
+}
+
+.toc-sidebar {
+    border-left: 1px solid var(--ruler);
+    background: var(--paper);
+    padding: 1.5rem 1rem;
+    position: sticky;
+    top: 50px;
+    height: calc(100vh - 50px);
+    overflow-y: auto;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.2);
+}
+.toc-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--note);
+    margin-bottom: 0.85rem;
+}
+.toc-list { list-style: none; margin: 0; padding: 0; }
+.toc-list li { margin-bottom: 5px; }
+.toc-link {
+    color: var(--dim);
+    text-decoration: none;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    display: block;
+    padding: 1px 0;
+}
+.toc-link:hover { color: var(--ink-text); }
+.toc-h3 { padding-left: 0.85rem; font-size: 0.74rem; color: var(--note); }
+.toc-h3 .toc-link { color: var(--note); }
+.toc-empty {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--faint);
+    font-style: italic;
+}
+
+.main-content {
+    padding: 2.2rem 3.5rem 4.5rem;
+    overflow-x: hidden;
+    background: var(--ink);
+}
+
+.content-container { max-width: 800px; margin: 0 auto; }
+
+.breadcrumb {
+    font-size: 0.72rem;
+    color: var(--note);
+    margin-bottom: 1.2rem;
+    letter-spacing: 0.02em;
+    font-weight: 500;
+}
+.breadcrumb a { color: var(--dim); text-decoration: none; }
+.breadcrumb a:hover { color: var(--ember); }
+.breadcrumb .current { color: var(--ink-text); font-weight: 600; }
+.breadcrumb span + span::before {
+    content: " / ";
+    margin: 0 0.5rem;
+    color: var(--ruler);
+}
+
+
+
+/* =====================================================================
+   6. DOC TITLE BLOCK (per-page)
+   ===================================================================== */
+
+.doc-header {
+    border-top: 1px solid var(--ruler);
+    border-bottom: 1px solid var(--ruler);
+    padding: 1.8rem 0 1.5rem;
+    margin-bottom: 2.5rem;
+    position: relative;
+}
+
+.doc-header::before {
+    /* Schematic title-block marker — small coord tag, top-left. */
+    content: "SPEC · " attr(data-doc-tag, page);
+    position: absolute;
+    top: -0.75rem;
+    left: 0;
+    background: var(--ink);
+    padding: 0 0.6rem;
+    color: var(--rule-mark);
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.doc-title {
+    font-size: 2.2rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin: 0 0 1.1rem;
+    color: var(--ink-text);
+}
+
+.doc-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.6rem;
+    font-size: 0.7rem;
+    color: var(--note);
+    letter-spacing: 0.02em;
+    font-weight: 500;
+}
+.doc-meta .meta-item { display: inline-flex; align-items: center; gap: 0.5rem; }
+.doc-meta .meta-label { color: var(--faint); font-weight: 500; }
+.doc-meta .meta-val { color: var(--dim); }
+
+.doc-anchor { display: block; height: 0; scroll-margin-top: 80px; }
+
+
+
+/* =====================================================================
+   7. HERO (INDEX ONLY) — the schematic cover
+   ===================================================================== */
+
+.hero-banner {
+    padding: 2.4rem 2.6rem 2.2rem;
+    background: var(--paper);
+    border: 1px solid var(--ruler);
+    border-radius: 0;
+    margin-bottom: 3.5rem;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Faint inner coordinate frame — a margin tick strip across the top */
+.hero-banner::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 18px;
+    background:
+        linear-gradient(to right, var(--ruler) 1px, transparent 1px) 0 0 / 32px 100%;
+    opacity: 0.55;
+    z-index: 0;
+}
+
+/* Subtle vertical gradient — the hero reads as slightly elevated from the page */
+.hero-banner::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom,
+        var(--rule-tint) 0%,
+        transparent 35%,
+        transparent 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* All direct children of hero-banner sit above the gradients */
+.hero-banner > * { position: relative; z-index: 1; }
+
+.hero-coords {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--note);
+    letter-spacing: 0.1em;
+    margin-bottom: 1.5rem;
+    text-transform: uppercase;
+    font-weight: 500;
+}
+.hero-coords .coord { color: var(--rule-mark); }
+.hero-coords .coord-sep { color: var(--faint); }
+
+.hero-title {
+    font-family: var(--font-mono);
+    font-size: 2.8rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin: 0 0 0.65rem;
+    color: var(--ink-text);
+}
+.hero-title-em {
+    color: var(--dim);
+    font-weight: 500;
+}
+.hero-title-em-accent {
+    color: var(--ember);
+    font-weight: 600;
+}
+
+.hero-subtitle {
+    font-family: var(--font-prose);
+    font-size: 1.08rem;
+    color: var(--dim);
+    line-height: 1.6;
+    max-width: 580px;
+    margin: 0 0 2rem;
+}
+
+/* ----- The bottleneck figure ----------------------------------------- */
+.hero-figure {
+    margin: 0 0 2.2rem;
+    border-top: 1px solid var(--ruler);
+    border-bottom: 1px solid var(--ruler);
+    padding: 1.2rem 0 0.8rem;
+    background: var(--ink);
+}
+
+.bottleneck-svg {
+    width: 100%;
+    height: auto;
+    max-width: 580px;
+    display: block;
+    margin: 0 auto;
+}
+
+/* Ruler ticks + labels across the top of the figure */
+.bottleneck-svg .ruler line { stroke: var(--ruler-strong); stroke-width: 1; }
+.bottleneck-svg .ruler text {
+    fill: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 7px;
+    letter-spacing: 0.04em;
+}
+
+/* Streamlines — dim, mono-weight. Hairlines, not rivers. */
+.bottleneck-svg .stream {
+    fill: none;
+    stroke: var(--rule);
+    stroke-width: 1.2;
+    opacity: 0.7;
+}
+.bottleneck-svg .latent-axis {
+    stroke: var(--rule-mark);
+    stroke-width: 1.2;
+}
+.bottleneck-svg .axis {
+    stroke: var(--ruler-strong);
+    stroke-width: 1;
+}
+
+/* The two projection funnels */
+.bottleneck-svg .node {
+    fill: var(--paper-2);
+    stroke: var(--rule-mark);
+    stroke-width: 1.2;
+    stroke-linejoin: miter;
+}
+
+/* The ember spark — the one active expert among many. */
+.bottleneck-svg .spark {
+    fill: var(--ember);
+    filter: drop-shadow(0 0 4px var(--ember-glow));
+}
+
+/* Subtle pulse on the spark — draws the eye to the latent bottleneck */
+@media (prefers-reduced-motion: no-preference) {
+    .bottleneck-svg .spark {
+        animation: spark-pulse 2.4s ease-in-out infinite;
+    }
+    @keyframes spark-pulse {
+        0%, 100% { opacity: 0.9; }
+        50% { opacity: 1; filter: drop-shadow(0 0 8px var(--ember-glow)); }
+    }
+}
+
+/* Labels */
+.bottleneck-svg .lbl {
+    fill: var(--note);
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.04em;
+}
+.bottleneck-svg .lbl-key {
+    fill: var(--dim);
+    font-size: 8px;
+    letter-spacing: 0.05em;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .bottleneck-svg .stream {
+        stroke-dasharray: 4 6;
+        animation: flow 8s linear infinite;
+        opacity: 0.75;
+    }
+    @keyframes flow { to { stroke-dashoffset: -200; } }
+}
+
+/* ----- The datasheet / spec sheet ------------------------------------- */
+.spec-sheet { margin-top: 0; }
+.spec-sheet-rule {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid var(--ruler);
+    padding-bottom: 0.6rem;
+    margin-bottom: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+.spec-rule-key { color: var(--rule-mark); font-weight: 600; }
+.spec-rule-meta { color: var(--faint); font-size: 0.64rem; }
+
+.spec-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--ruler);
+    border-radius: 0;
+    margin: 0;
+}
+
+.spec-cell {
+    padding: 0.9rem 1rem 1rem;
+    border-right: 1px solid var(--ruler);
+    border-bottom: 1px solid var(--ruler);
+    margin: 0;
+    background: var(--paper);
+    transition: background 0.18s ease;
+}
+.spec-cell:hover {
+    background: var(--paper-2);
+}
+.spec-cell:nth-child(4n) { border-right: none; }
+.spec-cell:nth-last-child(-n+4) { border-bottom: none; }
+
+.spec-key {
+    font-size: 0.64rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--note);
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.spec-val {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--ink-text);
+    letter-spacing: -0.01em;
+}
+.spec-val .unit { color: var(--note); font-size: 0.75em; font-weight: 400; margin-left: 2px; }
+
+
+
+/* =====================================================================
+   8. PORTAL — section grids (index only)
+   ===================================================================== */
+
+.portal-section { margin-bottom: 3.5rem; }
+
+.portal-section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.9rem;
+    border-bottom: 1px solid var(--ruler);
+    padding-bottom: 0.6rem;
+    margin-bottom: 1.4rem;
+}
+
+.portal-section-mark {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--rule-mark);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
+.portal-section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--ink-text);
+    letter-spacing: -0.01em;
+    margin: 0;
+}
+
+.portal-section-meta {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--faint);
+    letter-spacing: 0.04em;
+}
+
+.portal-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1px;          /* the 1px gap shows through to the paper, producing a hairline grid */
+    background: var(--ruler);
+    border: 1px solid var(--ruler);
+}
+
+.portal-card {
+    display: flex;
+    gap: 1rem;
+    padding: 1.2rem 1.3rem;
+    background: var(--paper);
+    text-decoration: none;
+    color: var(--ink-text);
+    transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+    position: relative;
+    border: 1px solid transparent;
+}
+.portal-card:hover {
+    background: var(--paper-2);
+    transform: translateY(-2px);
+    border-color: var(--rule);
+}
+.portal-card:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+    background: var(--paper-2);
+}
+
+.card-tag {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--ember);
+    flex: 0 0 auto;
+    border-right: 1px solid var(--ruler);
+    padding-right: 1rem;
+    margin-right: 0.2rem;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+.card-heading {
+    font-family: var(--font-mono);
+    font-size: 0.94rem;
+    font-weight: 600;
+    color: var(--ink-text);
+    margin: 0 0 5px;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+}
+
+.card-desc {
+    font-family: var(--font-prose);
+    font-size: 0.86rem;
+    color: var(--dim);
+    line-height: 1.5;
+    margin: 0;
+}
+
+
+
+/* =====================================================================
+   9. PROSE — markdown body
+   ===================================================================== */
+
+.markdown-body { font-size: 1rem; }
+.markdown-body > *:first-child { margin-top: 0; }
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+    font-family: var(--font-mono);
+    color: var(--ink-text);
+    font-weight: 700;
+    line-height: 1.2;
+    margin-top: 2.4rem;
+    margin-bottom: 1rem;
+    scroll-margin-top: 80px;
+    position: relative;
+}
+
+/* The signature leading § mark — colored ember, sized down to a label */
+.markdown-body h2::before,
+.markdown-body h3::before,
+.markdown-body h4::before {
+    color: var(--ember);
+    font-weight: 400;
+    margin-right: 0.5rem;
+}
+.markdown-body h2::before { content: "§2"; font-size: 0.7em; vertical-align: 0.18em; }
+.markdown-body h3::before { content: "§3"; font-size: 0.68em; vertical-align: 0.2em; }
+.markdown-body h4::before { content: "§4"; font-size: 0.66em; vertical-align: 0.22em; }
+
+.markdown-body h2 {
+    font-size: 1.4rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--ruler);
+    letter-spacing: -0.015em;
+}
+.markdown-body h3 {
+    font-size: 1.12rem;
+    color: var(--ink-text);
+    letter-spacing: -0.01em;
+}
+.markdown-body h4 {
+    font-size: 0.92rem;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px dashed var(--ruler);
+}
+
+.heading-anchor .anchor-link {
+    opacity: 0;
+    margin-left: 0.4rem;
+    color: var(--faint);
+    text-decoration: none;
+    font-weight: 400;
+    transition: opacity 0.18s ease, color 0.18s ease;
+    font-size: 0.8em;
+}
+.heading-anchor:hover .anchor-link { opacity: 1; }
+.heading-anchor .anchor-link:hover {
+    color: var(--ember);
+    text-decoration: none;
+}
+
+/* Paragraphs and lists in serif — that's where the prose earns the face */
+.markdown-body p {
+    margin: 0 0 1.1rem;
+    color: var(--ink-text);
+    line-height: 1.7;
+    hyphens: auto;
+}
+.markdown-body ul, .markdown-body ol {
+    padding-left: 1.5rem;
+    margin: 0 0 1.3rem;
+}
+.markdown-body li { margin-bottom: 0.45rem; line-height: 1.65; }
+.markdown-body li::marker { color: var(--rule-mark); font-family: var(--font-mono); }
+
+.markdown-body strong { color: var(--ink-text); font-weight: 600; }
+.markdown-body em { font-style: italic; color: var(--ink-text); }
+
+.inline-code {
+    background: var(--code-paper);
+    border: 1px solid var(--ruler-strong);
+    padding: 2px 7px;
+    font-size: 0.82em;
+    color: var(--ink-text);
+    border-radius: 0;
+}
+
+.doc-link { color: var(--rule-mark); text-decoration: underline; text-underline-offset: 2px; }
+.doc-link:hover { color: var(--ember); }
+
+.doc-hr { border: none; border-top: 1px solid var(--ruler); margin: 2.4rem 0; }
+
+blockquote {
+    border-left: 3px solid var(--rule-mark);
+    padding: 0.4rem 1.2rem;
+    margin: 1.4rem 0;
+    color: var(--dim);
+    font-style: italic;
+    font-family: var(--font-prose);
+    background: var(--paper);
+    position: relative;
+}
+
+/* Subtle gradient fade on blockquote */
+blockquote::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to right,
+        var(--rule-tint) 0%,
+        transparent 40%);
+    opacity: 0.4;
+    pointer-events: none;
+}
+blockquote > * { position: relative; z-index: 1; }
+
+/* ----- Code blocks ---------------------------------------------------- */
+.code-wrapper {
+    background: var(--code-paper);
+    border: 1px solid var(--code-rule);
+    border-radius: 0;
+    margin: 1.4rem 0;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Subtle top accent bar — signals "this is executable" */
+.code-wrapper::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(to right,
+        var(--rule) 0%,
+        var(--rule-mark) 30%,
+        var(--rule) 100%);
+    opacity: 0.7;
+}
+.code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 14px;
+    background: var(--paper-2);
+    border-bottom: 1px solid var(--code-rule);
+    font-size: 0.7rem;
+    color: var(--note);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+.code-lang { font-weight: 500; }
+.copy-btn {
+    background: transparent;
+    border: 1px solid var(--code-rule);
+    color: var(--note);
+    padding: 2px 9px;
+    border-radius: 0;
+    cursor: pointer;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+}
+.copy-btn:hover {
+    border-color: var(--rule-mark);
+    color: var(--rule-mark);
+    background: var(--rule-tint);
+}
+.copy-btn.copied {
+    border-color: var(--ember);
+    color: var(--ember);
+    background: var(--ember-tint);
+}
+.code-wrapper pre {
+    margin: 0;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+.code-wrapper code { font-family: var(--font-mono); }
+
+/* KaTeX display blocks */
+.math-block {
+    overflow-x: auto;
+    margin: 1.4rem 0;
+    padding: 1.1rem 1rem;
+    background: var(--paper);
+    border: 1px solid var(--ruler);
+    border-left: 2px solid var(--rule-mark);
+    border-radius: 0;
+    text-align: center;
+    font-family: var(--font-prose);
+}
+.math-inline { font-size: 1.02em; }
+
+/* Tables */
+.table-container { overflow-x: auto; margin: 1.4rem 0; border: 1px solid var(--ruler); border-radius: 0; }
+.doc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+    font-family: var(--font-mono);
+    text-align: left;
+    background: var(--paper);
+}
+.doc-table th {
+    background: var(--paper-2);
+    padding: 9px 14px;
+    font-weight: 600;
+    font-size: 0.74rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--ruler);
+    color: var(--dim);
+}
+.doc-table td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--ruler);
+    color: var(--ink-text);
+    transition: background 0.15s ease;
+}
+.doc-table tbody tr:last-child td { border-bottom: none; }
+.doc-table tbody tr:hover {
+    background: var(--paper-hover);
+}
+
+/* Callouts */
+.callout {
+    padding: 1rem 1.2rem;
+    border-left: 3px solid;
+    border-radius: 0;
+    margin: 1.5rem 0;
+    background: var(--paper);
+    position: relative;
+    overflow: hidden;
+}
+.callout::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to right, transparent 0%, transparent 85%, var(--paper-2) 100%);
+    opacity: 0.5;
+    pointer-events: none;
+}
+.callout > * { position: relative; z-index: 1; }
+.callout-note { background: var(--callout-note-bg); border-color: var(--callout-note-rule); }
+.callout-tip  { background: var(--callout-tip-bg);  border-color: var(--callout-tip-rule); }
+.callout-warn, .callout-warning { background: var(--callout-warn-bg); border-color: var(--callout-warn-rule); }
+.callout-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+    color: var(--ink-text);
+}
+.callout-icon { display: none; }   /* the colored left bar already encodes type */
+.callout-body {
+    font-family: var(--font-prose);
+    color: var(--dim);
+    line-height: 1.55;
+}
+.callout-body strong { color: var(--ink-text); }
+.callout-body p:last-child { margin-bottom: 0; }
+
+
+
+/* =====================================================================
+   10. FOOTER NAV (prev / next cards)
+   ===================================================================== */
+
+.doc-footer-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--ruler);
+    border: 1px solid var(--ruler);
+    margin-top: 4rem;
+}
+
+.nav-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 1rem 1.15rem;
+    background: var(--paper);
+    text-decoration: none;
+    color: var(--ink-text);
+    transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+    border: 1px solid transparent;
+}
+.nav-card:hover {
+    background: var(--paper-2);
+    transform: translateY(-1px);
+    border-color: var(--ruler);
+}
+.nav-card:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+}
+.nav-card.next-card { text-align: right; align-items: flex-end; }
+
+.card-label {
+    font-size: 0.7rem;
+    color: var(--note);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+.card-title {
+    font-size: 0.92rem;
+    color: var(--ink-text);
+    font-weight: 600;
+    letter-spacing: -0.003em;
+}
+
+
+
+/* =====================================================================
+   11. RESPONSIVE
+   ===================================================================== */
+
+@media (max-width: 1180px) {
+    .app-layout { grid-template-columns: 232px minmax(0, 1fr); }
+    .toc-sidebar { display: none; }
+}
+
+@media (max-width: 880px) {
+    .app-layout { grid-template-columns: 1fr; }
+    .sidebar {
+        display: none;
+        position: fixed;
+        left: 0; top: 50px;
+        width: 280px;
+        z-index: 60;
+        background: var(--paper);
+        border-right: 1px solid var(--ruler);
+        height: calc(100vh - 50px);
+    }
+    .sidebar.open { display: block; }
+    .mobile-toggle { display: inline-block; }
+
+    .main-content { padding: 1.6rem 1.25rem 3rem; }
+    .hero-banner { padding: 1.8rem 1.3rem; }
+    .hero-title { font-size: 1.95rem; }
+    .doc-title { font-size: 1.65rem; }
+    .spec-grid { grid-template-columns: repeat(2, 1fr); }
+    .spec-cell:nth-child(4n) { border-right: 1px solid var(--ruler); }
+    .spec-cell:nth-child(2n) { border-right: none; }
+    .spec-cell:nth-last-child(-n+4) { border-bottom: 1px solid var(--ruler); }
+    .spec-cell:nth-last-child(-n+2) { border-bottom: none; }
+}
+
+/* Page load fade-in — subtle, reads as "lifting into view" */
+@media (prefers-reduced-motion: no-preference) {
+    body {
+        animation: page-fade-in 0.4s ease-out forwards;
+        opacity: 0;
+    }
+    @keyframes page-fade-in {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+    .bottleneck-svg .stream { stroke-dasharray: none; }
+}
+
+/* =====================================================================
+   12. PREMIUM POLISH — boot overlay, ASCII stage, widgets, seam, strip
+   ===================================================================== */
+
+.sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ----- Boot (loading) overlay ---------------------------------------- */
+#boot-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease;
+}
+#boot-overlay.boot-fading { opacity: 0; pointer-events: none; }
+.boot-inner { font-family: var(--font-mono); text-align: left; }
+.boot-wordmark {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--ink-text);
+    margin-bottom: 0.9rem;
+}
+.boot-line { font-size: 0.78rem; color: var(--note); }
+.boot-bar { color: var(--rule-mark); }
+
+/* While booting, hide the page chrome (overlay covers it anyway, but this
+   prevents a flash at the edges on slow paints). */
+html.booting body > *:not(#boot-overlay) { visibility: hidden; }
+
+/* ----- Hero ASCII stage ------------------------------------------------ */
+.ascii-stage {
+    margin: 0;
+    padding: 1.6rem 1rem;
+    font-family: var(--font-mono);
+    font-size: clamp(0.9rem, 2.6vw, 1.5rem);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.6;
+    color: var(--ink-text);
+    white-space: pre;
+    overflow-x: auto;
+}
+
+/* ----- ASCII widgets (shared chrome) ----------------------------------- */
+.ascii-widget {
+    margin: 2.2rem 0;
+    border: 1px solid var(--ruler);
+    background: var(--paper);
+}
+.ascii-widget-head {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--rule-mark);
+    border-bottom: 1px solid var(--ruler);
+    padding: 0.55rem 1rem;
+}
+.ascii-widget-head span { color: var(--faint); font-weight: 400; letter-spacing: 0.06em; text-transform: none; }
+.ascii-widget pre {
+    margin: 0;
+    padding: 1rem 1.2rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    line-height: 1.55;
+    color: var(--dim);
+    overflow-x: auto;
+}
+
+.ascii-widget-grid {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    gap: 1px;
+    background: var(--ruler);
+}
+.ascii-widget-grid > pre { background: var(--paper); }
+
+.stack-row { display: inline; cursor: pointer; outline: none; }
+.stack-row:hover, .stack-row:focus-visible, .stack-row.active {
+    color: var(--ember);
+    background: var(--ember-tint);
+}
+.ascii-panel { color: var(--note); min-width: 260px; }
+
+.moe-fire, .mla-toggle-bar button {
+    background: transparent;
+    border: 1px solid var(--ruler-strong);
+    color: var(--dim);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.06em;
+    padding: 5px 12px;
+    margin: 0 1rem 1rem 1.2rem;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.moe-fire:hover, .mla-toggle-bar button:hover {
+    color: var(--ink-text);
+    border-color: var(--rule-mark);
+    background: var(--rule-tint);
+}
+.mla-toggle-bar button[aria-pressed="true"] {
+    color: var(--ember);
+    border-color: var(--ember);
+    background: var(--ember-tint);
+}
+.moe-status {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--note);
+    padding: 0 1.2rem 0.8rem;
+}
+
+/* ----- Expandable code seam --------------------------------------------- */
+.code-wrapper.collapsed pre { max-height: 15.5rem; overflow: hidden; }
+.code-wrapper.collapsed::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 2rem;
+    height: 3rem;
+    background: linear-gradient(to bottom, transparent, var(--code-paper));
+    pointer-events: none;
+}
+.code-seam {
+    display: block;
+    width: 100%;
+    background: var(--paper-2);
+    border: none;
+    border-top: 1px solid var(--code-rule);
+    color: var(--note);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    padding: 7px 14px;
+    text-align: left;
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+.code-seam:hover { color: var(--ember); background: var(--paper-3); }
+
+/* ----- Reading progress strip ------------------------------------------- */
+.progress-strip {
+    position: fixed;
+    top: 50px;
+    left: 0; right: 0;
+    z-index: 40;
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.06em;
+    color: var(--note);
+    background: var(--header-bg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--ruler);
+    padding: 3px 1.6rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+@media (max-width: 880px) {
+    .ascii-widget-grid { grid-template-columns: 1fr; }
+    .ascii-panel { min-width: 0; border-top: 1px solid var(--ruler); }
+}
