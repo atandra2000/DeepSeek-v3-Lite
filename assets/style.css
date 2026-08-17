@@ -1185,11 +1185,12 @@ blockquote > * { position: relative; z-index: 1; }
     inset: 0;
     z-index: 100;
     background: var(--ink);
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
     transition: opacity 0.2s ease;
 }
+html.booting #boot-overlay { display: flex; }
 #boot-overlay.boot-fading { opacity: 0; pointer-events: none; }
 .boot-inner { font-family: var(--font-mono); text-align: left; }
 .boot-wordmark {

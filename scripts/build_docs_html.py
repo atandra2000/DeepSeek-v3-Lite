@@ -990,6 +990,7 @@ def generate_css():
 
 # The CSS body that used to live as a Python triple-quoted literal now lives
 # in `assets/style.css` (alongside this generator) and is copied in by
+# `generate_css()` above.
 
 
 def main():
