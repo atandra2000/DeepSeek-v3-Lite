@@ -47,3 +47,5 @@ graphify-out/
 
 # HTML Documentation (Generated locally)
 docs_html/
+
+.superpowers/
