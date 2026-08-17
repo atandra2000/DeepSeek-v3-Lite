@@ -17,9 +17,9 @@
        marketing site. `--font-prose` is just an alias of `--font-mono`,
        so the page reads as a single, unforgeable editorial voice.
 
-     • The hero figure is a coordinate ruler over an MLA bottleneck. The
-       bottleneck motif recurs as the section break ornament — one SVG
-       path, reused.
+     • The hero figure is an ASCII stage decoding the wordmark over a
+       coordinate ruler. The section-break ornament is a single reused
+       hairline motif.
 
      • Sidebar items are prefixed with `01 / 02 / 03` style marks and a
        leading tick on the active page, not "→" or pills.
@@ -60,7 +60,7 @@
     --faint:         #475173;
 
     /* One warm risk color. Used ONLY for:
-         (a) the "active expert" spark in the bottleneck SVG,
+         (a) the "active expert" marks in the ASCII figures,
          (b) the active sidebar tick,
          (c) the § in headings, never the heading itself.
        Nowhere else. */
@@ -172,8 +172,8 @@ body::before {
 /* Headings are mono — and so is the prose. Body sentences stay in the
    same face as the chrome; there is no typeface contrast. The voice
    comes from weight, size, and color contrast instead. */
-.brand-name, .doc-title, .hero-title, .hero-coords, .hero-figure .lbl,
-.hero-figure .lbl-key, .portal-section-mark, .portal-section-title,
+.brand-name, .doc-title, .hero-title, .hero-coords,
+.portal-section-mark, .portal-section-title,
 .card-heading, .card-tag, .nav-card .card-title, .nav-card .card-label,
 .nav-group-title, .nav-link, .toc-title, .toc-link,
 .breadcrumb, .doc-meta, .meta-item,
@@ -604,14 +604,6 @@ a:hover { color: var(--ink-text); text-decoration-color: var(--ember); }
     margin: 0 0 0.65rem;
     color: var(--ink-text);
 }
-.hero-title-em {
-    color: var(--dim);
-    font-weight: 500;
-}
-.hero-title-em-accent {
-    color: var(--ember);
-    font-weight: 600;
-}
 
 .hero-subtitle {
     font-family: var(--font-prose);
@@ -622,93 +614,13 @@ a:hover { color: var(--ink-text); text-decoration-color: var(--ember); }
     margin: 0 0 2rem;
 }
 
-/* ----- The bottleneck figure ----------------------------------------- */
+/* ----- The hero figure ------------------------------------------------ */
 .hero-figure {
     margin: 0 0 2.2rem;
     border-top: 1px solid var(--ruler);
     border-bottom: 1px solid var(--ruler);
     padding: 1.2rem 0 0.8rem;
     background: var(--ink);
-}
-
-.bottleneck-svg {
-    width: 100%;
-    height: auto;
-    max-width: 580px;
-    display: block;
-    margin: 0 auto;
-}
-
-/* Ruler ticks + labels across the top of the figure */
-.bottleneck-svg .ruler line { stroke: var(--ruler-strong); stroke-width: 1; }
-.bottleneck-svg .ruler text {
-    fill: var(--faint);
-    font-family: var(--font-mono);
-    font-size: 7px;
-    letter-spacing: 0.04em;
-}
-
-/* Streamlines — dim, mono-weight. Hairlines, not rivers. */
-.bottleneck-svg .stream {
-    fill: none;
-    stroke: var(--rule);
-    stroke-width: 1.2;
-    opacity: 0.7;
-}
-.bottleneck-svg .latent-axis {
-    stroke: var(--rule-mark);
-    stroke-width: 1.2;
-}
-.bottleneck-svg .axis {
-    stroke: var(--ruler-strong);
-    stroke-width: 1;
-}
-
-/* The two projection funnels */
-.bottleneck-svg .node {
-    fill: var(--paper-2);
-    stroke: var(--rule-mark);
-    stroke-width: 1.2;
-    stroke-linejoin: miter;
-}
-
-/* The ember spark — the one active expert among many. */
-.bottleneck-svg .spark {
-    fill: var(--ember);
-    filter: drop-shadow(0 0 4px var(--ember-glow));
-}
-
-/* Subtle pulse on the spark — draws the eye to the latent bottleneck */
-@media (prefers-reduced-motion: no-preference) {
-    .bottleneck-svg .spark {
-        animation: spark-pulse 2.4s ease-in-out infinite;
-    }
-    @keyframes spark-pulse {
-        0%, 100% { opacity: 0.9; }
-        50% { opacity: 1; filter: drop-shadow(0 0 8px var(--ember-glow)); }
-    }
-}
-
-/* Labels */
-.bottleneck-svg .lbl {
-    fill: var(--note);
-    font-family: var(--font-mono);
-    font-size: 8px;
-    letter-spacing: 0.04em;
-}
-.bottleneck-svg .lbl-key {
-    fill: var(--dim);
-    font-size: 8px;
-    letter-spacing: 0.05em;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-    .bottleneck-svg .stream {
-        stroke-dasharray: 4 6;
-        animation: flow 8s linear infinite;
-        opacity: 0.75;
-    }
-    @keyframes flow { to { stroke-dashoffset: -200; } }
 }
 
 /* ----- The datasheet / spec sheet ------------------------------------- */
@@ -1251,7 +1163,6 @@ blockquote > * { position: relative; z-index: 1; }
         transition: none !important;
         scroll-behavior: auto !important;
     }
-    .bottleneck-svg .stream { stroke-dasharray: none; }
 }
 
 /* =====================================================================

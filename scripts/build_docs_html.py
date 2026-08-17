@@ -55,6 +55,84 @@ DOC_FILES = [
     ("docs/references/R9_inference_api.md", "References", "R9 — Inference API"),
 ]
 
+# Premium-polish assets: mono-only font link, boot overlay, widget containers.
+FONT_LINK = ('<link href="https://fonts.googleapis.com/css2?'
+             'family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400'
+             '&display=swap" rel="stylesheet">')
+
+BOOT_OVERLAY_HTML = (
+    '<div id="boot-overlay" aria-hidden="true">'
+    '<div class="boot-inner">'
+    '<div class="boot-wordmark">DEEPSEEK-V3-LITE</div>'
+    '<div class="boot-line">loading weights '
+    '<span class="boot-bar">[░░░░░░░░░░░░] 0%</span>'
+    '</div></div></div>'
+)
+
+# Marks html.booting before first paint; a watchdog ALWAYS clears it (and
+# the overlay) so a portal.js failure can never strand the page — under
+# reduced motion the removal fires immediately instead.
+BOOT_SCRIPT = """<script>
+(function () {
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) document.documentElement.classList.add('booting');
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            document.documentElement.classList.remove('booting');
+            var ov = document.getElementById('boot-overlay');
+            if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+        }, reduced ? 0 : 1200);
+    });
+})();
+</script>"""
+
+
+def layer_stack_ascii() -> str:
+    """Static 18-layer stack art; portal.js rebuilds it interactively."""
+    rows = ["\u250c" + "\u2500" * 36 + "\u2510"]
+    for i in range(17, -1, -1):
+        kind = "SwiGLU \u00b7 dense" if i < 2 else "MoE 20+1 \u00b7 top-4"
+        inner = f" {i:02d} \u2502 MLA \u25b8 {kind}".ljust(36)
+        rows.append("\u2502" + inner + "\u2502")
+    rows.append("\u2514" + "\u2500" * 36 + "\u2518")
+    return "\n".join(rows)
+
+
+LAYER_STACK_WIDGET = f"""<div class="ascii-widget" id="widget-layer-stack">
+    <div class="ascii-widget-head">FIG \u00b7 01 / 18-LAYER STACK <span>\u2014 hover or focus a layer</span></div>
+    <div class="ascii-widget-grid">
+        <pre class="ascii-stack" aria-label="18-layer stack: 2 dense layers, 16 MoE layers">{layer_stack_ascii()}</pre>
+        <pre class="ascii-panel" aria-live="polite">hover / focus a layer \u25b8 spec readout</pre>
+    </div>
+</div>"""
+
+MOE_WIDGET = """<div class="ascii-widget" id="widget-moe-routing">
+    <div class="ascii-widget-head">FIG / GATE \u25b8 TOP-4 OF 20 <span>\u2014 press route token</span></div>
+    <pre class="moe-grid" aria-label="Expert grid: 20 routed experts, 4 active per token, 1 shared always on">gate(x) \u25b8 top-4 of 20 routed
+░░00 ░░01 ▓▓02 ░░03 ░░04 
+░░05 ░░06 ▓▓07 ░░08 ░░09 
+░░10 ░░11 ░░12 ▓▓13 ░░14 
+░░15 ░░16 ░░17 ▓▓18 ░░19 
+shared  ▓▓sh (always on)</pre>
+</div>"""
+
+MLA_WIDGET = """<div class="ascii-widget" id="widget-mla-absorb">
+    <div class="ascii-widget-head">FIG / MLA \u2014 STANDARD vs ABSORBED <span>\u2014 toggle the path</span></div>
+    <pre class="mla-figure" aria-label="MLA absorption comparison: materialised KV versus latent-compressed path">absorbed attention (latent-compressed)
+
+ h[768] \u2500 W_D \u2500\u25b8 c [192] (+ rope 24) \u2500\u25b8 cached
+ c \u2500\u25b8 W_U \u00b7 W_q absorbed into q\u2032 \u2500\u25b8 attn \u25b8 out
+
+ KV cache / token : 192 + 24 = 216 dims
+ compression      : 1,344 \u25b8 216 (\u2248 6.2\u00d7)</pre>
+</div>"""
+
+# rel path -> widget injected between the article and the footer nav.
+WIDGET_CONTAINERS = {
+    "docs/concepts/moe-mtp.md": MOE_WIDGET,
+    "docs/concepts/attention-and-precision.md": MLA_WIDGET,
+}
+
 
 def slugify(text: str) -> str:
     """Generate clean HTML id for headings.
@@ -104,7 +182,7 @@ def fix_md_links(content: str, src_rel_path: str) -> str:
       file isn't shipped inside ``docs_html/``.
     """
     repo_base = github_base_url()
-    src_dir = Path(src_rel_path).parent
+    src_dir = WORKSPACE_DIR / Path(src_rel_path).parent
 
     def link_replacer(match):
         label = match.group(1)
@@ -554,6 +632,7 @@ def generate_html_page(rel_path: str, category: str, display_title: str):
     rel_prefix = compute_rel_prefix(rel_path)
     sidebar_html = build_sidebar_html(rel_path, rel_prefix)
     toc_html = build_toc_html(toc_items)
+    widget_html = WIDGET_CONTAINERS.get(rel_path, "")
     
     current_idx = next((i for i, df in enumerate(DOC_FILES) if df[0] == rel_path), 0)
     prev_doc = DOC_FILES[current_idx - 1] if current_idx > 0 else None
@@ -578,7 +657,7 @@ def generate_html_page(rel_path: str, category: str, display_title: str):
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    {FONT_LINK}
     <!-- Highlight.js for Syntax Highlighting -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="highlight-theme">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -588,14 +667,16 @@ def generate_html_page(rel_path: str, category: str, display_title: str):
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <!-- CSS Stylesheet -->
     <link rel="stylesheet" href="{rel_prefix}assets/style.css">
+    {BOOT_SCRIPT}
 </head>
 <body>
+    {BOOT_OVERLAY_HTML}
     <!-- Top Header -->
     <header class="site-header">
         <div class="header-left">
             <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
             <a href="{rel_prefix}index.html" class="brand-logo">
-                <span class="logo-icon">⚡</span>
+                <span class="logo-glyph"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2 5 L9 5 L12 11 L12 13 L9 19 L2 19 Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity="0.9"/><path d="M12 11 L15 5 L22 5 L22 19 L15 19 L12 13 Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity="0.9"/><circle cx="12" cy="12" r="1.6" fill="var(--spark)"/></svg></span>
                 <span class="brand-name">DeepSeek-v3-Lite</span>
                 <span class="brand-badge">Docs</span>
             </a>
@@ -603,7 +684,6 @@ def generate_html_page(rel_path: str, category: str, display_title: str):
         <div class="header-right">
             <a href="{rel_prefix}index.html" class="header-link">Portal Home</a>
             <a href="{rel_prefix}README.html" class="header-link">GitHub README</a>
-            <button class="theme-toggle" onclick="toggleTheme()" id="themeToggleBtn" aria-label="Toggle Theme">🌙 Dark</button>
         </div>
     </header>
 
@@ -625,15 +705,17 @@ def generate_html_page(rel_path: str, category: str, display_title: str):
                 <div class="doc-header">
                     <h1 class="doc-title">{display_title}</h1>
                     <div class="doc-meta">
-                        <span class="meta-item">📁 {rel_path}</span>
-                        <span class="meta-item">📝 {word_count:,} words</span>
-                        <span class="meta-item">⏱️ ~{reading_time} min read</span>
+                        <span class="meta-item"><span class="meta-label">source</span><span class="meta-val">{rel_path}</span></span>
+                        <span class="meta-item"><span class="meta-label">words</span><span class="meta-val">{word_count:,}</span></span>
+                        <span class="meta-item"><span class="meta-label">read</span><span class="meta-val">~{reading_time} min</span></span>
                     </div>
                 </div>
 
                 <article class="markdown-body" id="articleBody">
                     {html_body}
                 </article>
+
+                {widget_html}
 
                 <div class="doc-footer-nav">
                     {prev_html}
@@ -665,32 +747,6 @@ def generate_html_page(rel_path: str, category: str, display_title: str):
                     btn.classList.remove('copied');
                 }}, 2000);
             }});
-        }}
-
-        // Theme Toggle
-        function toggleTheme() {{
-            const htmlEl = document.documentElement;
-            const themeBtn = document.getElementById('themeToggleBtn');
-            const hlTheme = document.getElementById('highlight-theme');
-            
-            if (htmlEl.getAttribute('data-theme') === 'dark') {{
-                htmlEl.setAttribute('data-theme', 'light');
-                themeBtn.innerText = '☀️ Light';
-                hlTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
-                localStorage.setItem('theme', 'light');
-            }} else {{
-                htmlEl.setAttribute('data-theme', 'dark');
-                themeBtn.innerText = '🌙 Dark';
-                hlTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
-                localStorage.setItem('theme', 'dark');
-            }}
-        }}
-
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'light') {{
-            document.documentElement.setAttribute('data-theme', 'light');
-            document.getElementById('themeToggleBtn').innerText = '☀️ Light';
-            document.getElementById('highlight-theme').href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
         }}
 
         function toggleSidebar() {{
@@ -725,6 +781,7 @@ def generate_html_page(rel_path: str, category: str, display_title: str):
             }}
         }});
     </script>
+    <script defer src="{rel_prefix}assets/portal.js"></script>
 </body>
 </html>
 """
@@ -738,41 +795,53 @@ def generate_index_portal():
     """Generate interactive index.html home portal."""
     sidebar_html = build_sidebar_html("index.html", "./")
     
+    # (category_tag, category_title) -> list of (href, tag, title, desc)
     categories = {
-        "Core Architecture": [
-            ("README.html", "Project Overview", "Chinchilla-scale 412M parameter PyTorch implementation of DeepSeek-V3."),
-            ("AGENTS.html", "AGENTS & System Architecture", "Codebase contracts, Triton rules, μP scaling & architectural limits."),
-            ("SKILLS.html", "Skills Map", "Specialized agent tools, scripts, and domain competencies."),
-            ("docs/training.html", "Training Pipeline", "BF16 training loop, loss scaling, checkpointing & NaN safety."),
-            ("docs/inference.html", "Inference & Speculative", "MTP speculative decoder, KV caching & latency optimizations.")
+        ("CORE", "Core Architecture"): [
+            ("README.html", "README", "Project Overview", "Chinchilla-scale 412M parameter PyTorch implementation of DeepSeek-V3."),
+            ("AGENTS.html", "AGENTS", "System Architecture", "Codebase contracts, Triton rules, μP scaling & architectural limits."),
+            ("SKILLS.html", "SKILLS", "Skills Map", "Specialized agent tools, scripts, and domain competencies."),
+            ("docs/README.html", "DOCS", "Documentation Index", "A map of the concepts, guides, and API references in this portal."),
+            ("docs/training.html", "CORE", "Training Pipeline", "BF16 training loop, loss scaling, checkpointing & NaN safety."),
+            ("docs/inference.html", "CORE", "Inference & Speculative", "MTP speculative decoder, KV caching & latency optimizations.")
         ],
-        "Architecture & Concepts": [
-            ("docs/concepts/foundations.html", "Foundations & Topography", "DeepSeek lineage, 18-layer layout, parameter & memory budgets."),
-            ("docs/concepts/attention-and-precision.html", "MLA & Mixed Precision", "Multi-Head Latent Attention, matrix absorption, FP8 scheme."),
-            ("docs/concepts/moe-mtp.html", "DeepSeekMoE & MTP", "Auxiliary-loss-free load balancing, 20 routed + 1 shared expert, MTP."),
-            ("docs/concepts/kernels-and-ops.html", "Operations & Triton", "Triton grouped GEMM, MLA fused kernel, CI testing & invariants.")
+        ("CONCEPTS", "Architecture & Concepts"): [
+            ("docs/concepts/foundations.html", "C1", "Foundations & Topography", "DeepSeek lineage, 18-layer layout, parameter & memory budgets."),
+            ("docs/concepts/attention-and-precision.html", "C2", "MLA & Mixed Precision", "Multi-Head Latent Attention, matrix absorption, FP8 scheme."),
+            ("docs/concepts/moe-mtp.html", "C3", "DeepSeekMoE & MTP", "Auxiliary-loss-free load balancing, 20 routed + 1 shared expert, MTP."),
+            ("docs/concepts/parallelism.html", "C4", "DualPipe Parallelism", "Bidirectional pipeline scheduling, overlap, and distributed execution."),
+            ("docs/concepts/data-pipeline.html", "C5", "Data Pipeline", "Pretraining data stages, validation, packing, and reproducibility."),
+            ("docs/concepts/kernels-and-ops.html", "C6", "Operations & Triton", "Triton grouped GEMM, MLA fused kernel, CI testing & invariants.")
         ],
-        "Guides & Playbooks": [
-            ("docs/guides/getting-started.html", "Getting Started", "Quickstart installation, synthetic pretraining & smoke testing."),
-            ("docs/guides/G1_debugging_playbook.html", "G1 — Debugging Playbook", "Troubleshooting NaNs, CUDA OOMs, and loss divergence."),
-            ("docs/guides/G2_mup_and_lr_tuning.html", "G2 — μP & LR Tuning", "Maximal Update Parameterization setup & hyperparameter transfer."),
-            ("docs/guides/G3_triton_development.html", "G3 — Triton Development", "Writing, profiling, and benchmarking custom Triton GPU kernels.")
+        ("GUIDES", "Guides & Playbooks"): [
+            ("docs/guides/getting-started.html", "G0", "Getting Started", "Quickstart installation, synthetic pretraining & smoke testing."),
+            ("docs/guides/G1_debugging_playbook.html", "G1", "Debugging Playbook", "Troubleshooting NaNs, CUDA OOMs, and loss divergence."),
+            ("docs/guides/G2_mup_and_lr_tuning.html", "G2", "μP & LR Tuning", "Maximal Update Parameterization setup & hyperparameter transfer."),
+            ("docs/guides/G3_triton_development.html", "G3", "Triton Development", "Writing, profiling, and benchmarking custom Triton GPU kernels."),
+            ("docs/guides/G4_benchmarking.html", "G4", "Benchmarking", "Repeatable performance measurement and result interpretation."),
+            ("docs/guides/G5_checkpoint_ops.html", "G5", "Checkpoint Operations", "Save, resume, inspect, and safely manage training state."),
+            ("docs/guides/contributing.html", "G6", "Contributing", "Documentation conventions, development workflow, and project contribution."),
         ],
-        "API References": [
-            ("docs/references/R1_config_schema.html", "R1 — Config Schema", "Complete YAML specification for model & training configs."),
-            ("docs/references/R2_transformer_api.html", "R2 — Transformer API", "Model initialization, forward pass, and weight wiring."),
-            ("docs/references/R3_mla_api.html", "R3 — MLA API", "Multi-Head Latent Attention layer implementation & options."),
-            ("docs/references/R4_moe_api.html", "R4 — MoE API", "AuxLossFreeGate and DeepSeekMoE expert routing engine.")
+        ("REFS", "API References"): [
+            ("docs/references/R1_config_schema.html", "R1", "Config Schema", "Complete YAML specification for model & training configs."),
+            ("docs/references/R2_transformer_api.html", "R2", "Transformer API", "Model initialization, forward pass, and weight wiring."),
+            ("docs/references/R3_mla_api.html", "R3", "MLA API", "Multi-Head Latent Attention layer implementation & options."),
+            ("docs/references/R4_moe_api.html", "R4", "MoE API", "AuxLossFreeGate and DeepSeekMoE expert routing engine."),
+            ("docs/references/R5_mtp_api.html", "R5", "MTP API", "Multi-token prediction heads and speculative decoding interfaces."),
+            ("docs/references/R6_triton_api.html", "R6", "Triton API", "Kernel contracts, fused operators, and development seams."),
+            ("docs/references/R7_training_api.html", "R7", "Training API", "Trainer entry points, loss plumbing, and checkpoint controls."),
+            ("docs/references/R8_utils_api.html", "R8", "Utilities API", "Shared helpers, diagnostics, and common utilities."),
+            ("docs/references/R9_inference_api.html", "R9", "Inference API", "Generation, caches, and inference-time interfaces.")
         ]
     }
-    
+
     portal_cards_html = ""
-    for cat_title, items in categories.items():
+    for (cat_tag, cat_title), items in categories.items():
         cards = ""
-        for href, title, desc in items:
+        for href, tag, title, desc in items:
             cards += f"""
             <a href="{href}" class="portal-card">
-                <div class="card-icon">📄</div>
+                <span class="card-tag">{tag}</span>
                 <div class="card-body">
                     <h3 class="card-heading">{title}</h3>
                     <p class="card-desc">{desc}</p>
@@ -781,7 +850,11 @@ def generate_index_portal():
             """
         portal_cards_html += f"""
         <section class="portal-section">
-            <h2 class="portal-category-title">{cat_title}</h2>
+            <header class="portal-section-head">
+                <span class="portal-section-mark">§ {cat_tag.lower()}</span>
+                <h2 class="portal-section-title">{cat_title}</h2>
+                <span class="portal-section-meta">{len(items)} entries</span>
+            </header>
             <div class="portal-grid">{cards}</div>
         </section>
         """
@@ -795,24 +868,25 @@ def generate_index_portal():
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    {FONT_LINK}
     <!-- CSS Stylesheet -->
     <link rel="stylesheet" href="assets/style.css">
+    {BOOT_SCRIPT}
 </head>
 <body>
+    {BOOT_OVERLAY_HTML}
     <!-- Top Header -->
     <header class="site-header">
         <div class="header-left">
             <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
             <a href="index.html" class="brand-logo">
-                <span class="logo-icon">⚡</span>
+                <span class="logo-glyph"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2 5 L9 5 L12 11 L12 13 L9 19 L2 19 Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity="0.9"/><path d="M12 11 L15 5 L22 5 L22 19 L15 19 L12 13 Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity="0.9"/><circle cx="12" cy="12" r="1.6" fill="var(--spark)"/></svg></span>
                 <span class="brand-name">DeepSeek-v3-Lite</span>
                 <span class="brand-badge">Documentation</span>
             </a>
         </div>
         <div class="header-right">
             <a href="README.html" class="header-link">GitHub README</a>
-            <button class="theme-toggle" onclick="toggleTheme()" id="themeToggleBtn" aria-label="Toggle Theme">🌙 Dark</button>
         </div>
     </header>
 
@@ -828,14 +902,44 @@ def generate_index_portal():
         <main class="main-content">
             <div class="content-container">
                 <div class="hero-banner">
-                    <h1 class="hero-title">DeepSeek-v3-Lite</h1>
-                    <p class="hero-subtitle">Faithful, from-scratch PyTorch reimplementation of DeepSeek-V3 (412M parameters, MLA, Aux-Loss-Free MoE, MTP, μP scaling).</p>
-                    <div class="hero-stats">
-                        <div class="stat-pill"><span class="stat-num">411.6M</span> Base Params</div>
-                        <div class="stat-pill"><span class="stat-num">18</span> Layers (2 Dense + 16 MoE)</div>
-                        <div class="stat-pill"><span class="stat-num">20+1</span> Experts (Top-4)</div>
-                        <div class="stat-pill"><span class="stat-num">BF16</span> Autocast + μP</div>
+                    <div class="hero-coords" aria-hidden="true">
+                        <span class="coord">FIG · 00</span>
+                        <span class="coord-sep">/</span>
+                        <span class="coord">MLP-DEPTH 18</span>
+                        <span class="coord-sep">/</span>
+                        <span class="coord">SCALE 411.6M</span>
+                        <span class="coord-sep">/</span>
+                        <span class="coord">PREC BF16</span>
                     </div>
+                    <h1 class="hero-title sr-only">DeepSeek-v3-Lite — documentation portal</h1>
+                    <p class="hero-subtitle">A faithful, legible reimplementation of DeepSeek-V3 &mdash; Multi-head Latent Attention, auxiliary-loss-free MoE, multi-token prediction, and &mu;P scaling, at a 412M Chinchilla-scale budget. Read top-to-bottom like a drawing: a name, a shape, then the measurements.</p>
+
+                    <div class="hero-figure">
+                        <pre id="hero-decode" class="ascii-stage" role="img"
+                             data-title="DEEPSEEK-V3-LITE"
+                             data-sub="411.6M \u00b7 MLA \u00b7 MoE \u00b7 MTP \u00b7 \u03bcP"
+                             aria-label="Animated ASCII wordmark decoding into DEEPSEEK-V3-LITE">  DEEPSEEK-V3-LITE
+
+  411.6M \u00b7 MLA \u00b7 MoE \u00b7 MTP \u00b7 \u03bcP</pre>
+                    </div>
+
+                    <div class="spec-sheet">
+                        <div class="spec-sheet-rule" aria-hidden="true">
+                            <span class="spec-rule-key">DATASHEET</span>
+                            <span class="spec-rule-meta">rev 0.4 &#183; chk bf16 &#183; mlp bf16</span>
+                        </div>
+                        <dl class="spec-grid">
+                            <div class="spec-cell"><dt class="spec-key">01 &middot; params</dt><dd class="spec-val">411.6<span class="unit">M</span></dd></div>
+                            <div class="spec-cell"><dt class="spec-key">02 &middot; layers</dt><dd class="spec-val">18</dd></div>
+                            <div class="spec-cell"><dt class="spec-key">03 &middot; experts</dt><dd class="spec-val">20+1<span class="unit"> &middot; top-4</span></dd></div>
+                            <div class="spec-cell"><dt class="spec-key">04 &middot; precision</dt><dd class="spec-val">BF16</dd></div>
+                            <div class="spec-cell"><dt class="spec-key">05 &middot; attention</dt><dd class="spec-val">MLA</dd></div>
+                            <div class="spec-cell"><dt class="spec-key">06 &middot; routing</dt><dd class="spec-val">aux-loss-free</dd></div>
+                            <div class="spec-cell"><dt class="spec-key">07 &middot; decode</dt><dd class="spec-val">MTP</dd></div>
+                            <div class="spec-cell"><dt class="spec-key">08 &middot; scaling</dt><dd class="spec-val">&mu;P</dd></div>
+                        </dl>
+                    </div>
+                    {LAYER_STACK_WIDGET}
                 </div>
 
                 <div class="portal-content">
@@ -847,26 +951,6 @@ def generate_index_portal():
 
     <!-- Scripts -->
     <script>
-        function toggleTheme() {{
-            const htmlEl = document.documentElement;
-            const themeBtn = document.getElementById('themeToggleBtn');
-            if (htmlEl.getAttribute('data-theme') === 'dark') {{
-                htmlEl.setAttribute('data-theme', 'light');
-                themeBtn.innerText = '☀️ Light';
-                localStorage.setItem('theme', 'light');
-            }} else {{
-                htmlEl.setAttribute('data-theme', 'dark');
-                themeBtn.innerText = '🌙 Dark';
-                localStorage.setItem('theme', 'dark');
-            }}
-        }}
-
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'light') {{
-            document.documentElement.setAttribute('data-theme', 'light');
-            document.getElementById('themeToggleBtn').innerText = '☀️ Light';
-        }}
-
         function toggleSidebar() {{
             document.getElementById('sidebar').classList.toggle('open');
         }}
@@ -880,6 +964,7 @@ def generate_index_portal():
             }});
         }}
     </script>
+    <script defer src="assets/portal.js"></script>
 </body>
 </html>
 """
@@ -889,456 +974,22 @@ def generate_index_portal():
 
 
 def generate_css():
-    """Create docs_html/assets/style.css with modern design system."""
+    """Create docs_html/assets/style.css with the latent-blueprint design system.
+
+    The full stylesheet lives in `assets/style.css` next to this script — the
+    generator copies it to the docs output. Keeping it in a real file (not a
+    Python string literal) means editor tooling works on it.
+    """
+    import shutil
     assets_dir = OUTPUT_DIR / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
-    
-    css_content = """/* Modern Documentation CSS Design System */
-:root {
-    --bg-main: #0d1117;
-    --bg-surface: #161b22;
-    --bg-surface-hover: #21262d;
-    --border-color: #30363d;
-    --text-primary: #e6edf3;
-    --text-secondary: #8b949e;
-    --text-muted: #6e7681;
-    --accent-color: #10b981;
-    --accent-hover: #059669;
-    --accent-alpha: rgba(16, 185, 129, 0.12);
-    --code-bg: #161b22;
-    --header-bg: rgba(13, 17, 23, 0.85);
-    --callout-note-bg: rgba(59, 130, 246, 0.1);
-    --callout-note-border: #3b82f6;
-    --callout-tip-bg: rgba(16, 185, 129, 0.1);
-    --callout-tip-border: #10b981;
-    --callout-warn-bg: rgba(245, 158, 11, 0.1);
-    --callout-warn-border: #f59e0b;
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-}
+    src_css = WORKSPACE_DIR / "assets" / "style.css"
+    shutil.copyfile(src_css, assets_dir / "style.css")
+    src_js = WORKSPACE_DIR / "assets" / "portal.js"
+    shutil.copyfile(src_js, assets_dir / "portal.js")
 
-[data-theme="light"] {
-    --bg-main: #ffffff;
-    --bg-surface: #f6f8fa;
-    --bg-surface-hover: #eaeef2;
-    --border-color: #d0d7de;
-    --text-primary: #1f2328;
-    --text-secondary: #656d76;
-    --text-muted: #8c959f;
-    --accent-color: #059669;
-    --accent-hover: #047857;
-    --accent-alpha: rgba(5, 150, 105, 0.1);
-    --code-bg: #f6f8fa;
-    --header-bg: rgba(255, 255, 255, 0.85);
-    --callout-note-bg: rgba(59, 130, 246, 0.08);
-    --callout-note-border: #2563eb;
-    --callout-tip-bg: rgba(16, 185, 129, 0.08);
-    --callout-tip-border: #059669;
-    --callout-warn-bg: rgba(245, 158, 11, 0.08);
-    --callout-warn-border: #d97706;
-}
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-    font-family: var(--font-sans);
-    background-color: var(--bg-main);
-    color: var(--text-primary);
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
-}
-
-/* Site Header */
-.site-header {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 1.5rem;
-    background: var(--header-bg);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border-color);
-}
-
-.brand-logo {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    text-decoration: none;
-    color: var(--text-primary);
-    font-weight: 700;
-    font-size: 1.1rem;
-}
-
-.logo-icon { font-size: 1.3rem; }
-.brand-badge {
-    font-size: 0.75rem;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: var(--accent-alpha);
-    color: var(--accent-color);
-    font-weight: 600;
-}
-
-.header-right { display: flex; align-items: center; gap: 1rem; }
-.header-link {
-    color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 500;
-    transition: color 0.2s;
-}
-.header-link:hover { color: var(--accent-color); }
-
-.theme-toggle, .mobile-toggle {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    padding: 6px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 500;
-    transition: all 0.2s;
-}
-.theme-toggle:hover, .mobile-toggle:hover { background: var(--bg-surface-hover); }
-
-.mobile-toggle { display: none; }
-
-/* Layout Grid */
-.app-layout {
-    display: grid;
-    grid-template-columns: 280px 1fr 240px;
-    max-width: 1600px;
-    margin: 0 auto;
-    min-height: calc(100vh - 57px);
-}
-
-/* Sidebar Navigation */
-.sidebar {
-    border-right: 1px solid var(--border-color);
-    background: var(--bg-main);
-    position: sticky;
-    top: 57px;
-    height: calc(100vh - 57px);
-    overflow-y: auto;
-}
-
-.sidebar-inner { padding: 1.25rem 1rem; }
-
-.sidebar-search input {
-    width: 100%;
-    padding: 8px 12px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-primary);
-    font-size: 0.85rem;
-    margin-bottom: 1.25rem;
-    outline: none;
-}
-.sidebar-search input:focus { border-color: var(--accent-color); }
-
-.nav-group { margin-bottom: 1.25rem; }
-.nav-group-title {
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    margin-bottom: 0.5rem;
-    padding-left: 8px;
-}
-
-.nav-list { list-style: none; }
-.nav-item { margin-bottom: 2px; }
-
-.nav-link {
-    display: block;
-    padding: 6px 10px;
-    border-radius: 6px;
-    color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 0.88rem;
-    font-weight: 400;
-    transition: all 0.15s;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.nav-link:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-}
-
-.nav-link.active {
-    background: var(--accent-alpha);
-    color: var(--accent-color);
-    font-weight: 600;
-}
-
-/* Main Content Area */
-.main-content {
-    padding: 2.5rem 3rem;
-    overflow-x: hidden;
-}
-
-.content-container { max-width: 900px; margin: 0 auto; }
-
-.breadcrumb {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    margin-bottom: 1rem;
-}
-.breadcrumb a { color: var(--text-secondary); text-decoration: none; }
-.breadcrumb a:hover { color: var(--accent-color); }
-.breadcrumb .current { color: var(--text-primary); font-weight: 500; }
-
-.doc-header {
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 1.25rem;
-    margin-bottom: 2rem;
-}
-
-.doc-title {
-    font-size: 2.25rem;
-    font-weight: 800;
-    letter-spacing: -0.025em;
-    margin-bottom: 0.75rem;
-}
-
-.doc-meta {
-    display: flex;
-    gap: 1.25rem;
-    font-size: 0.85rem;
-    color: var(--text-muted);
-}
-
-/* Typography & Markdown Body */
-.markdown-body p { margin-bottom: 1.25rem; font-size: 1rem; color: var(--text-primary); }
-
-.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
-    color: var(--text-primary);
-    font-weight: 700;
-    line-height: 1.3;
-    margin-top: 2rem;
-    margin-bottom: 1rem;
-    scroll-margin-top: 80px;
-    position: relative;
-}
-
-.heading-anchor .anchor-link {
-    opacity: 0;
-    margin-left: 0.5rem;
-    color: var(--text-muted);
-    text-decoration: none;
-    font-weight: 400;
-    transition: opacity 0.2s;
-}
-.heading-anchor:hover .anchor-link { opacity: 1; }
-
-.doc-anchor { display: block; height: 0; }
-
-.markdown-body h2 { font-size: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem; }
-.markdown-body h3 { font-size: 1.25rem; }
-
-.doc-link { color: var(--accent-color); text-decoration: none; font-weight: 500; }
-.doc-link:hover { text-decoration: underline; }
-
-.inline-code {
-    background: var(--code-bg);
-    border: 1px solid var(--border-color);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: var(--font-mono);
-    font-size: 0.88em;
-    color: var(--text-primary);
-}
-
-.code-wrapper {
-    background: var(--code-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    margin: 1.5rem 0;
-    overflow: hidden;
-}
-
-.code-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 6px 14px;
-    background: var(--bg-surface);
-    border-bottom: 1px solid var(--border-color);
-    font-family: var(--font-mono);
-    font-size: 0.78rem;
-    color: var(--text-muted);
-}
-
-.copy-btn {
-    background: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    padding: 2px 8px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.75rem;
-    transition: all 0.2s;
-}
-.copy-btn:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
-.copy-btn.copied { border-color: var(--accent-color); color: var(--accent-color); }
-
-.code-wrapper pre { margin: 0; padding: 1rem; overflow-x: auto; font-family: var(--font-mono); font-size: 0.88rem; }
-
-/* LaTeX Math Styling */
-.math-block {
-    overflow-x: auto;
-    margin: 1.5rem 0;
-    padding: 1rem;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    text-align: center;
-}
-
-.math-inline {
-    font-size: 1.02em;
-    padding: 0 2px;
-}
-
-/* Tables */
-.table-container { overflow-x: auto; margin: 1.5rem 0; }
-.doc-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.9rem;
-    text-align: left;
-}
-.doc-table th {
-    background: var(--bg-surface);
-    padding: 10px 14px;
-    font-weight: 600;
-    border-bottom: 2px solid var(--border-color);
-}
-.doc-table td { padding: 10px 14px; border-bottom: 1px solid var(--border-color); }
-.doc-table tr:hover { background: var(--bg-surface-hover); }
-
-/* Callouts / Blockquotes */
-.callout {
-    padding: 1rem 1.25rem;
-    border-left: 4px solid;
-    border-radius: 0 8px 8px 0;
-    margin: 1.5rem 0;
-}
-.callout-note { background: var(--callout-note-bg); border-color: var(--callout-note-border); }
-.callout-tip { background: var(--callout-tip-bg); border-color: var(--callout-tip-border); }
-.callout-warn, .callout-warning { background: var(--callout-warn-bg); border-color: var(--callout-warn-border); }
-.callout-header { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; }
-
-blockquote {
-    border-left: 4px solid var(--border-color);
-    padding: 0.5rem 1rem;
-    color: var(--text-secondary);
-    margin: 1.25rem 0;
-    font-style: italic;
-}
-
-/* Lists */
-.doc-list { padding-left: 1.5rem; margin-bottom: 1.25rem; }
-.doc-list li { margin-bottom: 0.4rem; }
-
-/* Footer Page Nav */
-.doc-footer-nav {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    margin-top: 4rem;
-    padding-top: 2rem;
-    border-top: 1px solid var(--border-color);
-}
-
-.nav-card {
-    display: flex;
-    flex-direction: column;
-    padding: 1rem;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    text-decoration: none;
-    transition: all 0.2s;
-}
-.nav-card:hover { border-color: var(--accent-color); transform: translateY(-2px); }
-.next-card { text-align: right; }
-.card-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
-.card-title { font-size: 0.95rem; color: var(--text-primary); font-weight: 600; margin-top: 4px; }
-
-/* TOC Sidebar */
-.toc-sidebar {
-    border-left: 1px solid var(--border-color);
-    padding: 1.5rem 1rem;
-    position: sticky;
-    top: 57px;
-    height: calc(100vh - 57px);
-    overflow-y: auto;
-}
-.toc-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.75rem; }
-.toc-list { list-style: none; }
-.toc-list li { margin-bottom: 6px; }
-.toc-link { color: var(--text-secondary); text-decoration: none; font-size: 0.82rem; transition: color 0.2s; }
-.toc-link:hover { color: var(--accent-color); }
-.toc-h3 { padding-left: 12px; }
-
-/* Portal Dashboard Page */
-.hero-banner {
-    padding: 3rem 2rem;
-    background: radial-gradient(circle at top right, var(--accent-alpha), transparent 60%);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    margin-bottom: 2.5rem;
-}
-.hero-title { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.5rem; }
-.hero-subtitle { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.5rem; }
-.hero-stats { display: flex; gap: 1rem; flex-wrap: wrap; }
-.stat-pill { background: var(--bg-surface); border: 1px solid var(--border-color); padding: 6px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 500; }
-.stat-num { color: var(--accent-color); font-weight: 700; }
-
-.portal-section { margin-bottom: 2.5rem; }
-.portal-category-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem; }
-.portal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
-
-.portal-card {
-    display: flex;
-    gap: 1rem;
-    padding: 1.25rem;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    text-decoration: none;
-    transition: all 0.2s;
-}
-.portal-card:hover { border-color: var(--accent-color); background: var(--bg-surface-hover); transform: translateY(-2px); }
-.card-icon { font-size: 1.5rem; }
-.card-heading { font-size: 1rem; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
-.card-desc { font-size: 0.83rem; color: var(--text-secondary); line-height: 1.4; }
-
-/* Responsive adjustments */
-@media (max-width: 1100px) {
-    .app-layout { grid-template-columns: 240px 1fr; }
-    .toc-sidebar { display: none; }
-}
-
-@media (max-width: 768px) {
-    .app-layout { grid-template-columns: 1fr; }
-    .sidebar { display: none; position: fixed; left: 0; top: 57px; width: 280px; z-index: 99; }
-    .sidebar.open { display: block; }
-    .mobile-toggle { display: block; }
-    .main-content { padding: 1.5rem; }
-}
-"""
-    (assets_dir / "style.css").write_text(css_content, encoding="utf-8")
+# The CSS body that used to live as a Python triple-quoted literal now lives
+# in `assets/style.css` (alongside this generator) and is copied in by
 
 
 def main():

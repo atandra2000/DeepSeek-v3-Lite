@@ -75,3 +75,11 @@ def test_widgets_not_on_other_pages(built):
     assert "widget-moe-routing" not in html
     assert "widget-mla-absorb" not in html
     assert "widget-layer-stack" not in html
+
+
+def test_dark_theme_only(built):
+    html = read("README.html")
+    assert "toggleTheme" not in html
+    assert "theme-toggle" not in html
+    css = (OUT / "assets" / "style.css").read_text(encoding="utf-8")
+    assert '[data-theme="light"]' not in css
