@@ -1145,15 +1145,18 @@ blockquote > * { position: relative; z-index: 1; }
     .spec-cell:nth-last-child(-n+2) { border-bottom: none; }
 }
 
-/* Page load fade-in — subtle, reads as "lifting into view" */
+/* Page load fade-in — opacity only. Any transform/filter here would make
+   body the containing block for `position: fixed` descendants (e.g.
+   #boot-overlay, .progress-strip), stretching/clipping them with the
+   document instead of the viewport. */
 @media (prefers-reduced-motion: no-preference) {
     body {
         animation: page-fade-in 0.4s ease-out forwards;
         opacity: 0;
     }
     @keyframes page-fade-in {
-        from { opacity: 0; transform: translateY(4px); }
-        to { opacity: 1; transform: translateY(0); }
+        from { opacity: 0; }
+        to { opacity: 1; }
     }
 }
 
@@ -1248,11 +1251,18 @@ html.booting body > *:not(#boot-overlay) { visibility: hidden; }
     overflow-x: auto;
 }
 
+/* Containment: the stack (≈330px) plus the panel's min-width can exceed the
+   hero's width. Making the grid itself the scroll container keeps every
+   overflow inside the widget — it can never leak a scrollbar to the page or
+   stretch the hero. (`.ascii-widget { overflow: hidden }` is NOT needed:
+   this scrolls instead of clipping, and `.ascii-widget pre` already handles
+   intra-panel overflow on top.) */
 .ascii-widget-grid {
     display: grid;
     grid-template-columns: minmax(0, auto) minmax(0, 1fr);
     gap: 1px;
     background: var(--ruler);
+    overflow-x: auto;
 }
 .ascii-widget-grid > pre { background: var(--paper); }
 
@@ -1261,7 +1271,12 @@ html.booting body > *:not(#boot-overlay) { visibility: hidden; }
     color: var(--ember);
     background: var(--ember-tint);
 }
-.ascii-panel { color: var(--note); min-width: 260px; }
+/* Longest spec line: "ffn        DeepSeekMoE · 20 routed (top-4) + 1 shared
+   · inter 384" = 65 chars. At 0.8rem mono (≈0.6em/char = 7.68px):
+   65 × 7.68 ≈ 499px + 2 × 1.2rem padding (38px) ≈ 538px → 540px.
+   (Sanity check vs the measured hint line: 36 chars × 7.68 + 38 ≈ 315px,
+   matching the observed scrollWidth exactly.) */
+.ascii-panel { color: var(--note); min-width: 540px; }
 
 .moe-fire, .mla-toggle-bar button {
     background: transparent;
