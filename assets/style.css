@@ -8,14 +8,14 @@
        "one active expert among many" signal. Decoration never borrows
        that ember.
 
-     • Two typefaces, on purpose:
-         IBM Plex Serif  — runs the prose (math + spec belong in this face)
-         IBM Plex Mono   — runs every heading, label, code, coordinate,
-                           and key. The typeface itself says "this came out
-                           of a machine."
-       No third "display" face. The prior Space Grotesk felt like a
-       marketing site; using one mono for everything structural makes the
-       page read as a single, unforgeable editorial voice.
+     • One typeface, on purpose:
+         IBM Plex Mono   — runs everything: the prose and every heading,
+                           label, code, coordinate, and key. The typeface
+                           itself says "this came out of a machine" — the
+                           code-centric developer-tool aesthetic.
+       No second "display" face; the prior Space Grotesk felt like a
+       marketing site. `--font-prose` is just an alias of `--font-mono`,
+       so the page reads as a single, unforgeable editorial voice.
 
      • The hero figure is a coordinate ruler over an MLA bottleneck. The
        bottleneck motif recurs as the section break ornament — one SVG
@@ -169,9 +169,9 @@ body::before {
    3. TYPE — prose, headings, labels
    ===================================================================== */
 
-/* Headings are mono. The whole page reads as editorial chrome until you
-   land on a body sentence that drops into IBM Plex Serif. That contrast
-   IS the voice. */
+/* Headings are mono — and so is the prose. Body sentences stay in the
+   same face as the chrome; there is no typeface contrast. The voice
+   comes from weight, size, and color contrast instead. */
 .brand-name, .doc-title, .hero-title, .hero-coords, .hero-figure .lbl,
 .hero-figure .lbl-key, .portal-section-mark, .portal-section-title,
 .card-heading, .card-tag, .nav-card .card-title, .nav-card .card-label,
@@ -188,7 +188,7 @@ body::before {
     font-family: var(--font-mono);
 }
 
-/* Long prose paragraphs (markdown body) → serif. */
+/* Long prose paragraphs (markdown body) → same mono face, slightly larger line-height. */
 .markdown-body p,
 .markdown-body li,
 .markdown-body blockquote,
@@ -937,7 +937,7 @@ a:hover { color: var(--ink-text); text-decoration-color: var(--ember); }
     text-decoration: none;
 }
 
-/* Paragraphs and lists in serif — that's where the prose earns the face */
+/* Paragraphs and lists in the same mono face — that's where the prose reads like machine output */
 .markdown-body p {
     margin: 0 0 1.1rem;
     color: var(--ink-text);
