@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G3 — Triton Development | DeepSeek-v3-Lite Documentation</title>
+    <!-- Fonts — one voice for the whole portal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Highlight.js for Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- KaTeX for LaTeX Math -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="../../assets/style.css">
+    <script>
+(function () {
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) document.documentElement.classList.add('booting');
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            document.documentElement.classList.remove('booting');
+            var ov = document.getElementById('boot-overlay');
+            if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+        }, reduced ? 0 : 350);
+    });
+})();
+</script>
+</head>
+<body>
+    <div id="boot-overlay" aria-hidden="true"><div class="boot-inner"><div class="boot-wordmark">DEEPSEEK-V3-LITE</div><div class="boot-line">loading weights <span class="boot-bar">[░░░░░░░░░░░░] 0%</span></div></div></div>
+    <!-- Top Header -->
+    <header class="site-header">
+        <div class="header-left">
+            <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
+            <a href="../../index.html" class="brand-logo">
+                <span class="brand-name">DeepSeek-v3-Lite</span>
+                <span class="brand-badge">Docs</span>
+            </a>
+        </div>
+        <div class="header-right">
+            <a href="../../index.html" class="header-link">Portal Home</a>
+            <a href="../../README.html" class="header-link">GitHub README</a>
+        </div>
+    </header>
+
+    <div class="app-layout">
+        <!-- Left Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-inner">
+                <div class="sidebar-search"><input type="text" id="navSearch" placeholder="Search docs..." onkeyup="filterNav()"></div>
+<div class="nav-group">
+<div class="nav-group-title">Core</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../README.html" class="nav-link ">Project Overview (README)</a></li><li class="nav-item"><a href="../../AGENTS.html" class="nav-link ">AGENTS & System Architecture</a></li><li class="nav-item"><a href="../../SKILLS.html" class="nav-link ">Skills Reference</a></li><li class="nav-item"><a href="../../docs/README.html" class="nav-link ">Documentation Index</a></li><li class="nav-item"><a href="../../docs/training.html" class="nav-link ">Training Architecture & Pipeline</a></li><li class="nav-item"><a href="../../docs/inference.html" class="nav-link ">Inference & Speculative Decoding</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Concepts</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/concepts/foundations.html" class="nav-link ">Foundations & Architecture</a></li><li class="nav-item"><a href="../../docs/concepts/attention-and-precision.html" class="nav-link ">MLA & Mixed Precision</a></li><li class="nav-item"><a href="../../docs/concepts/moe-mtp.html" class="nav-link ">DeepSeekMoE & MTP</a></li><li class="nav-item"><a href="../../docs/concepts/parallelism.html" class="nav-link ">DualPipe Parallelism</a></li><li class="nav-item"><a href="../../docs/concepts/data-pipeline.html" class="nav-link ">Data Pipeline</a></li><li class="nav-item"><a href="../../docs/concepts/kernels-and-ops.html" class="nav-link ">Operations & Triton Kernels</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/guides/getting-started.html" class="nav-link ">Getting Started</a></li><li class="nav-item"><a href="../../docs/guides/G1_debugging_playbook.html" class="nav-link ">G1 — Debugging Playbook</a></li><li class="nav-item"><a href="../../docs/guides/G2_mup_and_lr_tuning.html" class="nav-link ">G2 — μP & LR Tuning</a></li><li class="nav-item"><a href="../../docs/guides/G3_triton_development.html" class="nav-link active">G3 — Triton Development</a></li><li class="nav-item"><a href="../../docs/guides/G4_benchmarking.html" class="nav-link ">G4 — Benchmarking</a></li><li class="nav-item"><a href="../../docs/guides/G5_checkpoint_ops.html" class="nav-link ">G5 — Checkpoint Ops</a></li><li class="nav-item"><a href="../../docs/guides/contributing.html" class="nav-link ">Contributing Guide</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">References</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/references/R1_config_schema.html" class="nav-link ">R1 — Config Schema</a></li><li class="nav-item"><a href="../../docs/references/R2_transformer_api.html" class="nav-link ">R2 — Transformer API</a></li><li class="nav-item"><a href="../../docs/references/R3_mla_api.html" class="nav-link ">R3 — MLA API</a></li><li class="nav-item"><a href="../../docs/references/R4_moe_api.html" class="nav-link ">R4 — MoE API</a></li><li class="nav-item"><a href="../../docs/references/R5_mtp_api.html" class="nav-link ">R5 — MTP API</a></li><li class="nav-item"><a href="../../docs/references/R6_triton_api.html" class="nav-link ">R6 — Triton API</a></li><li class="nav-item"><a href="../../docs/references/R7_training_api.html" class="nav-link ">R7 — Training API</a></li><li class="nav-item"><a href="../../docs/references/R8_utils_api.html" class="nav-link ">R8 — Utils API</a></li><li class="nav-item"><a href="../../docs/references/R9_inference_api.html" class="nav-link ">R9 — Inference API</a></li></ul>
+</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-container">
+                <div class="breadcrumb">
+                    <a href="../../index.html">Docs</a> &gt; <span>Guides</span> &gt; <span class="current">G3 — Triton Development</span>
+                </div>
+                
+                <div class="doc-header">
+                    <h1 class="doc-title">G3 — Triton Development</h1>
+                    <div class="doc-meta">
+                        <span class="meta-item"><span class="meta-label">source</span><span class="meta-val">docs/guides/G3_triton_development.md</span></span>
+                        <span class="meta-item"><span class="meta-label">words</span><span class="meta-val">3,967</span></span>
+                        <span class="meta-item"><span class="meta-label">read</span><span class="meta-val">~20 min</span></span>
+                    </div>
+                </div>
+
+                <article class="markdown-body" id="articleBody">
+                    <span class="doc-anchor" id="deepseek-v3-lite--triton-kernel-development"></span>
+<blockquote>How to write, extend, gate, test, and benchmark custom Triton kernels in this repo. Covers the contract every kernel must satisfy, the register-budget math behind the 256-element caps, the two sanctioned kernels' known extension points, and the end-to-end recipe for adding a new one.</blockquote>
+<p><strong>Depends on:</strong> <a href="../concepts/kernels-and-ops.html" class="doc-link">Triton Kernels</a> (the tutorial), <a href="../concepts/moe-mtp.html" class="doc-link">DeepSeekMoE &amp; MTP</a>, <a href="../concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a> · <strong>Read next:</strong> <a href="../guides/G4_benchmarking.html" class="doc-link">G4 Benchmarking</a></p>
+<p><strong>Source files:</strong> <code class="inline-code">models/mla_triton.py</code>, <code class="inline-code">models/moe_triton.py</code>, <code class="inline-code">models/_triton_dispatch.py</code>, <code class="inline-code">models/mla.py</code>, <code class="inline-code">models/moe.py</code>, <code class="inline-code">models/transformer.py</code>, <code class="inline-code">tests/test_mla_triton.py</code>, <code class="inline-code">tests/test_moe_triton.py</code>, <code class="inline-code">scripts/microbench_a100.py</code>, <code class="inline-code">scripts/step_time_a100.py</code></p>
+<hr class='doc-hr'>
+<h2 id="0-60-second-summary" class="heading-anchor">0. 60-second summary<a href="#0-60-second-summary" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>This repo has exactly two sanctioned custom Triton kernels: fused MLA attention (<code class="inline-code">models/mla_triton.py:triton_mla_attention</code>) and fused grouped-GEMM MoE dispatch (<code class="inline-code">models/moe_triton.py:triton_grouped_moe_dispatch</code>). Both are <strong>opt-in</strong> (config key + <code class="inline-code">ENABLE_TRITON_KERNELS=1</code>), both ship a pure-PyTorch reference for CPU tests, both wrap the kernel in a <code class="inline-code">torch.autograd.Function</code> with FP32 accumulators, and both are gated by a 256-element register cap. Before any other component gets a kernel, AGENTS.md hard rule 1 requires updating AGENTS.md and <code class="inline-code">concepts/kernels-and-ops.md</code> — and rule 2 requires a measured ≥1.5× speedup over the raw-PyTorch path before it may become a default. This guide is the procedural companion to that contract: what the rules are, where the caps come from, how to extend the two existing kernels, and the step-by-step recipe for a third.</p>
+<h2 id="1-why-this-guide-exists" class="heading-anchor">1. Why this guide exists<a href="#1-why-this-guide-exists" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Custom kernels are the most expensive code to get wrong in this repo: a fused kernel's failure modes are silent (wrong registers, spilled tiles, a forgotten mask lane), it only runs on Linux+CUDA, and the CPU test suite can never execute it. The repo already encodes the answer to "what does a correct kernel look like" in AGENTS.md and in the two existing kernel files — but that knowledge is scattered across a contract file, a tutorial chapter, and 875 lines of kernel code. This guide collects the rules into one procedural checklist, shows the arithmetic that makes a kernel legal or illegal, and gives a copy-paste path for adding the third kernel.</p>
+<p>Everything in here is checkable against the repo: every rule cites the file that enforces it, every dim is the real config dim, and every speed figure is labeled an <strong>estimate</strong> because no GPU run has executed yet (<code class="inline-code">.benchmarks/</code> is empty).</p>
+<h2 id="2-should-this-kernel-exist-at-all--decision-tree" class="heading-anchor">2. Should this kernel exist at all? — decision tree<a href="#2-should-this-kernel-exist-at-all--decision-tree" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>The repo's default is raw PyTorch. Before writing any kernel, walk this tree:</p>
+<div class="code-wrapper collapsed" data-lines="23"><div class="code-header"><span class="code-lang">code</span><span class="code-actions"><button class="expand-btn" data-label="expand ▾ · 23 lines" onclick="toggleCode(this)">expand ▾ · 23 lines</button><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code>Is the component one of the two sanctioned hot paths (MLA materialisation,
+MoE routed dispatch)? ──no──&gt; STOP. Adding a third requires updating
+                              AGENTS.md hard-rule-1 list + docs/12 first.
+        │ yes
+        ▼
+Is it on a real hot path (runs per layer per step, dominates HBM traffic
+or launch count)? ──no──&gt; Keep raw PyTorch. Correctness &gt; micro-tuning.
+        │ yes
+        ▼
+Can you write a pure-PyTorch reference for it (same arithmetic, CPU-runnable)?
+──no──&gt; STOP. Without a reference you cannot test the kernel.
+        │ yes
+        ▼
+Do the tile dims fit the register budget (§4) at the target config?
+──no──&gt; Either tile the reduction dims properly (see the MoE §5.2
+        extension plan) or stay on the PyTorch path.
+        │ yes
+        ▼
+Can you demonstrate ≥1.5× speedup over the raw-PyTorch path (§7)?
+──no──&gt; Do not enable by default (AGENTS.md rule 2). Keep it opt-in.
+        │ yes
+        ▼
+Write it, gate it (ENABLE_TRITON_KERNELS), test it (§3.7), document it.</code></pre></div>
+<p>Two hard constraints from AGENTS.md that cut this tree short most of the time:</p>
+<ul class="doc-list">
+<li><strong>Rule 1:</strong> "Bulk of the codebase (RMSNorm, SwiGLU, embeddings, LM head, loss, gate, MLA SDPA, MTP, inference) stays raw PyTorch. … No other component gets a custom kernel without updating this file and <code class="inline-code">concepts/kernels-and-ops.md</code>."
+</li>
+<li><strong>Rule 2:</strong> the ≥1.5× bar — "below that, do not enable by default."
+</li>
+</ul>
+<h2 id="3-the-kernel-contract-rule-by-rule" class="heading-anchor">3. The kernel contract, rule by rule<a href="#3-the-kernel-contract-rule-by-rule" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>This is the checklist every kernel file in this repo must satisfy. It is enforced partly by tests (<code class="inline-code">tests/test_mla_triton.py</code>, <code class="inline-code">tests/test_moe_triton.py</code>, <code class="inline-code">tests/test_force_back.py</code>) and partly by review.</p>
+<h3 id="31-optional-import--never-fail-at-module-load" class="heading-anchor">3.1 Optional import — never fail at module load<a href="#31-optional-import--never-fail-at-module-load" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>Both kernel modules wrap <code class="inline-code">import triton</code> in <code class="inline-code">try/except ImportError</code> and set a module-level <code class="inline-code">HAS_TRITON</code> flag on failure:</p>
+<div class="code-wrapper" data-lines="6"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">try:
+    import triton  # type: ignore[import-not-found]
+    import triton.language as tl  # type: ignore[import-not-found]
+    HAS_TRITON = True
+except ImportError:
+    HAS_TRITON = False</code></pre></div>
+<p>Consequences: the module imports cleanly on a CPU/Mac box (<code class="inline-code">tests/test_mla_triton.py:TestMlaTritonImport.test_module_imports_without_triton</code> asserts <code class="inline-code">HAS_TRITON == (&quot;triton&quot; in sys.modules)</code>), and the <strong>host wrapper</strong> raises a helpful <code class="inline-code">ImportError</code> only if actually called. <code class="inline-code">models/mla_triton.py:triton_mla_attention</code> does exactly this — "Install with <code class="inline-code">pip install triton</code> (Linux + CUDA only). For CPU/Mac, use <code class="inline-code">attn_impl=&#x27;sdpa&#x27;</code> in your config." The call-site fallback (§3.6) catches that <code class="inline-code">ImportError</code>.</p>
+<h3 id="32-a-pure-pytorch-reference-lives-in-the-same-file" class="heading-anchor">3.2 A pure-PyTorch reference lives in the same file<a href="#32-a-pure-pytorch-reference-lives-in-the-same-file" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">models/mla_triton.py:mla_attention_reference</code> and <code class="inline-code">models/moe_triton.py:grouped_moe_pytorch</code> are module-level (outside <code class="inline-code">if HAS_TRITON:</code>), CPU-runnable, and compute the same arithmetic as the kernel. They are the ground truth the CPU tests check, and (for MLA) even the autograd backward. The MoE reference is deliberately the <code class="inline-code">stacked</code>-style per-expert loop routed through the sorted-token layout — "Same arithmetic as the <code class="inline-code">stacked</code> path but routed through the sorted-token layout; used by CPU tests." A new kernel without a reference is not a kernel in this repo; it is a hypothesis.</p>
+<h3 id="33-the--wrapper--save-inputs-re-compute" class="heading-anchor">3.3 The <code class="inline-code">torch.autograd.Function</code> wrapper — save inputs, re-compute<a href="#33-the--wrapper--save-inputs-re-compute" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>The kernel is never called directly from model code. <code class="inline-code">DeepSeekMoE._routed_forward_triton</code> calls the host wrapper <code class="inline-code">models/moe_triton.py:triton_grouped_moe_dispatch</code>, which applies <code class="inline-code">_TritonGroupedMoeFunction</code> and then multiplies by the routing weights <em>outside</em> the Function:</p>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">out = _TritonGroupedMoeFunction.apply(x_sorted, w1, w2, w3, expert_offsets)
+return out * sorted_weights.unsqueeze(-1)</code></pre></div>
+<p>That last line is a contract, not an optimization: the gate must receive a gradient, which requires <code class="inline-code">sorted_weights</code> to stay on the autograd graph (see <a href="../concepts/moe-mtp.html" class="doc-link">04 DeepSeekMoE</a> for the aux-loss-free mechanism).</p>
+<p>The Function itself follows the FA2 re-compute pattern:</p>
+<ul class="doc-list">
+<li><code class="inline-code">forward</code> saves <strong>only the inputs</strong> (<code class="inline-code">ctx.save_for_backward(...)</code>) plus scalar metadata — never the attention matrix or the SwiGLU hidden <code class="inline-code">h</code>, which are quadratic/large.
+</li>
+<li><code class="inline-code">backward</code> re-derives the forward instead of saving activations. The MLA backward is a correctness-first stub: it re-runs <code class="inline-code">mla_attention_reference</code> and differentiates it with <code class="inline-code">torch.autograd.grad</code>. The MoE backward is the full pattern: it re-runs the fused <code class="inline-code">dx</code>/<code class="inline-code">dw</code> kernels with activations recomputed in registers.
+</li>
+<li><strong>None-grad discipline:</strong> every tensor input must return a gradient — <code class="inline-code">None</code> is only legal for scalar/int args. The MLA backward returns six tensor grads plus <code class="inline-code">None, None, None</code> for the three scalars; the MoE backward returns <code class="inline-code">dx</code>, the three <code class="inline-code">dw</code>s, and <code class="inline-code">None</code> for <code class="inline-code">expert_offsets</code> (INT64, never gradients).
+</li>
+</ul>
+<h3 id="34-fp32-accumulators-bf16-io" class="heading-anchor">3.4 FP32 accumulators, BF16 I/O<a href="#34-fp32-accumulators-bf16-io" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>"BF16 autocast, FP32 AdamW" (<a href="../training.html" class="doc-link">08 Training Pipeline</a>) extends all the way down: <code class="inline-code">tl.dot</code> accumulates in FP32, and the kernels only round at the boundary. The MoE forward builds <code class="inline-code">gate_acc</code>/<code class="inline-code">up_acc</code> as <code class="inline-code">tl.zeros(..., dtype=tl.float32)</code> chained through <code class="inline-code">tl.dot(x_tile, tl.trans(w1_tile), acc=gate_acc)</code>; the dw kernel accumulates into FP32 locals and the backward casts once on return (<code class="inline-code">dw1.to(w1.dtype)</code>). Where a dot needs matching operand dtypes (Triton requires it), the cast is explicit and deliberate: <code class="inline-code">tl.dot(p.to(v_tile.dtype), v_tile)</code> in MLA, <code class="inline-code">h_typed = h.to(x_ptr.dtype.element_ty)</code> in MoE — a documented accuracy tradeoff, not an accident.</p>
+<h3 id="35-block-sizes-autotune-pre-warm" class="heading-anchor">3.5 Block sizes, autotune, pre-warm<a href="#35-block-sizes-autotune-pre-warm" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>Block sizes are <code class="inline-code">tl.constexpr</code> and computed from real dims with <code class="inline-code">models/mla_triton.py:_next_pow2</code> (Triton requires power-of-two <code class="inline-code">tl.arange</code> lengths). The AGENTS.md contract adds: "tuned with <code class="inline-code">@triton.autotune</code> over a small grid of (block size, num_warps, num_stages) configs. Pre-warm at <code class="inline-code">__init__</code> to amortise the first-call compile cost."</p>
+<p>Current state, honestly: <strong>neither kernel uses <code class="inline-code">@triton.autotune</code> today.</strong> The launch sites hard-code <code class="inline-code">BLOCK_Q=BLOCK_N=64</code> (MLA), <code class="inline-code">BLOCK_T=32</code> (MoE), <code class="inline-code">num_warps=4</code>, <code class="inline-code">num_stages=2</code> — a deliberate choice for a single-model repo with two fixed shapes, per <code class="inline-code">concepts/kernels-and-ops.md</code> §8. Both kernels are structured to accept autotune without rework: when you add it, (a) put the decorator on the <code class="inline-code">@triton.jit</code> kernel, not inside the Function, (b) make <code class="inline-code">key=</code> cover every shape-dependent dimension (for MLA <code class="inline-code">[&quot;S_q&quot;, &quot;S_kv&quot;, &quot;R&quot;, &quot;D_nope&quot;, &quot;D_rope&quot;, &quot;D_v&quot;]</code>; for MoE <code class="inline-code">[&quot;T&quot;, &quot;D&quot;, &quot;I&quot;, &quot;E&quot;]</code>), and (c) keep 4–8 hand-picked configs, not a sweep. Pre-warm: there is no kernel warmup call in the repo yet — the first real step pays the compile tax. <code class="inline-code">scripts/step_time_a100.py:main</code>'s <code class="inline-code">--warmup</code> steps absorb it for benchmarks, but a <code class="inline-code">__init__</code>-time warmup call with the real shapes is the contract's intent and still open work.</p>
+<h3 id="36-double-opt-in--and-no-silent-fallback" class="heading-anchor">3.6 Double opt-in: <code class="inline-code">ENABLE_TRITON_KERNELS</code> and no silent fallback<a href="#36-double-opt-in--and-no-silent-fallback" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>The master gate is <code class="inline-code">models/_triton_dispatch.py:enforce_triton_env_var</code>, called from <code class="inline-code">models/transformer.py:Transformer.__init__</code> (and therefore from <code class="inline-code">Pretrainer.__init__</code>, which builds the model). It is a one-table dispatch: <code class="inline-code">(&quot;attn_impl&quot;, &quot;triton&quot;) → &quot;sdpa&quot;</code> and <code class="inline-code">(&quot;moe_dispatch&quot;, &quot;triton_grouped&quot;) → &quot;stacked&quot;</code>. Unless <code class="inline-code">ENABLE_TRITON_KERNELS=1</code>, any Triton dispatch key in the config is force-backed to its PyTorch default with a single startup warning — never 32 per-layer warnings, never an error.</p>
+<p>Opt-in therefore requires two things: the env var <em>and</em> a config key (<code class="inline-code">attn_impl: &quot;triton&quot;</code> or <code class="inline-code">moe_dispatch: &quot;triton_grouped&quot;</code> in YAML). On a Linux+CUDA box:</p>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">bash</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-bash">ENABLE_TRITON_KERNELS=1 python3 scripts/e2e_test_gpu.py          # GPU end-to-end smoke
+ENABLE_TRITON_KERNELS=1 python3 training/pretrain.py --config configs/pretrain_1650_2m.yaml</code></pre></div>
+<p>There is a <strong>second</strong> safety net at runtime: if the env var is set but the kernel still can't run (triton missing, or a dim over the cap), <code class="inline-code">models/moe.py:DeepSeekMoE.forward</code> and <code class="inline-code">models/mla.py:MultiHeadLatentAttention.forward</code> catch <code class="inline-code">ImportError</code>/<code class="inline-code">ValueError</code> and fall back to the PyTorch path with a one-shot <code class="inline-code">_triton_fallback_warned</code> message. Two independent guards, both required: a default-config run must never silently take the Triton path (AGENTS.md rule 7), and a broken Triton run must never crash a config that asked for it (the fallback).</p>
+<h3 id="37-the-unit-test-file-requirements" class="heading-anchor">3.7 The unit test file requirements<a href="#37-the-unit-test-file-requirements" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>AGENTS.md: every new kernel "<strong>must</strong> add a unit test file under <code class="inline-code">tests/test_&lt;kernel&gt;_triton.py</code> that (a) compares the Triton path against the PyTorch reference within <code class="inline-code">atol=1e-2</code> for BF16, (b) runs <code class="inline-code">torch.autograd.gradcheck</code> on a float32 tiny config, and (c) runs a shape / dtype / NaN-finite test on a random input." Plus hard rule 8: tests must run on CPU (via the pure-PyTorch reference) without <code class="inline-code">triton</code> installed, with GPU-only behavior gated behind a skip.</p>
+<p>The two existing files implement this as:</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Clause</th><th>MLA (<code class="inline-code">tests/test_mla_triton.py</code>)</th><th>MoE (<code class="inline-code">tests/test_moe_triton.py</code>)</th></tr></thead><tbody><tr><td>(a) BF16 vs reference @ <code class="inline-code">atol=1e-2</code></td><td><code class="inline-code">TestMlaTritonKernelGPU.test_triton_matches_reference_bf16</code></td><td><code class="inline-code">TestMoeTritonKernelGPU.test_forward_matches_pytorch_bf16</code></td></tr><tr><td>(b) gradient check, fp32 tiny</td><td>(covered indirectly by full-model + reference tests; the stub backward is autograd-verified by construction)</td><td><code class="inline-code">TestMoeTritonKernelGPU.test_autograd_gradcheck_tiny</code> (grad-presence per input) + <code class="inline-code">test_backward_matches_pytorch_tiny</code> (reference-gradient comparison @ <code class="inline-code">atol=1e-3</code>)</td></tr><tr><td>(c) shape / NaN-finite</td><td><code class="inline-code">TestMlaAttentionReference.test_output_shape</code> (<code class="inline-code">torch.isfinite(out).all()</code>)</td><td><code class="inline-code">TestMoeTritonKernelGPU.test_forward_with_empty_experts</code> (<code class="inline-code">torch.isfinite(y).all()</code>)</td></tr><tr><td>GPU gating</td><td><code class="inline-code">pytest.mark.skipif(not (HAS_TRITON and torch.cuda.is_available()))</code></td><td>same</td></tr></tbody></table></div>
+<p>The suite is 199 tests (189 pass + 10 GPU-gated skips) on a CPU laptop; the Triton GPU tests are the bulk of the skips. <code class="inline-code">tests/test_moe_triton.py:TestMoeTritonKernelGPU.test_forward_422m_config_shape</code> also locks the cap behavior: at <code class="inline-code">D=768, I=384</code> the wrapper must raise <code class="inline-code">ValueError</code> matching <code class="inline-code">&quot;256&quot;</code>. And <code class="inline-code">tests/test_mla_triton.py:TestMlaTritonKernelGPU.test_full_model_sdpa_and_triton_agree</code> builds a full <code class="inline-code">Transformer</code> with both dispatch keys under <code class="inline-code">ENABLE_TRITON_KERNELS=1</code> and asserts the logits agree at <code class="inline-code">atol=2e-2</code> — the end-to-end numerics contract.</p>
+<h4 id="step-by-step-procedure-for-implementing-reference-tests--gradchecks" class="heading-anchor">Step-by-Step Procedure for Implementing Reference Tests &amp; Gradchecks<a href="#step-by-step-procedure-for-implementing-reference-tests--gradchecks" class="anchor-link" aria-label="Link to section">#</a></h4>
+<p>When adding or modifying a Triton kernel in this repository, follow this exact 3-step testing protocol:</p>
+<ol class="doc-list">
+<li><strong>Pure PyTorch Reference Verification (CPU)</strong>:
+<br> Implement the exact algorithm in pure PyTorch (e.g., <code class="inline-code">grouped_moe_pytorch</code> in <code class="inline-code">models/moe_triton.py</code> or <code class="inline-code">mla_attention_reference</code> in <code class="inline-code">models/mla_triton.py</code>). Ensure the reference runs natively on CPU without requiring <code class="inline-code">triton</code> imports.
+</li>
+</ol>
+<ol class="doc-list">
+<li><strong>Float32 Gradcheck (Autograd Parity)</strong>:
+<br> Run <code class="inline-code">torch.autograd.gradcheck</code> on float32 inputs with small configurations (<code class="inline-code">eps=1e-3</code>, <code class="inline-code">atol=1e-3</code>) to verify exact analytical vs numerical gradients before testing lower precision.
+</li>
+</ol>
+<ol class="doc-list">
+<li><strong>BF16 Numerical Parity &amp; NaN Stability (GPU)</strong>:
+<br> Under <code class="inline-code">@gpu_required</code>, compare the Triton kernel output against the PyTorch reference using BF16 inputs with <code class="inline-code">torch.testing.assert_close(..., atol=1e-2, rtol=1e-2)</code>. Assert <code class="inline-code">torch.isfinite(output).all()</code> across random inputs and edge cases (e.g., zero token allocations).
+</li>
+</ol>
+<h3 id="38-the-15-speedup-bar" class="heading-anchor">3.8 The ≥1.5× speedup bar<a href="#38-the-15-speedup-bar" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>AGENTS.md rule 2: "For the two sanctioned Triton paths, target ≥ 1.5× speedup over the raw-PyTorch path in <code class="inline-code">scripts/microbench_a100.py</code>; below that, do not enable by default." Two honest caveats:</p>
+<ul class="doc-list">
+<li><code class="inline-code">scripts/microbench_a100.py:main</code> measures <strong>peak VRAM</strong>, not speed — the ≥1.5× bar is therefore a policy target whose measurement harness does not exist yet. §7 below is the methodology that will produce it.
+</li>
+<li>The MoE bar is <strong>structurally blocked at the canonical config</strong>: <code class="inline-code">moe_inter_dim=384</code> and <code class="inline-code">dim=768</code> exceed the 256 cap, so <code class="inline-code">moe_dispatch: &quot;triton_grouped&quot;</code> always falls back to <code class="inline-code">stacked</code> there. The bar is only reachable at smoke-config dims (<code class="inline-code">configs/pretrain_1650_2m.yaml</code>, <code class="inline-code">I=32, D=64</code>) until the §5.2 extension lands. The MLA kernel, by contrast, is usable at the canonical config (<code class="inline-code">kv_lora_rank=192</code>, <code class="inline-code">qk_nope_head_dim=48</code>, <code class="inline-code">qk_rope_head_dim=24</code>, <code class="inline-code">v_head_dim=64</code> — all under the cap). No GPU run has measured either kernel; every speed figure in this guide and <a href="../concepts/kernels-and-ops.html" class="doc-link">12 Triton Kernels</a> is an estimate.
+</li>
+</ul>
+<h2 id="4-register-budget-math-where-the-256-caps-come-from" class="heading-anchor">4. Register-budget math: where the 256 caps come from<a href="#4-register-budget-math-where-the-256-caps-come-from" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Both caps — <code class="inline-code">models/mla_triton.py:_check_mla_dim_limits</code> (R, D_nope, D_rope, D_v ≤ 256) and <code class="inline-code">models/moe_triton.py:_check_dim_limits</code> (I, D ≤ 256) — are tile-arithmetic decisions, not policy. The reasoning (all figures <code class="inline-code">[INFERENCE]</code> — no profiler has run; see <a href="../concepts/kernels-and-ops.html" class="doc-link">12 Triton Kernels</a> §7):</p>
+<ul class="doc-list">
+<li>A thread has <strong>255 addressable 32-bit registers</strong>; beyond that the compiler spills to local memory (L1/L2-backed, much slower).
+</li>
+<li>A <code class="inline-code">num_warps=4</code> program is 128 threads, so a tile of <span class="math-inline">$N$</span> elements costs roughly <span class="math-inline">$N/128$</span> registers per thread.
+</li>
+</ul>
+<p><strong>MLA at canonical dims</strong> (<code class="inline-code">BLOCK_Q=64, BLOCK_N=64, BLOCK_R=256, num_warps=4</code>): the two per-head up-projections held across the K-loop (<code class="inline-code">w_k</code> and <code class="inline-code">w_v</code>, 64×256 each) are ~128 registers/thread each before anything else; the full resident set sums to ≈600 regs/thread — over the 255 ceiling, so spilling is plausible. The cap exists to bound exactly those three big rows. S_q/S_kv are <strong>not</strong> capped because they are tiled (<code class="inline-code">BLOCK_Q</code>/<code class="inline-code">BLOCK_N</code>); only the register-resident dims are.</p>
+<p><strong>MoE at smoke dims</strong> (<code class="inline-code">BLOCK_T=32, BLOCK_I=32, BLOCK_D=64</code>): the resident set is ≈112 regs/thread — comfortable, which is why the smoke config runs it. Force the canonical dims and a single <code class="inline-code">w1_tile</code> becomes 512 × 1024 = 524,288 elements ≈ 4,096 regs/thread — more than the entire SM register file. That is the concrete meaning of the cap.</p>
+<p>Two levers when a kernel spills: shrink block sizes (fewer resident elements, more loop iterations) or raise <code class="inline-code">num_warps</code> (more threads to spread a tile across). The order that respects the arithmetic: fix block sizes so the resident table fits, then sweep <code class="inline-code">num_warps</code>/<code class="inline-code">num_stages</code>.</p>
+<h2 id="5-extending-the-two-sanctioned-kernels" class="heading-anchor">5. Extending the two sanctioned kernels<a href="#5-extending-the-two-sanctioned-kernels" class="anchor-link" aria-label="Link to section">#</a></h2>
+<h3 id="51-mla-kernel" class="heading-anchor">5.1 MLA kernel (<code class="inline-code">models/mla_triton.py</code>)<a href="#51-mla-kernel" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>What works today: the kernel fuses K_nope/V materialisation, RoPE, and online-softmax attention in one program per <code class="inline-code">(B, H, query-block)</code>; <code class="inline-code">q_start</code> keeps cached mid-sequence prefill causal (<code class="inline-code">q_start = start_pos if (is_causal and use_cache) else 0</code>, set in <code class="inline-code">models/mla.py:MultiHeadLatentAttention._forward_triton</code>); the backward is the reference-recompute stub.</p>
+<p>Open work, in order of value:</p>
+<ol class="doc-list">
+<li><strong>Fused backward.</strong> The v1 stub re-runs <code class="inline-code">mla_attention_reference</code> inside <code class="inline-code">backward</code> — correct by construction, but it costs a full Python reference forward + autograd every step, and it stacks with grad-checkpoint recompute (see the <code class="inline-code">★ Insight</code> in <a href="../concepts/kernels-and-ops.html" class="doc-link">12 Triton Kernels</a> §6). A fused <code class="inline-code">dx</code>-style backward (mirroring the MoE pattern) removes the second recompute.
+</li>
+<li><strong>Autotune + pre-warm</strong> (§3.5), then measure (<a href="../guides/G4_benchmarking.html" class="doc-link">G4 benchmarking</a>).
+</li>
+<li><strong>Watch shared memory if you raise <code class="inline-code">num_stages</code>:</strong> the K-loop pipeline prefetches <code class="inline-code">ctx_kv</code> blocks; at <code class="inline-code">BLOCK_R=256</code> there is little shared-memory headroom.
+</li>
+</ol>
+<h3 id="52-moe-grouped-kernel---the-canonical-config-path" class="heading-anchor">5.2 MoE grouped kernel (<code class="inline-code">models/moe_triton.py</code>) — the canonical-config path<a href="#52-moe-grouped-kernel---the-canonical-config-path" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>The known blocker: <code class="inline-code">_check_dim_limits</code> raises at <code class="inline-code">I=384, D=768</code>, so the canonical config always runs <code class="inline-code">stacked</code>. Lifting the cap is a three-part change, all documented in <a href="../concepts/kernels-and-ops.html" class="doc-link">12 Triton Kernels</a> §5.7:</p>
+<ol class="doc-list">
+<li><strong>I-tiling in fwd/dx.</strong> Today <code class="inline-code">i_idx = tl.arange(0, BLOCK_I)</code> covers the <em>full</em> I in one tile. Add an outer <code class="inline-code">for i_start in range(0, I, BLOCK_I)</code> loop and accumulate <code class="inline-code">gate_acc</code>/<code class="inline-code">up_acc</code> across I-blocks (they are already fp32 <code class="inline-code">acc=</code> chains).
+</li>
+<li><strong><code class="inline-code">dh</code> must become a D-accumulator in the dw kernel.</strong> This is the latent bug to fix while you're there: <code class="inline-code">_grouped_moe_bwd_dw_kernel</code> computes <code class="inline-code">dh = tl.dot(dy_tile, w2_tile)</code> once per D-block and never accumulates. The true gradient is <code class="inline-code">dh = dy @ w2</code> summed over <em>all</em> D. Today it is exact only because <code class="inline-code">D ≤ BLOCK_D</code> guarantees a single D-block; the moment D-tiling is enabled without an <code class="inline-code">acc=</code> chain on <code class="inline-code">dh</code>, the weight gradients silently become partial sums. <code class="inline-code">[INFERENCE]</code> — unreachable today, a correctness landmine tomorrow.
+</li>
+<li><strong>Unit-stride fix in the dx kernel.</strong> <code class="inline-code">w1_re</code>/<code class="inline-code">w3_re</code> are loaded with <code class="inline-code">+ d_b[None, :]</code> and no <code class="inline-code">stride_w1_d</code> term — they assume row-major contiguous weights. Safe today because <code class="inline-code">DeepSeekMoE.forward</code> re-stacks experts with <code class="inline-code">torch.stack</code> every forward (contiguous by construction), but wrong for any sliced/transposed input.
+</li>
+</ol>
+<p>Also remember the two invariants that must survive any rewrite: the gate-weight multiply stays outside the Function (§3.3), and the expert weights are re-stacked every forward — never cached across optimizer steps.</p>
+<h2 id="6-adding-a-new-kernel-end-to-end--the-recipe" class="heading-anchor">6. Adding a new kernel end-to-end — the recipe<a href="#6-adding-a-new-kernel-end-to-end--the-recipe" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Follow this order; each step leaves the repo in a working state.</p>
+<p><strong>Step 1 — write the reference first.</strong> Module-level pure-PyTorch function in the new file (mirror <code class="inline-code">grouped_moe_pytorch</code>): same arithmetic as the PyTorch path you are fusing, CPU-runnable, deterministic. This is your test oracle.</p>
+<p><strong>Step 2 — write the kernel.</strong> <code class="inline-code">@triton.jit</code> function; grid over output tiles via <code class="inline-code">tl.program_id</code>; block sizes from <code class="inline-code">_next_pow2</code>; FP32 <code class="inline-code">tl.zeros</code> accumulators chained with <code class="inline-code">acc=</code>; masked <code class="inline-code">tl.load</code>/<code class="inline-code">tl.store</code> with <code class="inline-code">other=0.0</code> (and <code class="inline-code">-inf</code> for causal/score lanes so masked rows contribute zero probability mass); unit-stride assumptions only where you also assert contiguity. Check the dims against §4 before launching.</p>
+<p><strong>Step 3 — wrap in <code class="inline-code">torch.autograd.Function</code>.</strong> <code class="inline-code">forward</code> launches the kernel, saves <em>inputs</em> plus scalar metadata, returns the output tensor. <code class="inline-code">backward</code> either re-runs the reference under <code class="inline-code">torch.autograd.grad</code> (fast to ship, correct by construction — the MLA pattern) or re-runs fused backward kernels with in-register recompute (the MoE pattern). Return one value per forward input; <code class="inline-code">torch.zeros_like</code> for unused tensor inputs, <code class="inline-code">None</code> for scalars. <code class="inline-code"># illustrative</code> skeleton:</p>
+<div class="code-wrapper collapsed" data-lines="15"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="expand-btn" data-label="expand ▾ · 15 lines" onclick="toggleCode(this)">expand ▾ · 15 lines</button><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">class _CustomFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, w, scale):
+        out = _custom_fwd_kernel[(grid)](https://github.com/atandra2000/DeepSeek-v3-Lite/blob/docs-portal-premium/docs/guides/x, w, scale, BLOCK_N=_next_pow2(n), num_warps=4, num_stages=2)
+        ctx.save_for_backward(x, w)
+        ctx.scale = scale
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        x, w = ctx.saved_tensors
+        ref = custom_reference(x, w, ctx.scale)
+        grads = torch.autograd.grad(ref, (x, w), grad_outputs=grad_out, allow_unused=True)
+        return (grads[0] if grads[0] is not None else torch.zeros_like(x),
+                grads[1] if grads[1] is not None else torch.zeros_like(w), None)</code></pre></div>
+<p><strong>Step 4 — host wrapper.</strong> Guard on <code class="inline-code">HAS_TRITON</code>; raise the actionable <code class="inline-code">ImportError</code> ("install with <code class="inline-code">pip install triton</code>…") when called without it; run any dimension check (<code class="inline-code">_check_*_dim_limits</code>) before the launch. Keep the wrapper thin — this is the public API that <code class="inline-code">tests/test_doc_refs.py</code> requires you to anchor (never the <code class="inline-code">if HAS_TRITON:</code>-block classes).</p>
+<p><strong>Step 5 — wire into the module.</strong> In the <code class="inline-code">nn.Module</code>, try the wrapper, catch <code class="inline-code">(ImportError, ValueError)</code>, fall back to the PyTorch path with a one-shot warning — mirror <code class="inline-code">models/moe.py:DeepSeekMoE.forward</code> and <code class="inline-code">MultiHeadLatentAttention.forward</code> exactly (including the <code class="inline-code">_triton_fallback_warned</code> flag), and add the new dispatch key to the <code class="inline-code">_DISPATCH</code> table in <code class="inline-code">models/_triton_dispatch.py:enforce_triton_env_var</code> so the env-var guard covers it.</p>
+<p><strong>Step 6 — test file.</strong> <code class="inline-code">tests/test_&lt;kernel&gt;_triton.py</code> with: reference-vs-kernel comparisons at <code class="inline-code">atol=1e-2</code> (BF16, GPU-gated), <code class="inline-code">torch.autograd.gradcheck</code> (or at minimum per-input grad-presence + reference-gradient comparison) on a tiny fp32 config, a shape/NaN-finite test, an import-surface test (no-triton path), and the <code class="inline-code">ValueError</code> cap test. GPU tests behind <code class="inline-code">pytest.mark.skipif(not (HAS_TRITON and torch.cuda.is_available()))</code> so the 199-node CPU suite stays green. Add the full-model agree test (<code class="inline-code">test_sdpa_and_triton_agree</code> pattern) once the module wiring exists.</p>
+<p><strong>Step 7 — docs and contract.</strong> Update AGENTS.md (rule 1 requires the sanctioned list to grow) and <code class="inline-code">concepts/kernels-and-ops.md</code>; the API reference lives in <code class="inline-code">references/R6_triton_api.md</code>. Every cited symbol must resolve under <code class="inline-code">tests/test_doc_refs.py</code> — run <code class="inline-code">python3 tests/test_doc_refs.py</code> before finishing.</p>
+<p><strong>Step 8 — benchmark before defaulting.</strong> §7 methodology, ≥1.5× bar, and only then consider making the key default-on. Until then it stays opt-in.</p>
+<h2 id="7-benchmarking-protocol" class="heading-anchor">7. Benchmarking protocol<a href="#7-benchmarking-protocol" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>The repo's existing GPU scripts: <code class="inline-code">scripts/microbench_a100.py:main</code> (VRAM: builds the canonical model, runs one fwd+bwd, compares measured peak against <code class="inline-code">utils/memory.py:estimate_model_memory_gb</code>) and <code class="inline-code">scripts/step_time_a100.py:main</code> (end-to-end ms/step, tokens/s, MFU vs a <code class="inline-code">--peak-tflops</code> argument; defaults <code class="inline-code">--steps 20 --warmup 5</code>, TF32 on, <code class="inline-code">torch.compile(mode=&quot;max-autotune&quot;)</code> by default, AdamW <code class="inline-code">fused=True</code>). Step-level throughput is also logged live by <code class="inline-code">utils/logging.py:TrainingLogger.log</code> (<code class="inline-code">tokens_per_sec</code> over a <code class="inline-code">log_interval</code> rolling window — deliberately a whole-step number, not a kernel number).</p>
+<p><strong>Kernel-level comparisons — the honest protocol</strong> (from <a href="../concepts/kernels-and-ops.html" class="doc-link">12 Triton Kernels</a> §9; none of it has run yet):</p>
+<ol class="doc-list">
+<li><strong>Synchronize before timing</strong> — <code class="inline-code">torch.cuda.synchronize()</code> around <code class="inline-code">time.perf_counter()</code>; kernel launches are async.
+</li>
+<li><strong>Warm up, then median</strong> — discard the first call (compile + cache fill); <code class="inline-code">triton.testing.do_bench</code> implements exactly this.
+</li>
+<li><strong>Compare like for like, including backward.</strong> MLA: <code class="inline-code">triton_mla_attention</code> vs the <code class="inline-code">sdpa</code> branch of <code class="inline-code">MultiHeadLatentAttention.forward</code> on identical tensors, <em>including</em> the reference-backward cost of the stub — training pays it every step. MoE: the fused dispatch vs <code class="inline-code">DeepSeekMoE._routed_forward_stacked</code> at the <strong>1650</strong> config (canonical cannot run the kernel).
+</li>
+<li><strong>Count launches, not just FLOPs.</strong> The stacked MoE path issues ~60 small GEMMs per layer per step plus sort/<code class="inline-code">index_add</code>; the fused path is 3 launches (fwd + dx + dw). At these shapes launch overhead and HBM traffic dominate — report launch counts beside wall time.
+</li>
+<li><strong>MFU only with a reference FLOP count.</strong> The canonical per-step FLOPs are dominated by the 16 MoE layers' <code class="inline-code">3·T·I·D·2</code> per activated expert; without a measured time, MFU is arithmetic, not evidence.
+</li>
+<li><strong>Isolate the compiler cache</strong> — warm up or point <code class="inline-code">TRITON_CACHE_DIR</code> somewhere persistent so first-call compile seconds don't pollute steady state.
+</li>
+</ol>
+<p>The honest deliverable when the first A100 run lands: a table of per-path step time, tokens/sec, measured vs estimated peak VRAM, launch counts, and (for MLA) <code class="inline-code">ncu</code> spill/occupancy numbers — which would also resolve the §4 <code class="inline-code">[INFERENCE]</code> about register pressure at canonical dims. Until then, label every number an estimate.</p>
+<h2 id="8-pitfalls" class="heading-anchor">8. Pitfalls<a href="#8-pitfalls" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><strong><code class="inline-code">tl.arange</code> lengths must be powers of two.</strong> Reach for <code class="inline-code">models/mla_triton.py:_next_pow2</code> first; absorb the padding with <code class="inline-code">mask=</code> second.
+</li>
+<li><strong>Masked lanes must not contribute.</strong> Padded score lanes get <code class="inline-code">-inf</code>; padded data lanes get <code class="inline-code">0.0</code>. A <code class="inline-code">tl.store</code> with a mask leaves the destination untouched — allocate <code class="inline-code">torch.empty</code> only if every lane is either written or never read.
+</li>
+<li><strong><code class="inline-code">tl.dot</code> operand dtypes must match, and dims must be ≥ 16.</strong> The smoke config carries the comments <code class="inline-code">kv_lora_rank: 16 # must be &gt;= 16 for Triton&#x27;s tl.dot</code> — a new kernel inherits that floor.
+</li>
+<li><strong>Register pressure is per-thread.</strong> A tile that "fits" at <code class="inline-code">num_warps=4</code> may spill at 2 and be wasteful at 8; use §4 to sanity-check before profiling.
+</li>
+<li><strong>Never put the routing weights inside the MoE kernel</strong> — the gate would lose its gradient (§3.3).
+</li>
+<li><strong>Never cache stacked expert weights across optimizer steps</strong> — <code class="inline-code">DeepSeekMoE.forward</code> re-stacks every forward for exactly this reason.
+</li>
+<li><strong>The re-compute pattern stacks with grad checkpointing</strong> — a checkpointed layer forward re-runs the kernel, then the Function backward re-runs the reference. Correct, but count the recompute cost before promising speedups.
+</li>
+<li><strong>Autotune <code class="inline-code">key=</code> must cover every shape-dependent dim</strong>, or a long-context run silently reuses a short-context config.
+</li>
+<li><strong>A silent fallback is a bug.</strong> The only legal fallbacks are the two guarded ones (§3.6); a kernel that throws mid-run must surface an error, never quietly route around itself.
+</li>
+<li><strong>Anchors, not line numbers.</strong> Docs cite <code class="inline-code">models/moe_triton.py:triton_grouped_moe_dispatch</code>, never a <code class="inline-code">file.py</code>-plus-line-offset citation; JIT symbols under <code class="inline-code">if HAS_TRITON:</code> are banned anchors. <code class="inline-code">tests/test_doc_refs.py</code> enforces this.
+</li>
+</ul>
+<h2 id="9-check-your-understanding" class="heading-anchor">9. Check your understanding<a href="#9-check-your-understanding" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ol class="doc-list">
+<li><strong>Why does the MoE kernel's gate-weight multiply live outside the <code class="inline-code">autograd.Function</code>, and what breaks if you move it inside?</strong> Because <code class="inline-code">sorted_weights</code> must stay on the autograd graph so <code class="inline-code">∂L/∂weights</code> flows to <code class="inline-code">AuxLossFreeGate</code>; inside the Function it would be an opaque input and the aux-loss-free balancing would never train (§3.3).
+</li>
+<li><strong>The MLA kernel is legal at the canonical config; the MoE kernel is not. Why the difference?</strong> MLA's register-resident dims (R=192, D_nope=48, D_rope=24, D_v=64) are all under the 256 cap and S is tiled; MoE's <code class="inline-code">BLOCK_I=512</code>/<code class="inline-code">BLOCK_D=1024</code> tiles would need ≈4,096 registers per thread — more than the SM has (§4). The fix is I-tiling plus a D-accumulating <code class="inline-code">dh</code> (§5.2).
+</li>
+<li><strong>You add a third kernel and skip the <code class="inline-code">ValueError</code> cap test. What breaks?</strong> Nothing on the laptop — but the <code class="inline-code">199</code>-node CPU suite no longer documents the kernel's boundary, and a future config change could silently route the kernel into a register-spill regime on GPU with no test noticing (§3.7).
+</li>
+<li><strong><code class="inline-code">ENABLE_TRITON_KERNELS=1</code> is set and triton is installed, yet a run still executes the PyTorch path. Name two legal ways that happens.</strong> The config doesn't request the Triton dispatch key (both must be present), or the kernel raised <code class="inline-code">ValueError</code>/<code class="inline-code">ImportError</code> at runtime and the module's one-shot fallback engaged (§3.6). Both are by design — a config checked in without the env var must never take the Triton path, and a run that requested it must never crash silently.
+</li>
+</ol>
+<blockquote><strong>Next:</strong> <a href="../guides/G4_benchmarking.html" class="doc-link">G4 Benchmarking</a> — microbench/step_time/MFU methodology.</blockquote>
+<h2 id="references" class="heading-anchor">References<a href="#references" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><a href="../concepts/kernels-and-ops.html" class="doc-link">Triton Kernels</a> — kernel-by-kernel tutorial, register budget, autotune
+</li>
+<li><a href="../concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a> — MLA math behind the flash kernel
+</li>
+<li><a href="../concepts/moe-mtp.html" class="doc-link">DeepSeekMoE &amp; MTP</a> — gate math, stacked-vs-grouped layouts
+</li>
+<li><a href="../references/R6_triton_api.html" class="doc-link">R6 — Triton API</a> - per-symbol kernel contract
+</li>
+<li><a href="../guides/G4_benchmarking.html" class="doc-link">G4 — Benchmarking</a> - microbench/step-time/MFU methodology
+</li>
+<li>Source files: <code class="inline-code">models/mla_triton.py</code>, <code class="inline-code">models/moe_triton.py</code>, <code class="inline-code">models/_triton_dispatch.py</code>, <code class="inline-code">tests/test_mla_triton.py</code>, <code class="inline-code">tests/test_moe_triton.py</code>
+</li>
+</ul>
+                </article>
+
+                
+
+                <div class="doc-footer-nav">
+                    <a href="../../docs/guides/G2_mup_and_lr_tuning.html" class="nav-card prev-card"><span class="card-label">← Previous</span><span class="card-title">G2 — μP & LR Tuning</span></a>
+                    <a href="../../docs/guides/G4_benchmarking.html" class="nav-card next-card"><span class="card-label">Next →</span><span class="card-title">G4 — Benchmarking</span></a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar Table of Contents -->
+        <aside class="toc-sidebar">
+            <div class="toc-inner">
+                <div class="toc-title">On This Page</div>
+                <ul class="toc-list"><li class="toc-h2"><a href="#0-60-second-summary" class="toc-link">0. 60-second summary</a></li><li class="toc-h2"><a href="#1-why-this-guide-exists" class="toc-link">1. Why this guide exists</a></li><li class="toc-h2"><a href="#2-should-this-kernel-exist-at-all--decision-tree" class="toc-link">2. Should this kernel exist at all? — decision tree</a></li><li class="toc-h2"><a href="#3-the-kernel-contract-rule-by-rule" class="toc-link">3. The kernel contract, rule by rule</a></li><li class="toc-h3"><a href="#31-optional-import--never-fail-at-module-load" class="toc-link">3.1 Optional import — never fail at module load</a></li><li class="toc-h3"><a href="#32-a-pure-pytorch-reference-lives-in-the-same-file" class="toc-link">3.2 A pure-PyTorch reference lives in the same file</a></li><li class="toc-h3"><a href="#33-the--wrapper--save-inputs-re-compute" class="toc-link">3.3 The  wrapper — save inputs, re-compute</a></li><li class="toc-h3"><a href="#34-fp32-accumulators-bf16-io" class="toc-link">3.4 FP32 accumulators, BF16 I/O</a></li><li class="toc-h3"><a href="#35-block-sizes-autotune-pre-warm" class="toc-link">3.5 Block sizes, autotune, pre-warm</a></li><li class="toc-h3"><a href="#36-double-opt-in--and-no-silent-fallback" class="toc-link">3.6 Double opt-in:  and no silent fallback</a></li><li class="toc-h3"><a href="#37-the-unit-test-file-requirements" class="toc-link">3.7 The unit test file requirements</a></li><li class="toc-h3"><a href="#38-the-15-speedup-bar" class="toc-link">3.8 The ≥1.5× speedup bar</a></li><li class="toc-h2"><a href="#4-register-budget-math-where-the-256-caps-come-from" class="toc-link">4. Register-budget math: where the 256 caps come from</a></li><li class="toc-h2"><a href="#5-extending-the-two-sanctioned-kernels" class="toc-link">5. Extending the two sanctioned kernels</a></li><li class="toc-h3"><a href="#51-mla-kernel" class="toc-link">5.1 MLA kernel ()</a></li><li class="toc-h3"><a href="#52-moe-grouped-kernel---the-canonical-config-path" class="toc-link">5.2 MoE grouped kernel () — the canonical-config path</a></li><li class="toc-h2"><a href="#6-adding-a-new-kernel-end-to-end--the-recipe" class="toc-link">6. Adding a new kernel end-to-end — the recipe</a></li><li class="toc-h2"><a href="#7-benchmarking-protocol" class="toc-link">7. Benchmarking protocol</a></li><li class="toc-h2"><a href="#8-pitfalls" class="toc-link">8. Pitfalls</a></li><li class="toc-h2"><a href="#9-check-your-understanding" class="toc-link">9. Check your understanding</a></li><li class="toc-h2"><a href="#references" class="toc-link">References</a></li></ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            if (window.hljs) {
+                hljs.highlightAll();
+            }
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+                    throwOnError: false
+                });
+            }
+        });
+    </script>
+    <script defer src="../../assets/portal.js"></script>
+</body>
+</html>

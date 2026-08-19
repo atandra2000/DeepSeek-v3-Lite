@@ -45,7 +45,6 @@ wandb/
 # Graphify auto-generated output
 graphify-out/
 
-# HTML Documentation (Generated locally)
-docs_html/
+# HTML Documentation output is tracked for GitHub Pages deployment
 
 .superpowers/

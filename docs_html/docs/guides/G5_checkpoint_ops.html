@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G5 — Checkpoint Ops | DeepSeek-v3-Lite Documentation</title>
+    <!-- Fonts — one voice for the whole portal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Highlight.js for Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- KaTeX for LaTeX Math -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="../../assets/style.css">
+    <script>
+(function () {
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) document.documentElement.classList.add('booting');
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            document.documentElement.classList.remove('booting');
+            var ov = document.getElementById('boot-overlay');
+            if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+        }, reduced ? 0 : 350);
+    });
+})();
+</script>
+</head>
+<body>
+    <div id="boot-overlay" aria-hidden="true"><div class="boot-inner"><div class="boot-wordmark">DEEPSEEK-V3-LITE</div><div class="boot-line">loading weights <span class="boot-bar">[░░░░░░░░░░░░] 0%</span></div></div></div>
+    <!-- Top Header -->
+    <header class="site-header">
+        <div class="header-left">
+            <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
+            <a href="../../index.html" class="brand-logo">
+                <span class="brand-name">DeepSeek-v3-Lite</span>
+                <span class="brand-badge">Docs</span>
+            </a>
+        </div>
+        <div class="header-right">
+            <a href="../../index.html" class="header-link">Portal Home</a>
+            <a href="../../README.html" class="header-link">GitHub README</a>
+        </div>
+    </header>
+
+    <div class="app-layout">
+        <!-- Left Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-inner">
+                <div class="sidebar-search"><input type="text" id="navSearch" placeholder="Search docs..." onkeyup="filterNav()"></div>
+<div class="nav-group">
+<div class="nav-group-title">Core</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../README.html" class="nav-link ">Project Overview (README)</a></li><li class="nav-item"><a href="../../AGENTS.html" class="nav-link ">AGENTS & System Architecture</a></li><li class="nav-item"><a href="../../SKILLS.html" class="nav-link ">Skills Reference</a></li><li class="nav-item"><a href="../../docs/README.html" class="nav-link ">Documentation Index</a></li><li class="nav-item"><a href="../../docs/training.html" class="nav-link ">Training Architecture & Pipeline</a></li><li class="nav-item"><a href="../../docs/inference.html" class="nav-link ">Inference & Speculative Decoding</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Concepts</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/concepts/foundations.html" class="nav-link ">Foundations & Architecture</a></li><li class="nav-item"><a href="../../docs/concepts/attention-and-precision.html" class="nav-link ">MLA & Mixed Precision</a></li><li class="nav-item"><a href="../../docs/concepts/moe-mtp.html" class="nav-link ">DeepSeekMoE & MTP</a></li><li class="nav-item"><a href="../../docs/concepts/parallelism.html" class="nav-link ">DualPipe Parallelism</a></li><li class="nav-item"><a href="../../docs/concepts/data-pipeline.html" class="nav-link ">Data Pipeline</a></li><li class="nav-item"><a href="../../docs/concepts/kernels-and-ops.html" class="nav-link ">Operations & Triton Kernels</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/guides/getting-started.html" class="nav-link ">Getting Started</a></li><li class="nav-item"><a href="../../docs/guides/G1_debugging_playbook.html" class="nav-link ">G1 — Debugging Playbook</a></li><li class="nav-item"><a href="../../docs/guides/G2_mup_and_lr_tuning.html" class="nav-link ">G2 — μP & LR Tuning</a></li><li class="nav-item"><a href="../../docs/guides/G3_triton_development.html" class="nav-link ">G3 — Triton Development</a></li><li class="nav-item"><a href="../../docs/guides/G4_benchmarking.html" class="nav-link ">G4 — Benchmarking</a></li><li class="nav-item"><a href="../../docs/guides/G5_checkpoint_ops.html" class="nav-link active">G5 — Checkpoint Ops</a></li><li class="nav-item"><a href="../../docs/guides/contributing.html" class="nav-link ">Contributing Guide</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">References</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/references/R1_config_schema.html" class="nav-link ">R1 — Config Schema</a></li><li class="nav-item"><a href="../../docs/references/R2_transformer_api.html" class="nav-link ">R2 — Transformer API</a></li><li class="nav-item"><a href="../../docs/references/R3_mla_api.html" class="nav-link ">R3 — MLA API</a></li><li class="nav-item"><a href="../../docs/references/R4_moe_api.html" class="nav-link ">R4 — MoE API</a></li><li class="nav-item"><a href="../../docs/references/R5_mtp_api.html" class="nav-link ">R5 — MTP API</a></li><li class="nav-item"><a href="../../docs/references/R6_triton_api.html" class="nav-link ">R6 — Triton API</a></li><li class="nav-item"><a href="../../docs/references/R7_training_api.html" class="nav-link ">R7 — Training API</a></li><li class="nav-item"><a href="../../docs/references/R8_utils_api.html" class="nav-link ">R8 — Utils API</a></li><li class="nav-item"><a href="../../docs/references/R9_inference_api.html" class="nav-link ">R9 — Inference API</a></li></ul>
+</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-container">
+                <div class="breadcrumb">
+                    <a href="../../index.html">Docs</a> &gt; <span>Guides</span> &gt; <span class="current">G5 — Checkpoint Ops</span>
+                </div>
+                
+                <div class="doc-header">
+                    <h1 class="doc-title">G5 — Checkpoint Ops</h1>
+                    <div class="doc-meta">
+                        <span class="meta-item"><span class="meta-label">source</span><span class="meta-val">docs/guides/G5_checkpoint_ops.md</span></span>
+                        <span class="meta-item"><span class="meta-label">words</span><span class="meta-val">3,270</span></span>
+                        <span class="meta-item"><span class="meta-label">read</span><span class="meta-val">~16 min</span></span>
+                    </div>
+                </div>
+
+                <article class="markdown-body" id="articleBody">
+                    <span class="doc-anchor" id="deepseek-v3-lite--checkpoint-operations"></span>
+<blockquote><strong>Canonical</strong> for DeepSeek-v3-Lite's checkpoints: the three-file-per-step layout, the atomic-write mechanics that make a checkpoint crash-safe, shared-tensor dedup under weight tying, the two resume paths, and the disaster-recovery playbook. Procedural guide — the surrounding theory lives in <a href="../training.html" class="doc-link">08 Training Pipeline</a> and <a href="../concepts/kernels-and-ops.html" class="doc-link">11 Operations and Testing</a>.</blockquote>
+<blockquote><strong>Status:</strong> the checkpoint machinery is implemented and covered by the CPU test suite (199 nodes: 189 pass + 10 GPU-gated skips, see <a href="../concepts/kernels-and-ops.html" class="doc-link">11 Operations and Testing</a>), but <strong>no GPU training run has ever executed</strong> — <code class="inline-code">checkpoints/</code> is empty, so every file-size figure below is a derived estimate, not a measurement.</blockquote>
+<p><strong>Depends on:</strong> <a href="../training.html" class="doc-link">Training Pipeline</a> · <a href="../concepts/kernels-and-ops.html" class="doc-link">Operations, Testing &amp; Triton Kernels</a> · <strong>Read next:</strong> <a href="../guides/G1_debugging_playbook.html" class="doc-link">G1 Debugging Playbook</a> (NaN rollback), <a href="../guides/contributing.html" class="doc-link">Contributing</a> (doc/test expectations)</p>
+<hr class='doc-hr'>
+<h2 id="1-60-second-summary" class="heading-anchor">1. 60-Second Summary<a href="#1-60-second-summary" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>A checkpoint at step <span class="math-inline">$N$</span> is <strong>three files in one directory</strong>: <code class="inline-code">model_step_N.safetensors</code> (BF16 weights), <code class="inline-code">optim_step_N.pt</code> (FP32 AdamW state), and <code class="inline-code">meta_step_N.json</code> (scheduler state, step counters, the full <code class="inline-code">TrainingConfig</code>, and an <code class="inline-code">has_mtp</code> flag). Each file is written atomically — temp file in the same directory, then <code class="inline-code">os.replace</code> — so no reader ever sees a half-written file. The weight file stores <strong>one copy of every shared tensor</strong>: with weight tying on, <code class="inline-code">head.weight</code> is dropped (it <em>is</em> <code class="inline-code">embed.weight</code>), and on load <code class="inline-code">strict=False</code> restores it through the surviving storage. The training loop auto-resumes from the newest <strong>complete</strong> step (all three files present); a crash between the three writes leaves an incomplete set that is silently skipped. This guide walks the save → load → resume → recovery path end to end, and ends with the inference-loading nuance that matters when you serve a checkpoint.</p>
+<h2 id="2-why-checkpoints-are-three-files" class="heading-anchor">2. Why Checkpoints Are Three Files<a href="#2-why-checkpoints-are-three-files" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>A training step produces three things that must come back on resume: the model weights, the optimizer's per-parameter moments, and the "where are we" bookkeeping (step counters, LR-schedule position). They have different formats and different failure profiles:</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Concern</th><th>Weights</th><th>Optimizer</th><th>Meta</th></tr></thead><tbody><tr><td>Format</td><td>safetensors (no pickle, header with shapes)</td><td><code class="inline-code">torch.save</code> pickle (required by <code class="inline-code">Optimizer.state_dict</code>)</td><td>JSON (human-readable, diffable)</td></tr><tr><td>Size</td><td>~0.77 GiB base</td><td>~4.6 GiB FP32</td><td>a few KB</td></tr><tr><td>Dtype</td><td>BF16</td><td>FP32</td><td>text</td></tr></tbody></table></div>
+<p><code class="inline-code">CheckpointManager.save</code> (<code class="inline-code">utils/checkpoint.py:CheckpointManager.save</code>) writes <strong>weights first, optimizer second, meta last</strong>. That order is load-bearing: the meta file is the "commit" record, so a step is only considered complete when all three exist (see §4). It also means an interrupted save can only orphan the <em>early</em> files of a step — never leave a meta file claiming a step whose weights vanished.</p>
+<p>The split also mirrors how the pieces decay in a disaster: weights are the crown jewels (recoverable from a <code class="inline-code">.pt</code>/HuggingFace export), optimizer state is the biggest but most disposable (losing it costs training progress, not correctness), and meta is tiny but <strong>irreplaceable</strong> — the LR schedule's position lives only there (§8.3).</p>
+<h2 id="3-the-file-format" class="heading-anchor">3. The File Format<a href="#3-the-file-format" class="anchor-link" aria-label="Link to section">#</a></h2>
+<h3 id="31---weights-only" class="heading-anchor">3.1 <code class="inline-code">model_step_N.safetensors</code> — weights only<a href="#31---weights-only" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>Keys are the raw <code class="inline-code">Transformer</code> state-dict names with two transformations applied in <code class="inline-code">training/pretrain.py:Pretrainer.save_checkpoint</code>:</p>
+<ol class="doc-list">
+<li><code class="inline-code">head.weight</code> is dropped when <code class="inline-code">model.weight_tying: true</code> (canonical config) — §5.
+</li>
+<li>MTP weights are renamed with an <code class="inline-code">mtp.</code> prefix and only the <code class="inline-code">mtp_modules.*</code> subset is kept:
+</li>
+</ol>
+<div class="code-wrapper" data-lines="5"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">if self.mtp_wrapper is not None:
+    mtp_mod = self.mtp_wrapper
+    orig = getattr(mtp_mod, &quot;_orig_mod&quot;, mtp_mod)
+    mtp_state = {f&quot;mtp.{k}&quot;: v for k, v in orig.state_dict().items() if k.startswith(&quot;mtp_modules.&quot;)}
+    state.update(mtp_state)</code></pre></div>
+<p>So an MTP checkpoint contains keys like <code class="inline-code">mtp.mtp_modules.0.block.w1.weight</code> and <code class="inline-code">mtp.mtp_modules.0.norm.weight</code>, but <strong>not</strong> <code class="inline-code">mtp.embed.weight</code> or <code class="inline-code">mtp.mtp_modules.0.output_head.weight</code> — both alias main-model tensors and are excluded (filter) or deduplicated (§5). <code class="inline-code">tests/test_training.py</code> asserts the <code class="inline-code">mtp.</code> prefix exists after a save (<code class="inline-code">test_checkpoint_safetensors_mtp_prefix</code>).</p>
+<h3 id="32---optimizer-state" class="heading-anchor">3.2 <code class="inline-code">optim_step_N.pt</code> — optimizer state<a href="#32---optimizer-state" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>The full <code class="inline-code">AdamW.state_dict()</code>: FP32 master weights, <code class="inline-code">exp_avg</code>, <code class="inline-code">exp_avg_sq</code>, and <code class="inline-code">param_groups</code>. The optimizer is constructed with <strong>deduplicated parameter ids</strong> in <code class="inline-code">training/pretrain.py:Pretrainer.__init__</code> (the <code class="inline-code">seen</code> set skips the shared head/embed pair), so the tied tensor's moments are stored once. Loaded with <code class="inline-code">torch.load(..., map_location=device, weights_only=True)</code> inside <code class="inline-code">utils/checkpoint.py:CheckpointManager.load</code>.</p>
+<h3 id="33---everything-else" class="heading-anchor">3.3 <code class="inline-code">meta_step_N.json</code> — everything else<a href="#33---everything-else" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>Assembled by <code class="inline-code">Pretrainer.save_checkpoint</code> and written by <code class="inline-code">CheckpointManager._atomic_save_json</code> (<code class="inline-code">utils/checkpoint.py:CheckpointManager._atomic_save_json</code>). Contents:</p>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">extra_meta = {&quot;scheduler&quot;: self.scheduler.state_dict(), &quot;opt_steps&quot;: self._opt_steps,
+              &quot;tag&quot;: tag or f&quot;step_{step}&quot;, &quot;config&quot;: asdict(self.config), &quot;has_mtp&quot;: self.mtp_wrapper is not None}</code></pre></div>
+<ul class="doc-list">
+<li><code class="inline-code">step</code> — the micro-step (global_step) counter; forced from the save argument in <code class="inline-code">CheckpointManager.save</code> (<code class="inline-code">{&quot;step&quot;: step, **{k: v for k, v in (extra_meta or {}).items() if k != &quot;step&quot;}}</code>), so a caller-supplied <code class="inline-code">step</code> key can never corrupt it.
+</li>
+<li><code class="inline-code">scheduler</code> — the <code class="inline-code">LambdaLR</code> state dict: <code class="inline-code">base_lrs</code>, <code class="inline-code">last_epoch</code>, <code class="inline-code">_step_count</code>, <code class="inline-code">_last_lr</code>. It round-trips through JSON correctly because <code class="inline-code">LambdaLR.load_state_dict</code> pops <code class="inline-code">lr_lambdas</code> and keeps the live closures — <code class="inline-code">json.dump(..., default=str)</code> stringifies anything non-JSON (a latent foot-gun if scheduler state ever grows a tensor field; today it is all ints/floats/lists).
+</li>
+<li><code class="inline-code">opt_steps</code> — the optimizer-step counter (<code class="inline-code">self._opt_steps</code>). This is what makes the LR schedule resume <em>mid-arc</em>: the cosine horizon is <code class="inline-code">max_steps // gradient_accumulation_steps</code> in opt-step space (see <a href="../training.html" class="doc-link">08 Training Pipeline</a> and <a href="../guides/G2_mup_and_lr_tuning.html" class="doc-link">G2 mup and lr tuning</a>), and both this counter and the scheduler state travel in the JSON.
+</li>
+<li><code class="inline-code">config</code> — <code class="inline-code">dataclasses.asdict(self.config)</code>, i.e. the entire <code class="inline-code">TrainingConfig</code> including the raw YAML <code class="inline-code">model_config</code>. A checkpoint is self-describing: you can rebuild the exact training setup from <code class="inline-code">meta_step_N.json</code> alone.
+</li>
+<li><code class="inline-code">has_mtp</code> — whether the run trained with an MTP wrapper; the loader uses it to decide whether to restore <code class="inline-code">mtp.</code> keys.
+</li>
+<li><code class="inline-code">tag</code> — <code class="inline-code">&quot;&quot;</code> (empty) for periodic saves, <code class="inline-code">&quot;final&quot;</code> for the end-of-run save. <strong>The filename does not change</strong> — a final checkpoint is still <code class="inline-code">model_step_512000.safetensors</code>; only the meta distinguishes it. <code class="inline-code">_find_latest_checkpoint</code> therefore cannot tell a final from a periodic save.
+</li>
+</ul>
+<h3 id="34-what-it-costs-derived-estimates" class="heading-anchor">3.4 What it costs (derived estimates)<a href="#34-what-it-costs-derived-estimates" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>With canonical numbers (411.6M deduped params, 2 B/param BF16 weights, 12 B/param FP32 AdamW state = 4 B master + 4 B <code class="inline-code">exp_avg</code> + 4 B <code class="inline-code">exp_avg_sq</code>):</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>File</th><th>Size</th><th>Notes</th></tr></thead><tbody><tr><td><code class="inline-code">model_step_N.safetensors</code></td><td>~0.77 GiB (+ ~14 MB with MTP)</td><td>deduped count × 2 B; head stored once via embed</td></tr><tr><td><code class="inline-code">optim_step_N.pt</code></td><td>~4.6 GiB (+ ~85 MB with MTP)</td><td>12 B/param; largest file, slowest write</td></tr><tr><td><code class="inline-code">meta_step_N.json</code></td><td>a few KB</td><td>instant</td></tr></tbody></table></div>
+<p>[INFERENCE] — derived from arithmetic, consistent with the memory budget in <a href="../concepts/kernels-and-ops.html" class="doc-link">11 Operations and Testing</a> §5.2; no checkpoint has been produced by a real run yet. At <code class="inline-code">save_interval: 4000</code> over 512,000 steps that is ~127 periodic checkpoints ≈ ~0.7 TB of disk if never pruned — retention is not wired in (see §10).</p>
+<h2 id="4-atomicity-mechanics" class="heading-anchor">4. Atomicity Mechanics<a href="#4-atomicity-mechanics" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p><code class="inline-code">CheckpointManager._atomic_write</code> (<code class="inline-code">utils/checkpoint.py:CheckpointManager._atomic_write</code>) is the single chokepoint every writer goes through:</p>
+<div class="code-wrapper" data-lines="14"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">import contextlib
+@contextlib.contextmanager
+def _atomic_write(self, path: Path, suffix: str):
+    fd, tmp = tempfile.mkstemp(dir=self.save_dir, suffix=suffix)
+    os.close(fd)
+    try:
+        yield tmp
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise</code></pre></div>
+<p>Three properties, all deliberate:</p>
+<ol class="doc-list">
+<li><strong>Same-directory temp file.</strong> <code class="inline-code">tempfile.mkstemp(dir=self.save_dir, ...)</code> creates <code class="inline-code">*.safetensors.tmp</code> / <code class="inline-code">*.pt.tmp</code> / <code class="inline-code">*.json.tmp</code> next to the target. <code class="inline-code">os.replace</code> is only atomic on the <em>same filesystem</em> — a temp file in <code class="inline-code">/tmp</code> on another mount would make the rename non-atomic (or cross-device). Writing in the checkpoint dir guarantees the rename is a single metadata operation.
+</li>
+<li><strong>Torn writes never reach the final name.</strong> A reader (another process, or the next boot) either sees the old file or the new file, never a truncated middle. A hard kill mid-write leaves an orphaned <code class="inline-code">*.tmp</code>; the final name is untouched.
+</li>
+<li><strong>Error cleanup.</strong> An exception inside the block unlinks the temp before re-raising — no litter on the common failure paths. Only <code class="inline-code">kill -9</code>-style deaths orphan temps, and those are harmless: <code class="inline-code">_list_steps</code> globs only <code class="inline-code">model_step_*.safetensors</code>, and orphaned <code class="inline-code">model_step_N.safetensors.tmp</code> doesn't match.
+</li>
+</ol>
+<p>*<em>The three-file set is </em>not<em> atomic as a group.</em><em> Each file is atomic individually; the </em>step* is atomic only in the logical sense that <code class="inline-code">_checkpoint_complete</code> requires all three, and <code class="inline-code">latest_step</code> refuses incomplete steps:</p>
+<div class="code-wrapper" data-lines="3"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def latest_step(self) -&gt; Optional[int]:
+    steps = self._list_steps()
+    return next((s for s in sorted(steps, reverse=True) if self._checkpoint_complete(s)), None)</code></pre></div>
+<p>(<code class="inline-code">utils/checkpoint.py:CheckpointManager.latest_step</code> / <code class="inline-code">utils/checkpoint.py:CheckpointManager._checkpoint_complete</code>.) Because meta is written last, a crash between files 1 and 3 leaves a step that <code class="inline-code">latest_step</code> skips — the run resumes from the previous complete step. The orphaned weight file is dead weight on disk but never selected.</p>
+<h2 id="5-shared-tensor-dedup-and-weight-tying" class="heading-anchor">5. Shared-Tensor Dedup and Weight Tying<a href="#5-shared-tensor-dedup-and-weight-tying" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Weight tying (<code class="inline-code">models/transformer.py:Transformer.__init__</code>) makes the LM head and the embedding <strong>the same <code class="inline-code">Parameter</code></strong>:</p>
+<div class="code-wrapper" data-lines="4"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">self.weight_tying = model_cfg.get(&quot;weight_tying&quot;, False)
+self.head = nn.Linear(model_cfg[&quot;dim&quot;], model_cfg[&quot;vocab_size&quot;], bias=False)
+if self.weight_tying:
+    self.head.weight = self.embed.weight</code></pre></div>
+<p>So a naive <code class="inline-code">state_dict()</code> contains two keys over one storage: <code class="inline-code">head.weight</code> (100\,018 × 768 ≈ 153.6 MB of BF16) is a duplicate. Two layers of defense remove it:</p>
+<ol class="doc-list">
+<li><strong><code class="inline-code">Pretrainer.save_checkpoint</code> drops the key</strong> before the manager sees it.
+</li>
+<li><strong><code class="inline-code">CheckpointManager._atomic_save_safetensors</code> (<code class="inline-code">utils/checkpoint.py:CheckpointManager._atomic_save_safetensors</code>) dedups by storage pointer</strong> — a genuine dedup, not a name convention:
+</li>
+</ol>
+<div class="code-wrapper" data-lines="7"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">seen_ptrs: set = set()
+deduped: dict = {}
+for k, v in state.items():
+    if v.data_ptr() in seen_ptrs:
+        continue
+    seen_ptrs.add(v.data_ptr())
+    deduped[k] = v.contiguous()</code></pre></div>
+<p>The first key in dict order wins; <code class="inline-code">head.weight</code> (registered last) loses to <code class="inline-code">embed.weight</code>. The same pointer check silently collapses the MTP aliases: <code class="inline-code">mtp.mtp_modules.0.output_head.weight</code> shares the main head's storage and <code class="inline-code">MultiTokenPrediction.__init__</code> (<code class="inline-code">models/mtp.py:MultiTokenPrediction.__init__</code>) registers <code class="inline-code">embed</code> and the shared head via <code class="inline-code">set_output_head</code> (<code class="inline-code">models/mtp.py:MTPModule.set_output_head</code>), so every one of those keys is a duplicate and never hits the file.</p>
+<p><strong>Restore works because aliasing is structural, not serialized.</strong> On load, <code class="inline-code">CheckpointManager.load</code> calls <code class="inline-code">model.load_state_dict(weights, strict=False)</code>; <code class="inline-code">head.weight</code> is reported missing (a logged warning, see §10) but the load copies into <code class="inline-code">embed.weight</code> <em>in place</em> — and since <code class="inline-code">head.weight</code> <em>is</em> <code class="inline-code">embed.weight</code> (same storage), the head is updated through the survivor. No code ever reconstructs the tie; the tie reconstructs it. This is asserted by <code class="inline-code">tests/test_utils.py</code> (load restores <code class="inline-code">embed.weight</code> and <code class="inline-code">head.weight.data_ptr()</code> equality) and documented as the expected warning in <a href="../inference.html" class="doc-link">10 Inference and Serving</a>.</p>
+<h2 id="6-save-flow" class="heading-anchor">6. Save Flow<a href="#6-save-flow" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Checklist (what actually happens, in order):</p>
+<ol class="doc-list">
+<li><code class="inline-code">train()</code> hits <code class="inline-code">global_step % save_every == 0</code> (canonical <code class="inline-code">save_interval: 4000</code>) → <code class="inline-code">save_checkpoint(global_step)</code> (<code class="inline-code">training/pretrain.py:Pretrainer.save_checkpoint</code>).
+</li>
+<li>Snapshot <code class="inline-code">self.raw_model</code> — <strong>the unwrapped <code class="inline-code">Transformer</code>, not the <code class="inline-code">torch.compile</code>d or MTP-wrapped <code class="inline-code">self.model</code></strong>. Compile wrappers would emit <code class="inline-code">_orig_mod.</code>-prefixed keys; MTP keys are merged explicitly instead. Note the <code class="inline-code">_orig_mod</code> unwrap is applied to the MTP wrapper when it was compiled.
+</li>
+<li>Drop <code class="inline-code">head.weight</code> (tying), merge <code class="inline-code">mtp.*</code> keys (MTP only).
+</li>
+<li>Build <code class="inline-code">extra_meta</code> (§3.3) and call <code class="inline-code">self.ckpt_manager.save(...)</code>.
+</li>
+<li><code class="inline-code">CheckpointManager.save</code> writes safetensors → <code class="inline-code">.pt</code> → <code class="inline-code">.json</code>, each through <code class="inline-code">_atomic_write</code>.
+</li>
+</ol>
+<p>The end-of-run save reuses the same path with <code class="inline-code">tag=&quot;final&quot;</code> (<code class="inline-code">self.save_checkpoint(global_step, tag=&quot;final&quot;)</code> inside <code class="inline-code">training/pretrain.py:Pretrainer.train</code>).</p>
+<p><strong>Cost note:</strong> the safetensors write serializes the full deduped weight dict (≈0.77 GiB) and the optimizer write ≈4.6 GiB — on an A100's NVMe these are seconds, not minutes, but they happen on the training loop's critical path, synchronously. There is no async/background save: the loop stalls while the files land. [INFERENCE] — no run has measured this yet.</p>
+<h2 id="7-load-and-resume-flow" class="heading-anchor">7. Load and Resume Flow<a href="#7-load-and-resume-flow" class="anchor-link" aria-label="Link to section">#</a></h2>
+<h3 id="71-the-resume-decision-tree" class="heading-anchor">7.1 The resume decision tree<a href="#71-the-resume-decision-tree" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="5"><div class="code-header"><span class="code-lang">code</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code>Launch training
+├─ checkpoint dir empty            → fresh run, global_step = 0
+└─ complete step(s) exist          → AUTO-RESUME: load newest complete step
+     └─ load fails (corrupt/missing) → [warn] Could not load checkpoint: …
+        └─ continue as fresh run</code></pre></div>
+<p><code class="inline-code">Pretrainer.train</code> (<code class="inline-code">training/pretrain.py:Pretrainer.train</code>) does this unconditionally:</p>
+<div class="code-wrapper" data-lines="7"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">global_step = 0
+latest = self._find_latest_checkpoint()
+if latest is not None:
+    try:
+        global_step = self.load_checkpoint(latest)
+    except Exception as exc:
+        self._log(f&quot;[warn] Could not load checkpoint: {exc}&quot;)</code></pre></div>
+<p><code class="inline-code">_find_latest_checkpoint</code> (<code class="inline-code">training/pretrain.py:Pretrainer._find_latest_checkpoint</code>) is a one-line delegate to <code class="inline-code">latest_step()</code>. <strong>Operational consequence:</strong> to start a genuinely fresh run in a directory that already has checkpoints, point <code class="inline-code">--checkpoint-dir</code> at a new directory (or move the old one aside) — a bare relaunch resumes.</p>
+<p><code class="inline-code">Pretrainer.load_checkpoint</code> (<code class="inline-code">training/pretrain.py:Pretrainer.load_checkpoint</code>) then:</p>
+<ol class="doc-list">
+<li><code class="inline-code">ckpt_manager.load(self.raw_model, step, device=..., optimizer=self.optimizer, strict=False)</code> — weights into the unwrapped model, optimizer state into <code class="inline-code">self.optimizer</code> (if the <code class="inline-code">.pt</code> exists).
+</li>
+<li>If <code class="inline-code">self.mtp_wrapper is not None</code> <strong>and</strong> <code class="inline-code">meta[&quot;has_mtp&quot;]</code> — reload the <code class="inline-code">mtp.</code>-prefixed keys (stripped of the prefix) into the unwrapped MTP module with <code class="inline-code">strict=False</code>.
+</li>
+<li><code class="inline-code">scheduler.load_state_dict(meta[&quot;scheduler&quot;])</code> and <code class="inline-code">self._opt_steps = meta[&quot;opt_steps&quot;]</code> — schedule position restored.
+</li>
+<li>Return <code class="inline-code">meta[&quot;step&quot;]</code> → becomes <code class="inline-code">global_step</code>.
+</li>
+</ol>
+<h3 id="72--the-ordering-nuance" class="heading-anchor">7.2 <code class="inline-code">--resume N</code>: the ordering nuance<a href="#72--the-ordering-nuance" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">training/pretrain.py:main</code> applies an explicit step <strong>before</strong> <code class="inline-code">train()</code> runs:</p>
+<div class="code-wrapper" data-lines="4"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">trainer = Pretrainer(config)
+if args.resume is not None:
+    trainer.load_checkpoint(int(args.resume))
+trainer.train()</code></pre></div>
+<p>Then <code class="inline-code">train()</code> <em>again</em> resolves <code class="inline-code">latest_step()</code> and loads it. The effective resume point is therefore <strong>the newest complete step</strong>, whatever <code class="inline-code">--resume</code> said — <code class="inline-code">--resume N</code> is decisive only when <span class="math-inline">$N$</span> is that newest complete step (the normal case right after a crash at <span class="math-inline">$N$</span>). If <span class="math-inline">$N$</span> names an incomplete or missing weight file, <code class="inline-code">CheckpointManager.load</code> raises <code class="inline-code">FileNotFoundError</code> immediately (with the available steps listed). In practice: after a crash, relaunch the same command with <code class="inline-code">--resume &lt;step&gt;</code> and you resume from the newest intact checkpoint; the flag documents intent, the completeness check guarantees integrity.</p>
+<p>Resume is not lossless by design: the DataLoader is rebuilt with a fresh seeded generator (<code class="inline-code">torch.Generator().manual_seed(self.config.seed)</code>), so <strong>data order differs across a restart</strong> — the code comments call this benign at this scale; exact resume would need sampler checkpointing, which does not exist.</p>
+<h2 id="8-disaster-recovery" class="heading-anchor">8. Disaster Recovery<a href="#8-disaster-recovery" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Ranked by severity:</p>
+<h3 id="81-missing-optimizer-file" class="heading-anchor">8.1 Missing optimizer file (<code class="inline-code">optim_step_N.pt</code>)<a href="#81-missing-optimizer-file" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">CheckpointManager.load</code> treats it as a warning, not an error:</p>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">code</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code>[checkpoint] no optimiser state at &lt;path&gt; — optimizer will start from scratch</code></pre></div>
+<p>Weights, scheduler, and <code class="inline-code">opt_steps</code> still load — the <strong>LR schedule continues correctly</strong> even though AdamW's moments are zero. The run loses the optimizer's adaptation (a few hundred steps of momentum history) but not its position. This is the cheapest disaster and the designed degradation.</p>
+<h3 id="82-corrupt-or-truncated" class="heading-anchor">8.2 Corrupt or truncated <code class="inline-code">model_step_N.safetensors</code><a href="#82-corrupt-or-truncated" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">load_file</code> raises (safetensors verifies header/size metadata, so truncation is caught, not silently misread). Because each file is written atomically, this only happens through real disk corruption or a hand-edited file. Handling depends on the entry point:</p>
+<ul class="doc-list">
+<li><strong>Auto-resume in <code class="inline-code">train()</code>:</strong> the <code class="inline-code">try/except</code> catches it → <code class="inline-code">[warn] Could not load checkpoint: ...</code> → fresh start from step 0 with the existing weights untouched. Note this <em>silently discards</em> the corrupted step's siblings (they are skipped because the step is incomplete).
+</li>
+<li><strong>Explicit <code class="inline-code">--resume N</code>:</strong> the exception propagates and the run aborts — loud, which is what you want for an explicit request.
+</li>
+</ul>
+<p>Recovery: the previous complete step is still intact (atomicity guarantees it). Resume with <code class="inline-code">--resume &lt;previous&gt;</code> or let auto-resume pick it up — and delete the corrupt step's three files so <code class="inline-code">latest_step</code> stops considering them.</p>
+<h3 id="83-missing-or-corrupt---the-silent-hazard" class="heading-anchor">8.3 Missing or corrupt <code class="inline-code">meta_step_N.json</code> — the silent hazard<a href="#83-missing-or-corrupt---the-silent-hazard" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>If the meta file is absent, <code class="inline-code">CheckpointManager.load</code> substitutes <code class="inline-code">{&quot;step&quot;: step}</code> — weights and optimizer load, but <strong>scheduler state and <code class="inline-code">opt_steps</code> are not restored</strong>. The run continues at <code class="inline-code">global_step = N</code> with a <em>fresh</em> <code class="inline-code">LambdaLR</code> — i.e. the LR schedule restarts its warmup at step 0 while training thinks it is at step <span class="math-inline">$N$</span>. The warmup lambda at step 0 is 0, so the effective LR collapses toward 0 and recovery is not obvious from the loss curve. This is why completeness requires all three files: meta is the only carrier of the schedule position. If you must reconstruct, take <code class="inline-code">max_steps // gradient_accumulation_steps</code> as the horizon and re-derive the position from <code class="inline-code">global_step</code> (<a href="../guides/G2_mup_and_lr_tuning.html" class="doc-link">G2 mup and lr tuning</a>).</p>
+<h3 id="84-nan-guard-rollback" class="heading-anchor">8.4 NaN guard rollback<a href="#84-nan-guard-rollback" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">train_step</code> (<code class="inline-code">training/pretrain.py:Pretrainer.train_step</code>) returns <code class="inline-code">None</code> on a NaN/Inf total loss after zeroing gradients; after <code class="inline-code">nan_guard_max_consecutive: 5</code> consecutive fires, <code class="inline-code">train()</code> restores the latest complete checkpoint, resets <code class="inline-code">global_step</code> to its step, and clears the streak — or raises <code class="inline-code">RuntimeError(&quot;NaN/Inf with no checkpoint to restore from&quot;)</code> if none exists. Rollback is the same <code class="inline-code">load_checkpoint</code> path as resume, so weights + optimizer + schedule all rewind together. The DataLoader is <strong>not</strong> rewound and the partial accumulation window's gradients are discarded — the guard saves the model state, not the data stream. See <a href="../guides/G1_debugging_playbook.html" class="doc-link">G1 debugging playbook</a> for the full state machine and <code class="inline-code">tests/test_training.py</code> (<code class="inline-code">TestNanGuardRollback</code>) for the rollback test.</p>
+<h2 id="9-inference-loading-the-weight-tying-nuance" class="heading-anchor">9. Inference Loading: the Weight-Tying Nuance<a href="#9-inference-loading-the-weight-tying-nuance" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p><code class="inline-code">inference/generate.py:main</code> (<code class="inline-code">inference/generate.py:main</code>) accepts <code class="inline-code">--checkpoint</code> as either a directory (→ <code class="inline-code">latest_step()</code>) or a file path (→ the trailing integer of the stem, e.g. <code class="inline-code">model_step_4000.safetensors</code> → 4000), then:</p>
+<div class="code-wrapper" data-lines="4"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">model = Transformer(model_cfg).to(args.device)
+model.eval()
+...
+ckpt_mgr.load(model, step, device=args.device, strict=False)</code></pre></div>
+<p>The restore chain works <strong>only because the inference model is built from the same config</strong> — canonical <code class="inline-code">weight_tying: true</code> means <code class="inline-code">head.weight</code> aliases <code class="inline-code">embed.weight</code> again, so the missing-key restore of §5 applies. The nuance: <strong>the checkpoint file never contains <code class="inline-code">head.weight</code>, period.</strong> Any consumer that builds a non-tied model (<code class="inline-code">weight_tying: false</code>) gets a silently untrained head — <code class="inline-code">strict=False</code> logs a missing-key warning and continues. There is no way to recover the head from the file; the tie is the only carrier. Same contract for the MTP draft head: the wrapper re-aliases <code class="inline-code">output_head</code> to <code class="inline-code">model.head</code> via <code class="inline-code">set_output_head</code> <em>before</em> loading <code class="inline-code">mtp.</code> keys, and <code class="inline-code">mtp_module.load_state_dict(mtp_state, strict=False)</code> tolerates the absent shared head (see <a href="../inference.html" class="doc-link">10 Inference and Serving</a> §MTP, which covers the <code class="inline-code">[warn] No MTP weights in checkpoint</code> case). <code class="inline-code">Transformer.__init__</code> also re-derives the mask/cache infrastructure from the config, so an inference config must match the training config's <code class="inline-code">max_seq_len</code> or the pre-allocated cache differs from what the checkpoint assumed — benign for weights, relevant for KV-cache sizing (<a href="../inference.html" class="doc-link">10 Inference and Serving</a>).</p>
+<h2 id="10-pitfalls-checklist" class="heading-anchor">10. Pitfalls Checklist<a href="#10-pitfalls-checklist" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><strong><code class="inline-code">head.weight</code> missing on load is expected, not a bug.</strong> The <code class="inline-code">[checkpoint] 1 missing key(s): [&#x27;head.weight&#x27;]</code> warning fires on every tied-model load (via <code class="inline-code">strict=False</code> in both <code class="inline-code">Pretrainer.load_checkpoint</code> and <code class="inline-code">inference/generate.py:main</code>). Verify the tie instead: <code class="inline-code">model.head.weight.data_ptr() == model.embed.weight.data_ptr()</code>.
+</li>
+<li><strong><code class="inline-code">--no-checkpoint</code> disables gradient checkpointing, not checkpoint saving.</strong> The flag feeds <code class="inline-code">grad_checkpoint</code> (activation re-computation) in <code class="inline-code">training/pretrain.py:main</code>; it has nothing to do with <code class="inline-code">save_interval</code>. Checkpoint files are always written.
+</li>
+<li><strong><code class="inline-code">latest_step()</code> is a completeness filter, not a freshness scan.</strong> It globs <code class="inline-code">model_step_*.safetensors</code> and requires all three files; a step whose meta or optimizer file was deleted (or whose save was interrupted) is invisible to auto-resume.
+</li>
+<li><strong>Meta is the only home of the schedule position.</strong> Deleting <code class="inline-code">meta_step_N.json</code> silently restarts the LR warmup (§8.3). Never hand-prune a checkpoint to "just the weights."
+</li>
+<li><strong>Final checkpoints look identical to periodic ones on disk.</strong> <code class="inline-code">tag=&quot;final&quot;</code> lives only in the JSON; retention tooling must read meta, not filenames.
+</li>
+<li><strong>The three files are not a transaction.</strong> Crash between writes → orphaned <code class="inline-code">model_step_N.safetensors</code> + possibly <code class="inline-code">optim_step_N.pt</code>; harmless (skipped) but they eat disk. Retention is unwired (the code comment says "Only callers were tests; training loop uses save + latest_step. Add back when retention is wired in") — at <code class="inline-code">save_interval: 4000</code> a full 512k-step run writes ~127 steps × ~5.4 GiB ≈ ~0.7 TB. Plan disk or add pruning before a real run.
+</li>
+<li><strong>Temps can litter on hard kills.</strong> <code class="inline-code">*.safetensors.tmp</code> / <code class="inline-code">*.pt.tmp</code> / <code class="inline-code">*.json.tmp</code> orphans are ignored by discovery but never auto-cleaned.
+</li>
+<li><strong>Non-tied consumers get a dead head.</strong> Loading a tied checkpoint into <code class="inline-code">weight_tying: false</code> silently leaves <code class="inline-code">head.weight</code> at init — check the config, not the log.
+</li>
+</ul>
+<h2 id="11-check-your-understanding" class="heading-anchor">11. Check Your Understanding<a href="#11-check-your-understanding" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ol class="doc-list">
+<li>A save is interrupted by <code class="inline-code">kill -9</code> after <code class="inline-code">model_step_4000.safetensors</code> lands but before <code class="inline-code">optim_step_4000.pt</code>. What happens on relaunch? <em>(Answer: <code class="inline-code">latest_step</code> finds 4000 incomplete → skips it → resumes from the previous complete step, e.g. 0. The orphaned weight file is never selected.)</em>
+</li>
+<li><code class="inline-code">meta_step_8000.json</code> is deleted by accident; the other two files survive. What does auto-resume do, and what is the danger? <em>(Answer: 8000 is no longer "complete" so it is skipped; resuming <code class="inline-code">--resume 8000</code> loads weights + optimizer but restores neither scheduler state nor <code class="inline-code">opt_steps</code>, restarting the LR warmup at <code class="inline-code">global_step = 8000</code> — a near-zero LR that is invisible in the loss curve for a while.)</em>
+</li>
+<li>Why does loading a tied checkpoint report <code class="inline-code">head.weight</code> missing yet still produce a correctly tied, correctly trained head? <em>(Answer: the checkpoint stores the embedding once; <code class="inline-code">head.weight</code> is the same storage as <code class="inline-code">embed.weight</code> (set in <code class="inline-code">Transformer.__init__</code>), so the in-place copy into <code class="inline-code">embed.weight</code> writes through to the head. <code class="inline-code">strict=False</code> is what tolerates the cosmetic missing key.)</em>
+</li>
+<li>You launch <code class="inline-code">python training/pretrain.py --config configs/pretrain_a100_422m.yaml --resume 4000</code> in a directory whose newest complete step is 12000. Which step does training actually continue from, and why? <em>(Answer: 12000 — <code class="inline-code">main</code> loads 4000, then <code class="inline-code">train()</code> unconditionally auto-resumes the newest complete step. <code class="inline-code">--resume</code> is decisive only when it names the newest complete step.)</em>
+</li>
+</ol>
+<hr class='doc-hr'>
+<h2 id="references" class="heading-anchor">References<a href="#references" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><a href="../training.html" class="doc-link">Training Pipeline</a> — checkpoint format inside the loop, NaN-guard rollback
+</li>
+<li><a href="../concepts/kernels-and-ops.html" class="doc-link">Operations, Testing &amp; Triton Kernels</a> — atomic checkpoint system, VRAM budget
+</li>
+<li><a href="../references/R8_utils_api.html" class="doc-link">R8 — Utils API</a> - <code class="inline-code">CheckpointManager</code> save/load/resume/atomicity contract
+</li>
+<li><a href="../guides/G1_debugging_playbook.html" class="doc-link">G1 — Debugging Playbook</a> - NaN rollback
+</li>
+<li><a href="../guides/contributing.html" class="doc-link">Contributing</a> — doc/test expectations
+</li>
+</ul>
+                </article>
+
+                
+
+                <div class="doc-footer-nav">
+                    <a href="../../docs/guides/G4_benchmarking.html" class="nav-card prev-card"><span class="card-label">← Previous</span><span class="card-title">G4 — Benchmarking</span></a>
+                    <a href="../../docs/guides/contributing.html" class="nav-card next-card"><span class="card-label">Next →</span><span class="card-title">Contributing Guide</span></a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar Table of Contents -->
+        <aside class="toc-sidebar">
+            <div class="toc-inner">
+                <div class="toc-title">On This Page</div>
+                <ul class="toc-list"><li class="toc-h2"><a href="#1-60-second-summary" class="toc-link">1. 60-Second Summary</a></li><li class="toc-h2"><a href="#2-why-checkpoints-are-three-files" class="toc-link">2. Why Checkpoints Are Three Files</a></li><li class="toc-h2"><a href="#3-the-file-format" class="toc-link">3. The File Format</a></li><li class="toc-h3"><a href="#31---weights-only" class="toc-link">3.1  — weights only</a></li><li class="toc-h3"><a href="#32---optimizer-state" class="toc-link">3.2  — optimizer state</a></li><li class="toc-h3"><a href="#33---everything-else" class="toc-link">3.3  — everything else</a></li><li class="toc-h3"><a href="#34-what-it-costs-derived-estimates" class="toc-link">3.4 What it costs (derived estimates)</a></li><li class="toc-h2"><a href="#4-atomicity-mechanics" class="toc-link">4. Atomicity Mechanics</a></li><li class="toc-h2"><a href="#5-shared-tensor-dedup-and-weight-tying" class="toc-link">5. Shared-Tensor Dedup and Weight Tying</a></li><li class="toc-h2"><a href="#6-save-flow" class="toc-link">6. Save Flow</a></li><li class="toc-h2"><a href="#7-load-and-resume-flow" class="toc-link">7. Load and Resume Flow</a></li><li class="toc-h3"><a href="#71-the-resume-decision-tree" class="toc-link">7.1 The resume decision tree</a></li><li class="toc-h3"><a href="#72--the-ordering-nuance" class="toc-link">7.2 : the ordering nuance</a></li><li class="toc-h2"><a href="#8-disaster-recovery" class="toc-link">8. Disaster Recovery</a></li><li class="toc-h3"><a href="#81-missing-optimizer-file" class="toc-link">8.1 Missing optimizer file ()</a></li><li class="toc-h3"><a href="#82-corrupt-or-truncated" class="toc-link">8.2 Corrupt or truncated </a></li><li class="toc-h3"><a href="#83-missing-or-corrupt---the-silent-hazard" class="toc-link">8.3 Missing or corrupt  — the silent hazard</a></li><li class="toc-h3"><a href="#84-nan-guard-rollback" class="toc-link">8.4 NaN guard rollback</a></li><li class="toc-h2"><a href="#9-inference-loading-the-weight-tying-nuance" class="toc-link">9. Inference Loading: the Weight-Tying Nuance</a></li><li class="toc-h2"><a href="#10-pitfalls-checklist" class="toc-link">10. Pitfalls Checklist</a></li><li class="toc-h2"><a href="#11-check-your-understanding" class="toc-link">11. Check Your Understanding</a></li><li class="toc-h2"><a href="#references" class="toc-link">References</a></li></ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            if (window.hljs) {
+                hljs.highlightAll();
+            }
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+                    throwOnError: false
+                });
+            }
+        });
+    </script>
+    <script defer src="../../assets/portal.js"></script>
+</body>
+</html>

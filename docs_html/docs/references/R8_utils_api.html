@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>R8 — Utils API | DeepSeek-v3-Lite Documentation</title>
+    <!-- Fonts — one voice for the whole portal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Highlight.js for Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- KaTeX for LaTeX Math -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="../../assets/style.css">
+    <script>
+(function () {
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) document.documentElement.classList.add('booting');
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            document.documentElement.classList.remove('booting');
+            var ov = document.getElementById('boot-overlay');
+            if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+        }, reduced ? 0 : 350);
+    });
+})();
+</script>
+</head>
+<body>
+    <div id="boot-overlay" aria-hidden="true"><div class="boot-inner"><div class="boot-wordmark">DEEPSEEK-V3-LITE</div><div class="boot-line">loading weights <span class="boot-bar">[░░░░░░░░░░░░] 0%</span></div></div></div>
+    <!-- Top Header -->
+    <header class="site-header">
+        <div class="header-left">
+            <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
+            <a href="../../index.html" class="brand-logo">
+                <span class="brand-name">DeepSeek-v3-Lite</span>
+                <span class="brand-badge">Docs</span>
+            </a>
+        </div>
+        <div class="header-right">
+            <a href="../../index.html" class="header-link">Portal Home</a>
+            <a href="../../README.html" class="header-link">GitHub README</a>
+        </div>
+    </header>
+
+    <div class="app-layout">
+        <!-- Left Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-inner">
+                <div class="sidebar-search"><input type="text" id="navSearch" placeholder="Search docs..." onkeyup="filterNav()"></div>
+<div class="nav-group">
+<div class="nav-group-title">Core</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../README.html" class="nav-link ">Project Overview (README)</a></li><li class="nav-item"><a href="../../AGENTS.html" class="nav-link ">AGENTS & System Architecture</a></li><li class="nav-item"><a href="../../SKILLS.html" class="nav-link ">Skills Reference</a></li><li class="nav-item"><a href="../../docs/README.html" class="nav-link ">Documentation Index</a></li><li class="nav-item"><a href="../../docs/training.html" class="nav-link ">Training Architecture & Pipeline</a></li><li class="nav-item"><a href="../../docs/inference.html" class="nav-link ">Inference & Speculative Decoding</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Concepts</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/concepts/foundations.html" class="nav-link ">Foundations & Architecture</a></li><li class="nav-item"><a href="../../docs/concepts/attention-and-precision.html" class="nav-link ">MLA & Mixed Precision</a></li><li class="nav-item"><a href="../../docs/concepts/moe-mtp.html" class="nav-link ">DeepSeekMoE & MTP</a></li><li class="nav-item"><a href="../../docs/concepts/parallelism.html" class="nav-link ">DualPipe Parallelism</a></li><li class="nav-item"><a href="../../docs/concepts/data-pipeline.html" class="nav-link ">Data Pipeline</a></li><li class="nav-item"><a href="../../docs/concepts/kernels-and-ops.html" class="nav-link ">Operations & Triton Kernels</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/guides/getting-started.html" class="nav-link ">Getting Started</a></li><li class="nav-item"><a href="../../docs/guides/G1_debugging_playbook.html" class="nav-link ">G1 — Debugging Playbook</a></li><li class="nav-item"><a href="../../docs/guides/G2_mup_and_lr_tuning.html" class="nav-link ">G2 — μP & LR Tuning</a></li><li class="nav-item"><a href="../../docs/guides/G3_triton_development.html" class="nav-link ">G3 — Triton Development</a></li><li class="nav-item"><a href="../../docs/guides/G4_benchmarking.html" class="nav-link ">G4 — Benchmarking</a></li><li class="nav-item"><a href="../../docs/guides/G5_checkpoint_ops.html" class="nav-link ">G5 — Checkpoint Ops</a></li><li class="nav-item"><a href="../../docs/guides/contributing.html" class="nav-link ">Contributing Guide</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">References</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/references/R1_config_schema.html" class="nav-link ">R1 — Config Schema</a></li><li class="nav-item"><a href="../../docs/references/R2_transformer_api.html" class="nav-link ">R2 — Transformer API</a></li><li class="nav-item"><a href="../../docs/references/R3_mla_api.html" class="nav-link ">R3 — MLA API</a></li><li class="nav-item"><a href="../../docs/references/R4_moe_api.html" class="nav-link ">R4 — MoE API</a></li><li class="nav-item"><a href="../../docs/references/R5_mtp_api.html" class="nav-link ">R5 — MTP API</a></li><li class="nav-item"><a href="../../docs/references/R6_triton_api.html" class="nav-link ">R6 — Triton API</a></li><li class="nav-item"><a href="../../docs/references/R7_training_api.html" class="nav-link ">R7 — Training API</a></li><li class="nav-item"><a href="../../docs/references/R8_utils_api.html" class="nav-link active">R8 — Utils API</a></li><li class="nav-item"><a href="../../docs/references/R9_inference_api.html" class="nav-link ">R9 — Inference API</a></li></ul>
+</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-container">
+                <div class="breadcrumb">
+                    <a href="../../index.html">Docs</a> &gt; <span>References</span> &gt; <span class="current">R8 — Utils API</span>
+                </div>
+                
+                <div class="doc-header">
+                    <h1 class="doc-title">R8 — Utils API</h1>
+                    <div class="doc-meta">
+                        <span class="meta-item"><span class="meta-label">source</span><span class="meta-val">docs/references/R8_utils_api.md</span></span>
+                        <span class="meta-item"><span class="meta-label">words</span><span class="meta-val">3,064</span></span>
+                        <span class="meta-item"><span class="meta-label">read</span><span class="meta-val">~15 min</span></span>
+                    </div>
+                </div>
+
+                <article class="markdown-body" id="articleBody">
+                    <span class="doc-anchor" id="deepseek-v3-lite--r8-utils-api-reference"></span>
+<blockquote><strong>60-second summary.</strong> The <code class="inline-code">utils/</code> package is the training infrastructure that is not the model: <code class="inline-code">utils/checkpoint.py</code> owns the atomic three-file checkpoint triplet (<code class="inline-code">CheckpointManager</code>), <code class="inline-code">utils/logging.py</code> owns the rolling-window console/WandB logger (<code class="inline-code">TrainingLogger</code> plus the <code class="inline-code">init_logging</code>/<code class="inline-code">get_logger</code> process-global pair), and <code class="inline-code">utils/memory.py</code> owns the CPU-arithmetic VRAM budget estimator (<code class="inline-code">estimate_model_memory_gb</code>, <code class="inline-code">assert_fits_in_available_gpu</code>). All three are pure-PyTorch, CPU-runnable, and exercised directly by <code class="inline-code">tests/test_utils.py</code>; the training loop reaches them through <code class="inline-code">training/pretrain.py:Pretrainer</code>, and inference through <code class="inline-code">inference/generate.py:main</code>.<br><strong>Scope.</strong> Every public symbol of the three modules, with exact signatures, defaults, shape/atomicity contracts, and callers. Reference style: one-line purpose per entry, no tutorial prose (see <a href="../training.html" class="doc-link">Training Pipeline</a> for the loop walkthrough, <a href="../concepts/kernels-and-ops.html" class="doc-link">Kernels &amp; Ops</a> for the ops view, and <a href="../guides/G5_checkpoint_ops.html" class="doc-link">G5 — Checkpoint Ops</a> for the recovery playbook).<br><strong>Anchor convention.</strong> Symbols are cited as <code class="inline-code">utils/&lt;file&gt;.py:Symbol</code> (path prefix + <code class="inline-code">Class.method</code> or module-level name). No line anchors. JIT kernels are never cited — the utils layer has none.</blockquote>
+<hr class='doc-hr'>
+<h2 id="1-checkpointmanager" class="heading-anchor">1. CheckpointManager — <code class="inline-code">utils/checkpoint.py</code><a href="#1-checkpointmanager" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>One class, one job: save and restore training state <strong>atomically</strong>, with <strong>shared-tensor dedup</strong> (weight tying) and <strong>step discovery</strong> that only ever returns <em>complete</em> checkpoints. <code class="inline-code">utils/checkpoint.py:CheckpointManager</code> is the only public symbol of the module. Files per step <code class="inline-code">N</code>:</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>File</th><th>Contents</th><th>Writer</th></tr></thead><tbody><tr><td><code class="inline-code">model_step_N.safetensors</code></td><td>Model weights (deduped, contiguous)</td><td><code class="inline-code">utils/checkpoint.py:CheckpointManager._atomic_save_safetensors</code></td></tr><tr><td><code class="inline-code">optim_step_N.pt</code></td><td>Optimizer state (<code class="inline-code">torch.save</code>)</td><td><code class="inline-code">utils/checkpoint.py:CheckpointManager._atomic_save_torch</code></td></tr><tr><td><code class="inline-code">meta_step_N.json</code></td><td>Resume contract (step, scheduler, opt_steps, config, …)</td><td><code class="inline-code">utils/checkpoint.py:CheckpointManager._atomic_save_json</code></td></tr></tbody></table></div>
+<h3 id="11-constructor" class="heading-anchor">1.1 Constructor<a href="#11-constructor" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def __init__(self, save_dir: str):</code></pre></div>
+<ul class="doc-list">
+<li><strong>Behavior.</strong> <code class="inline-code">self.save_dir = Path(save_dir)</code>; <code class="inline-code">mkdir(parents=True, exist_ok=True)</code> — the directory is created on construction, so a fresh run needs no pre-flight.
+</li>
+<li><strong>Callers.</strong> <code class="inline-code">training/pretrain.py:Pretrainer.__init__</code> (<code class="inline-code">self.ckpt_manager = CheckpointManager(config.checkpoint_dir)</code>); <code class="inline-code">inference/generate.py:main</code> (directory form of <code class="inline-code">--checkpoint</code>); <code class="inline-code">scripts/e2e_test_gpu.py</code>; <code class="inline-code">tests/test_utils.py</code> (fixture <code class="inline-code">tmp_ckpt_dir</code>).
+</li>
+</ul>
+<h3 id="12" class="heading-anchor">1.2 <code class="inline-code">save</code><a href="#12" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def save(self, model: torch.nn.Module, optimizer: torch.optim.Optimizer, step: int,
+         extra_meta: Optional[dict] = None, state_dict: Optional[dict] = None) -&gt; None:</code></pre></div>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Param</th><th>Default</th><th>Contract</th></tr></thead><tbody><tr><td><code class="inline-code">model</code></td><td>—</td><td>Only used for <code class="inline-code">state_dict()</code> when <code class="inline-code">state_dict</code> is <code class="inline-code">None</code>; never moved or mutated.</td></tr><tr><td><code class="inline-code">optimizer</code></td><td>—</td><td><code class="inline-code">optimizer.state_dict()</code> is written to <code class="inline-code">optim_step_N.pt</code> unconditionally.</td></tr><tr><td><code class="inline-code">step</code></td><td>—</td><td>The step number; <strong>always</strong> wins in the meta file.</td></tr><tr><td><code class="inline-code">extra_meta</code></td><td><code class="inline-code">None</code></td><td>Arbitrary JSON-serializable dict merged into <code class="inline-code">meta_step_N.json</code>; a caller-supplied <code class="inline-code">&quot;step&quot;</code> key is <strong>dropped</strong> (<code class="inline-code">meta = {&quot;step&quot;: step, **{k: v for k, v in (extra_meta or {}).items() if k != &quot;step&quot;}}</code>).</td></tr><tr><td><code class="inline-code">state_dict</code></td><td><code class="inline-code">None</code></td><td>Pre-built state to write instead of <code class="inline-code">model.state_dict()</code> — the hook <code class="inline-code">Pretrainer</code> uses to inject <code class="inline-code">mtp.*</code> keys and drop <code class="inline-code">head.weight</code>.</td></tr></tbody></table></div>
+<ul class="doc-list">
+<li><strong>Write order.</strong> (1) safetensors, (2) optimizer <code class="inline-code">.pt</code>, (3) meta <code class="inline-code">.json</code> — each individually atomic, the triplet <strong>not</strong> transactional (see §1.6).
+</li>
+<li><strong>Logs.</strong> <code class="inline-code">[checkpoint] saved step %d → %s</code>.
+</li>
+<li><strong>Callers.</strong> <code class="inline-code">training/pretrain.py:Pretrainer.save_checkpoint</code> is the only production caller: it pre-filters <code class="inline-code">head.weight</code> when <code class="inline-code">weight_tying</code> is on, merges <code class="inline-code">mtp.&lt;key&gt;</code> MTP weights, and passes <code class="inline-code">extra_meta={&quot;scheduler&quot;: …, &quot;opt_steps&quot;: …, &quot;tag&quot;: …, &quot;config&quot;: …, &quot;has_mtp&quot;: …}</code>. Tests call it directly.
+</li>
+</ul>
+<h3 id="13" class="heading-anchor">1.3 <code class="inline-code">load</code><a href="#13" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def load(self, model: torch.nn.Module, step: int, device: str = &quot;cuda&quot;,
+         optimizer: Optional[torch.optim.Optimizer] = None, strict: bool = True) -&gt; dict</code></pre></div>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Param</th><th>Default</th><th>Contract</th></tr></thead><tbody><tr><td><code class="inline-code">model</code></td><td>—</td><td>Must already be constructed (tying re-established); weights copied in via <code class="inline-code">load_state_dict(weights, strict=False)</code> — <strong>always</strong> non-strict internally.</td></tr><tr><td><code class="inline-code">step</code></td><td>—</td><td>Exact step; missing <code class="inline-code">model_step_N.safetensors</code> → <code class="inline-code">FileNotFoundError</code> listing <code class="inline-code">_list_steps()</code>.</td></tr><tr><td><code class="inline-code">device</code></td><td><code class="inline-code">&quot;cuda&quot;</code></td><td>Placement for <code class="inline-code">load_file(..., device=device)</code> and <code class="inline-code">torch.load(..., map_location=device)</code>. CPU callers must pass <code class="inline-code">device=&quot;cpu&quot;</code> (see §5).</td></tr><tr><td><code class="inline-code">optimizer</code></td><td><code class="inline-code">None</code></td><td>If given, <code class="inline-code">optim_step_N.pt</code> is loaded with <code class="inline-code">weights_only=True</code>; a missing <code class="inline-code">.pt</code> only <strong>warns</strong> ("optimizer will start from scratch") — never fails.</td></tr><tr><td><code class="inline-code">strict</code></td><td><code class="inline-code">True</code></td><td>If <code class="inline-code">True</code>, any missing or unexpected key raises <code class="inline-code">RuntimeError</code> (first five keys in the message); if <code class="inline-code">False</code>, the same audit is a <code class="inline-code">logger.warning</code>.</td></tr></tbody></table></div>
+<ul class="doc-list">
+<li><strong>Missing/unexpected audit.</strong> <code class="inline-code">missing, unexpected = model.load_state_dict(weights, strict=False)</code>; both lists are checked. With weight tying, <code class="inline-code">head.weight</code> is <em>expected</em> to be missing — the shared storage is restored through <code class="inline-code">embed.weight</code> (see §1.7).
+</li>
+<li><strong>Return.</strong> The parsed <code class="inline-code">meta_step_N.json</code> dict (the resume contract: <code class="inline-code">scheduler</code>, <code class="inline-code">opt_steps</code>, <code class="inline-code">config</code>, <code class="inline-code">has_mtp</code>, <code class="inline-code">tag</code>, <code class="inline-code">step</code>); if the meta file is absent, <code class="inline-code">{&quot;step&quot;: step}</code>.
+</li>
+<li><strong>Callers.</strong> <code class="inline-code">training/pretrain.py:Pretrainer.load_checkpoint</code> (<code class="inline-code">device=str(self.device)</code>, <code class="inline-code">optimizer=self.optimizer</code>, <code class="inline-code">strict=False</code>); <code class="inline-code">inference/generate.py:main</code> (<code class="inline-code">strict=False</code>); <code class="inline-code">scripts/e2e_test_gpu.py</code>; <code class="inline-code">tests/test_utils.py</code>.
+</li>
+</ul>
+<h3 id="14" class="heading-anchor">1.4 <code class="inline-code">latest_step</code><a href="#14" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def latest_step(self) -&gt; Optional[int]:</code></pre></div>
+<ul class="doc-list">
+<li><strong>Behavior.</strong> <code class="inline-code">steps = self._list_steps()</code>; returns the first step in <strong>descending</strong> order for which <code class="inline-code">_checkpoint_complete(s)</code> is true; <code class="inline-code">None</code> if no complete checkpoint exists. A torn step (crash between the three writes) is invisible to resume.
+</li>
+<li><strong>Callers.</strong> <code class="inline-code">training/pretrain.py:Pretrainer._find_latest_checkpoint</code> (auto-resume at <code class="inline-code">train()</code> start and NaN-guard rollback); <code class="inline-code">inference/generate.py:main</code> (directory-form <code class="inline-code">--checkpoint</code>); <code class="inline-code">scripts/e2e_test_gpu.py</code>; <code class="inline-code">tests/test_utils.py</code>.
+</li>
+</ul>
+<h3 id="15-atomic-write-machinery" class="heading-anchor">1.5 Atomic write machinery<a href="#15-atomic-write-machinery" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="3"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">import contextlib
+@contextlib.contextmanager
+def _atomic_write(self, path: Path, suffix: str):</code></pre></div>
+<ul class="doc-list">
+<li><strong>Guarantee.</strong> <code class="inline-code">tempfile.mkstemp(dir=self.save_dir, suffix=suffix)</code> → close fd → <code class="inline-code">yield tmp</code> → on success <code class="inline-code">os.replace(tmp, path)</code>. <code class="inline-code">os.replace</code> is POSIX-atomic on the same filesystem (the temp file lives in the same directory), so a crash mid-write leaves either the old complete file or nothing — never a half-written file under the final name. On <strong>any</strong> exception the temp file is unlinked before re-raising.
+</li>
+<li><strong>Quirk.</strong> <code class="inline-code">import contextlib</code> sits <em>inside</em> the class body, so <code class="inline-code">contextlib</code> is a class attribute; the decorator is applied at class-definition time. Cosmetic, but it means <code class="inline-code">CheckpointManager.contextlib</code> exists.
+</li>
+<li><strong>Callers.</strong> Only the three <code class="inline-code">_atomic_save_*</code> helpers; the crash path is pinned by <code class="inline-code">tests/test_utils.py</code> (<code class="inline-code">test_atomic_save_crash_recovery</code> patches <code class="inline-code">save_file</code> to raise "disk full" and asserts no <code class="inline-code">.tmp</code>/partial file survives).
+</li>
+</ul>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _atomic_save_safetensors(self, state: dict, path: Path) -&gt; None:</code></pre></div>
+<ul class="doc-list">
+<li><strong>Dedup.</strong> Iterates <code class="inline-code">state.items()</code>; a key whose tensor <code class="inline-code">data_ptr()</code> was already seen is <strong>skipped</strong>; survivors are stored as <code class="inline-code">v.contiguous()</code> (safetensors requires contiguous storage). The duplicate key is dropped; <code class="inline-code">load_state_dict(strict=False)</code> restores it through the surviving shared storage.
+</li>
+<li><strong>Write.</strong> <code class="inline-code">save_file(deduped, tmp)</code> inside <code class="inline-code">_atomic_write(path, &quot;.safetensors.tmp&quot;)</code>.
+</li>
+</ul>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _atomic_save_torch(self, obj, path: Path) -&gt; None:
+def _atomic_save_json(self, obj: dict, path: Path) -&gt; None:</code></pre></div>
+<ul class="doc-list">
+<li><code class="inline-code">_atomic_save_torch</code>: <code class="inline-code">torch.save(obj, tmp)</code> inside <code class="inline-code">_atomic_write(path, &quot;.pt.tmp&quot;)</code>.
+</li>
+<li><code class="inline-code">_atomic_save_json</code>: <code class="inline-code">json.dump(obj, f, indent=2, default=str)</code> inside <code class="inline-code">_atomic_write(path, &quot;.json.tmp&quot;)</code>. <code class="inline-code">default=str</code> means non-JSON values (e.g. a stray tensor) serialize as their string repr instead of failing — see §5.
+</li>
+</ul>
+<h3 id="16-step-discovery" class="heading-anchor">1.6 Step discovery<a href="#16-step-discovery" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _list_steps(self) -&gt; list:
+def _checkpoint_complete(self, step: int) -&gt; bool:</code></pre></div>
+<ul class="doc-list">
+<li><code class="inline-code">utils/checkpoint.py:CheckpointManager._list_steps</code>: globs <code class="inline-code">model_step_*.safetensors</code>, parses <code class="inline-code">int(p.stem.split(&quot;_&quot;)[-1])</code>, silently skips unparseable names. Returns an <strong>unsorted</strong> list.
+</li>
+<li><code class="inline-code">utils/checkpoint.py:CheckpointManager._checkpoint_complete(step)</code>: <code class="inline-code">all(...)</code> of the three file names existing for that step. This is the only definition of "resumable" in the repo.
+</li>
+</ul>
+<h3 id="17-shared-tensor-dedup-semantics-the-contract" class="heading-anchor">1.7 Shared-tensor dedup semantics (the contract)<a href="#17-shared-tensor-dedup-semantics-the-contract" class="anchor-link" aria-label="Link to section">#</a></h3>
+<ol class="doc-list">
+<li><strong>Two layers of dedup.</strong> <code class="inline-code">training/pretrain.py:Pretrainer.save_checkpoint</code> drops the <code class="inline-code">head.weight</code> key outright when <code class="inline-code">weight_tying</code> is on; <code class="inline-code">_atomic_save_safetensors</code> dedups <strong>by <code class="inline-code">data_ptr()</code></strong> as a second line of defense that would also catch any other accidentally shared storage. The file therefore contains exactly one copy of the tied embedding.
+</li>
+<li><strong>Restore.</strong> <code class="inline-code">models/transformer.py:Transformer.__init__</code> re-establishes the tie (<code class="inline-code">self.head.weight = self.embed.weight</code> — one <code class="inline-code">Parameter</code> object) <em>before</em> <code class="inline-code">load</code> runs, so <code class="inline-code">load_state_dict(strict=False)</code> copies into <code class="inline-code">embed.weight</code>, which <em>is</em> the head's storage. <code class="inline-code">head.weight</code> shows up in the missing-keys audit and is expected: a warning under <code class="inline-code">strict=False</code>, an error under <code class="inline-code">strict=True</code>.
+</li>
+<li><strong>MTP keys.</strong> MTP weights travel in the same safetensors file under the <code class="inline-code">mtp.</code> prefix (<code class="inline-code">mtp.mtp_modules.*</code>); <code class="inline-code">training/pretrain.py:Pretrainer.load_checkpoint</code> strips the prefix and restores them into the MTP module with <code class="inline-code">strict=False</code>. See <a href="../concepts/moe-mtp.html" class="doc-link">DeepSeekMoE &amp; MTP</a> and <a href="./R5_mtp_api.html" class="doc-link">R5 — MTP API</a>.
+</li>
+</ol>
+<hr class='doc-hr'>
+<h2 id="2-traininglogger" class="heading-anchor">2. TrainingLogger — <code class="inline-code">utils/logging.py</code><a href="#2-traininglogger" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Step-driven console logger with an optional WandB mirror (<code class="inline-code">utils/logging.py:TrainingLogger</code>). Prints a rolling-window summary every <code class="inline-code">log_interval</code> steps; the window is the losses accumulated since the last logged step.</p>
+<h3 id="21-constructor" class="heading-anchor">2.1 Constructor<a href="#21-constructor" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def __init__(self, log_interval: int = 10, seq_len: int = 1024, batch_size: int = 1):</code></pre></div>
+<p><code class="inline-code">utils/logging.py:TrainingLogger.__init__</code> stores the three cadence parameters and initializes the window/clock state:</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Param</th><th>Default</th><th>Contract</th></tr></thead><tbody><tr><td><code class="inline-code">log_interval</code></td><td><code class="inline-code">10</code></td><td>Print cadence in optimizer steps; <code class="inline-code">log()</code> early-returns unless <code class="inline-code">step % log_interval == 0</code>.</td></tr><tr><td><code class="inline-code">seq_len</code></td><td><code class="inline-code">1024</code></td><td>Tokens per sequence — must match <code class="inline-code">model.max_seq_len</code> or the tps line is wrong.</td></tr><tr><td><code class="inline-code">batch_size</code></td><td><code class="inline-code">1</code></td><td>Micro-batch size — <strong>included in the tps arithmetic</strong> (see §2.2).</td></tr></tbody></table></div>
+<ul class="doc-list">
+<li><strong>WandB opt-in.</strong> If <code class="inline-code">WANDB_PROJECT</code> is set in the environment, <code class="inline-code">wandb.init(project=…, name=os.environ.get(&quot;WANDB_RUN_NAME&quot;), reinit=True)</code> runs at construction; <code class="inline-code">ImportError</code> prints <code class="inline-code">[logging] wandb not installed -- skipping WandB integration</code> and continues. The decision is frozen at construction time — changing the env var mid-run has no effect.
+</li>
+<li><strong>Callers.</strong> <code class="inline-code">utils/logging.py:init_logging</code>, <code class="inline-code">utils/logging.py:get_logger</code> (lazy default), and tests.
+</li>
+</ul>
+<h3 id="22" class="heading-anchor">2.2 <code class="inline-code">log</code><a href="#22" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def log(self, step: int, loss: float, metrics: Optional[Dict[str, float]] = None, lr: float = 0.0) -&gt; None:</code></pre></div>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Param</th><th>Default</th><th>Contract</th></tr></thead><tbody><tr><td><code class="inline-code">step</code></td><td>—</td><td>Optimizer step; the cadence test is <code class="inline-code">step % self.log_interval != 0</code> → early return (window keeps accumulating).</td></tr><tr><td><code class="inline-code">loss</code></td><td>—</td><td>Appended to <code class="inline-code">_loss_window</code>; averaged over the window on a logged step.</td></tr><tr><td><code class="inline-code">metrics</code></td><td><code class="inline-code">None</code></td><td>Extra floats printed as <code class="inline-code">k=v</code> (<code class="inline-code">.4f</code>) and forwarded to WandB as <code class="inline-code">train/{k}</code>.</td></tr><tr><td><code class="inline-code">lr</code></td><td><code class="inline-code">0.0</code></td><td>Printed as <code class="inline-code">lr={lr:.2e}</code>; forwarded as <code class="inline-code">train/lr</code>.</td></tr></tbody></table></div>
+<ul class="doc-list">
+<li><strong>Throughput line (batch_size included).</strong> <code class="inline-code">tokens_per_sec = (log_interval * seq_len * batch_size) / elapsed</code>, where <code class="inline-code">elapsed = max(time.time() - self._step_start, 1e-6)</code>. The window is exactly <code class="inline-code">log_interval</code> micro-batches of <code class="inline-code">batch_size × seq_len</code> tokens each — the logger assumes every interval consumed exactly that many tokens.
+</li>
+<li><strong>PPL.</strong> <code class="inline-code">ppl = torch.tensor(avg_loss).exp().item()</code> — nats → perplexity; see <a href="../concepts/foundations.html" class="doc-link">Foundations &amp; Architecture</a> for the loss/PPL relationship.
+</li>
+<li><strong>Output.</strong> <code class="inline-code">step=… | loss=… | ppl=… | lr=… | tps=…</code> plus one <code class="inline-code">k=v</code> per metric. WandB receives <code class="inline-code">train/loss</code>, <code class="inline-code">train/ppl</code>, <code class="inline-code">train/lr</code>, <code class="inline-code">train/tokens_per_sec</code> (+ <code class="inline-code">train/{k}</code>), logged with <code class="inline-code">step=step</code>.
+</li>
+<li><strong>State reset.</strong> On a logged step, <code class="inline-code">_loss_window = []</code> and <code class="inline-code">_step_start = time.time()</code>.
+</li>
+<li><strong>Callers.</strong> <code class="inline-code">training/pretrain.py:Pretrainer.train</code> — once per optimizer step, with <code class="inline-code">lr=lr</code> and <code class="inline-code">metrics=log_metrics</code> (e.g. <code class="inline-code">mtp_loss</code>, <code class="inline-code">balance_loss</code>). This is the only host round-trip in the loop: <code class="inline-code">.item()</code> is called once per log step, not per micro-step.
+</li>
+</ul>
+<h3 id="23-module-level-factory-pair" class="heading-anchor">2.3 Module-level factory pair<a href="#23-module-level-factory-pair" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="4"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">_logger: Optional[TrainingLogger] = None
+
+def init_logging(log_interval: int = 10, seq_len: int = 1024, batch_size: int = 1) -&gt; None:
+def get_logger() -&gt; TrainingLogger:</code></pre></div>
+<ul class="doc-list">
+<li><code class="inline-code">utils/logging.py:init_logging</code> replaces the process-global <code class="inline-code">_logger</code> with a fresh <code class="inline-code">TrainingLogger(log_interval=…, seq_len=…, batch_size=…)</code>. <strong>Caller:</strong> <code class="inline-code">training/pretrain.py:Pretrainer.__init__</code> — <code class="inline-code">init_logging(config.log_every, seq_len=config.max_seq_len, batch_size=config.batch_size)</code>.
+</li>
+<li><code class="inline-code">utils/logging.py:get_logger</code> returns the global, lazily constructing a default-parameter <code class="inline-code">TrainingLogger()</code> if <code class="inline-code">init_logging</code> was never called. <strong>Caller:</strong> <code class="inline-code">training/pretrain.py:Pretrainer.__init__</code> — <code class="inline-code">self.logger = get_logger()</code>.
+</li>
+<li>The pair exists so the logger's construction-time needs (<code class="inline-code">seq_len</code>, <code class="inline-code">batch_size</code>) are satisfied before the loop starts, while the loop itself only holds a handle.
+</li>
+</ul>
+<hr class='doc-hr'>
+<h2 id="3-memory-estimator" class="heading-anchor">3. Memory estimator — <code class="inline-code">utils/memory.py</code><a href="#3-memory-estimator" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>CPU-arithmetic VRAM budget estimator (no GPU needed) used by <code class="inline-code">scripts/microbench_a100.py</code> and the docs' memory sections. Component bytes (BF16, AdamW FP32): params = 2×N, optim = 12×N, KV = batch·seq·(kv_lora+qk_rope)·2, activations = 24×B·S·D·L (grad-ckpt) or 36× (without). <strong>No GPU training run has ever executed — every figure this module produces is an estimate, not a measurement</strong> (<code class="inline-code">.benchmarks/</code> is empty).</p>
+<h3 id="31-module-constant" class="heading-anchor">3.1 Module constant<a href="#31-module-constant" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">STATIC_PYTORCH_OVERHEAD_GB = 13.7</code></pre></div>
+<p><code class="inline-code">utils/memory.py:STATIC_PYTORCH_OVERHEAD_GB</code> — approx peak overhead from CUDA context + NCCL + caching allocator (A100 80 GB, PyTorch 2.x); empirically ≤ 17% of device total. Consumed by <code class="inline-code">utils/memory.py:_detect_overhead_gb</code>.</p>
+<h3 id="32-private-arithmetic-helpers" class="heading-anchor">3.2 Private arithmetic helpers<a href="#32-private-arithmetic-helpers" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _deduped_numel(model: nn.Module) -&gt; int:</code></pre></div>
+<p><code class="inline-code">utils/memory.py:_deduped_numel</code> — total parameter count with shared tensors counted <strong>once by <code class="inline-code">id(p)</code></strong> (Python object identity — the tied head is the <em>same <code class="inline-code">Parameter</code> object</em> as the embedding, so it contributes zero). This is why the estimator agrees with <code class="inline-code">models/transformer.py:count_parameters</code> (411\,632\,256 for the canonical config). Note the difference from checkpoint dedup, which keys on <code class="inline-code">data_ptr()</code>.</p>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _parameter_bytes(model: nn.Module) -&gt; int:
+def _optimiser_bytes(model: nn.Module) -&gt; int:</code></pre></div>
+<ul class="doc-list">
+<li><code class="inline-code">utils/memory.py:_parameter_bytes</code>: <code class="inline-code">_deduped_numel(model) * 2</code> — BF16 working weights.
+</li>
+<li><code class="inline-code">utils/memory.py:_optimiser_bytes</code>: <code class="inline-code">_deduped_numel(model) * 12</code> — FP32 master (4) + first moment (4) + second moment (4). In this repo the FP32 parameter <em>is</em> the master (no separate copy), so the per-param total is 2 + 12 = 14 bytes.
+</li>
+</ul>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _kv_cache_bytes(model: nn.Module, seq_len: int, batch_size: int, dtype_bytes: int = 2) -&gt; int:</code></pre></div>
+<p><code class="inline-code">utils/memory.py:_kv_cache_bytes</code> — sums over <code class="inline-code">model.layers</code>: per layer, <code class="inline-code">batch_size * seq_len * (kv_lora_rank + qk_rope_head_dim) * dtype_bytes</code>; layers without an <code class="inline-code">attn</code> attribute (or missing dims) contribute 0. The cache stores the <strong>compressed latent</strong> (192 + 24 = 216 floats/token/layer), independent of head count — the MLA win (see <a href="../concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a>).</p>
+<div class="code-wrapper" data-lines="4"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _activation_bytes(
+    seq_len: int, batch_size: int, hidden_dim: int, n_layers: int,
+    grad_checkpoint: bool, dtype_bytes: int = 2,
+) -&gt; int:</code></pre></div>
+<p><code class="inline-code">utils/memory.py:_activation_bytes</code> — <code class="inline-code">factor = 24 if grad_checkpoint else 36</code>; returns <code class="inline-code">factor * batch_size * seq_len * hidden_dim * n_layers * dtype_bytes</code>. The 24/36 constants mirror the PaLM formula (PaLM Appendix A).</p>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _infer_dim_n_layers(model: nn.Module) -&gt; tuple[int, int]:</code></pre></div>
+<p><code class="inline-code">utils/memory.py:_infer_dim_n_layers</code> — <code class="inline-code">(hidden_dim, n_layers)</code> for a <code class="inline-code">Transformer</code>-shaped model: <code class="inline-code">model.embed.embedding_dim</code> and <code class="inline-code">len(model.layers)</code> (a <code class="inline-code">nn.ModuleList</code>); <code class="inline-code">(0, 0)</code> for stubs. <code class="inline-code">n_layers</code> counts <strong>all</strong> blocks (2 dense + 16 MoE = 18), matching the config's <code class="inline-code">n_layers: 18</code>.</p>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _detect_overhead_gb() -&gt; float:</code></pre></div>
+<p><code class="inline-code">utils/memory.py:_detect_overhead_gb</code> — CPU: <code class="inline-code">2.0</code>. CUDA: <code class="inline-code">min(STATIC_PYTORCH_OVERHEAD_GB, max(2.0, total_gb * 0.17))</code> where <code class="inline-code">total_gb</code> is <code class="inline-code">torch.cuda.get_device_properties(0).total_memory / 1024**3</code>. A bound, not a measurement.</p>
+<h3 id="33" class="heading-anchor">3.3 <code class="inline-code">estimate_model_memory_gb</code><a href="#33" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="5"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def estimate_model_memory_gb(
+    model: nn.Module, seq_len: int, batch_size: int,
+    grad_checkpoint: bool = True, overhead_gb: float | None = None,
+    dtype_bytes: int = 2, inference: bool = False,
+) -&gt; float:</code></pre></div>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Param</th><th>Default</th><th>Contract</th></tr></thead><tbody><tr><td><code class="inline-code">model</code></td><td>—</td><td>Any <code class="inline-code">nn.Module</code>; dims inferred via <code class="inline-code">_infer_dim_n_layers</code>, params via <code class="inline-code">_deduped_numel</code>.</td></tr><tr><td><code class="inline-code">seq_len</code> / <code class="inline-code">batch_size</code></td><td>—</td><td>Drive KV-cache and activation terms.</td></tr><tr><td><code class="inline-code">grad_checkpoint</code></td><td><code class="inline-code">True</code></td><td>24× vs 36× activation factor.</td></tr><tr><td><code class="inline-code">overhead_gb</code></td><td><code class="inline-code">None</code></td><td><code class="inline-code">None</code> → autodetect via <code class="inline-code">_detect_overhead_gb()</code>.</td></tr><tr><td><code class="inline-code">dtype_bytes</code></td><td><code class="inline-code">2</code></td><td>BF16.</td></tr><tr><td><code class="inline-code">inference</code></td><td><code class="inline-code">False</code></td><td><code class="inline-code">True</code> drops the optimizer (12×N) and activation terms — inference carries no AdamW state and forward activations are dominated by the KV cache.</td></tr></tbody></table></div>
+<ul class="doc-list">
+<li><strong>Formula.</strong> <code class="inline-code">bytes_total = _parameter_bytes(model) + _kv_cache_bytes(model, seq_len, batch_size, dtype_bytes)</code>; if not <code class="inline-code">inference</code>, add <code class="inline-code">_optimiser_bytes(model) + _activation_bytes(seq_len, batch_size, hidden_dim, n_layers, grad_checkpoint, dtype_bytes)</code>. Return <code class="inline-code">(bytes_total / 1024**3) + overhead_gb</code>.
+</li>
+<li><strong>Canonical-config numbers</strong> (batch 8, seq 2048, 18 layers, BF16, 411\,632\,256 deduped params; component subtotal verified by running the estimator on the real model, 2026-08-04 — still estimates): parameters 0.77 GiB, AdamW 4.60 GiB, KV cache 0.12 GiB, activations (grad-ckpt) 10.13 GiB → subtotal ~15.6 GiB; + overhead 2 (CPU) – 13.6 (CUDA) → <strong>~17.6 CPU / ~29.2 CUDA GiB</strong>. With MTP (418\,713\,984 params) the subtotal is ~15.7 GiB. <code class="inline-code">inference=True</code> → ~0.89 GiB. Full table in <a href="../concepts/kernels-and-ops.html" class="doc-link">Kernels &amp; Ops</a> §5.
+</li>
+<li><strong>Callers.</strong> <code class="inline-code">scripts/microbench_a100.py</code> (training-mode estimate); docs chapters 02/10/11/12; <code class="inline-code">tests/test_utils.py</code> (<code class="inline-code">TestMemoryEstimation</code> pins each component's byte arithmetic).
+</li>
+</ul>
+<h3 id="34" class="heading-anchor">3.4 <code class="inline-code">assert_fits_in_available_gpu</code><a href="#34" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def assert_fits_in_available_gpu(estimate_gb: float, safety_margin_gb: float = 0.0) -&gt; None:</code></pre></div>
+<ul class="doc-list">
+<li><strong>Behavior.</strong> No-op on CPU. On CUDA, raises <code class="inline-code">RuntimeError</code> if <code class="inline-code">estimate_gb &gt; available_gb - safety_margin_gb</code> (message includes all three numbers, 2-dp). <code class="inline-code">available_gb</code> = device-0 total memory in GiB.
+</li>
+<li><strong>Callers.</strong> <code class="inline-code">scripts/microbench_a100.py</code> (<code class="inline-code">safety_margin_gb=2.0</code>) so a misconfigured batch size fails loud before the run; <code class="inline-code">tests/test_utils.py</code>. The CPU no-op is what lets the estimator be unit-tested everywhere.
+</li>
+</ul>
+<hr class='doc-hr'>
+<h2 id="4-callers-map-quick-reference" class="heading-anchor">4. Callers map (quick reference)<a href="#4-callers-map-quick-reference" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Symbol</th><th>Production callers</th></tr></thead><tbody><tr><td><code class="inline-code">utils/checkpoint.py:CheckpointManager.__init__</code></td><td><code class="inline-code">training/pretrain.py:Pretrainer.__init__</code>, <code class="inline-code">inference/generate.py:main</code>, <code class="inline-code">scripts/e2e_test_gpu.py</code></td></tr><tr><td><code class="inline-code">utils/checkpoint.py:CheckpointManager.save</code></td><td><code class="inline-code">training/pretrain.py:Pretrainer.save_checkpoint</code></td></tr><tr><td><code class="inline-code">utils/checkpoint.py:CheckpointManager.load</code></td><td><code class="inline-code">training/pretrain.py:Pretrainer.load_checkpoint</code>, <code class="inline-code">inference/generate.py:main</code>, <code class="inline-code">scripts/e2e_test_gpu.py</code></td></tr><tr><td><code class="inline-code">utils/checkpoint.py:CheckpointManager.latest_step</code></td><td><code class="inline-code">training/pretrain.py:Pretrainer._find_latest_checkpoint</code>, <code class="inline-code">inference/generate.py:main</code>, <code class="inline-code">scripts/e2e_test_gpu.py</code></td></tr><tr><td><code class="inline-code">utils/checkpoint.py:CheckpointManager._atomic_write</code> / <code class="inline-code">_atomic_save_safetensors</code> / <code class="inline-code">_atomic_save_torch</code> / <code class="inline-code">_atomic_save_json</code></td><td>internal to <code class="inline-code">save</code>; crash path pinned by <code class="inline-code">tests/test_utils.py</code></td></tr><tr><td><code class="inline-code">utils/logging.py:init_logging</code> / <code class="inline-code">get_logger</code></td><td><code class="inline-code">training/pretrain.py:Pretrainer.__init__</code></td></tr><tr><td><code class="inline-code">utils/logging.py:TrainingLogger.log</code></td><td><code class="inline-code">training/pretrain.py:Pretrainer.train</code> (once per optim step)</td></tr><tr><td><code class="inline-code">utils/memory.py:estimate_model_memory_gb</code></td><td><code class="inline-code">scripts/microbench_a100.py</code>, docs, <code class="inline-code">tests/test_utils.py</code></td></tr><tr><td><code class="inline-code">utils/memory.py:assert_fits_in_available_gpu</code></td><td><code class="inline-code">scripts/microbench_a100.py</code> (margin 2.0), <code class="inline-code">tests/test_utils.py</code></td></tr></tbody></table></div>
+<p>Sibling references: <code class="inline-code">../references/R7_training_api.md</code> (Pretrainer wiring), <code class="inline-code">../references/R2_transformer_api.md</code> (weight tying / <code class="inline-code">count_parameters</code>), <code class="inline-code">../references/R9_inference_api.md</code> (checkpoint resolution in <code class="inline-code">generate</code>), <code class="inline-code">../guides/G5_checkpoint_ops.md</code> (recovery playbook).</p>
+<hr class='doc-hr'>
+<h2 id="5-pitfalls" class="heading-anchor">5. Pitfalls<a href="#5-pitfalls" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><strong><code class="inline-code">load</code> defaults to <code class="inline-code">device=&quot;cuda&quot;</code>.</strong> On a CPU-only box, <code class="inline-code">CheckpointManager.load(model, step)</code> without <code class="inline-code">device=&quot;cpu&quot;</code> fails at <code class="inline-code">load_file</code>. <code class="inline-code">Pretrainer</code> and <code class="inline-code">generate.py</code> always pass an explicit device; direct callers must too.
+</li>
+<li><strong><code class="inline-code">strict=True</code> + weight tying = error.</strong> The checkpoint legitimately lacks <code class="inline-code">head.weight</code>; loading with the default <code class="inline-code">strict=True</code> raises <code class="inline-code">RuntimeError</code> on the missing key. Production paths always pass <code class="inline-code">strict=False</code>; the audit then reports the missing key as a warning.
+</li>
+<li><strong>The triplet is not transactional.</strong> Each file is atomic, but a crash between the three writes leaves an incomplete step. <code class="inline-code">latest_step</code>/<code class="inline-code">_checkpoint_complete</code> are the only safe resume selectors — never resume from a bare <code class="inline-code">model_step_N.safetensors</code> you found by globbing.
+</li>
+<li><strong><code class="inline-code">_list_steps</code> parses stems.</strong> A file named <code class="inline-code">model_step_abc.safetensors</code> is silently skipped; a step whose safetensors is missing is invisible even if the other two files exist.
+</li>
+<li><strong><code class="inline-code">json.dump(..., default=str)</code> stringifies non-JSON values.</strong> <code class="inline-code">Pretrainer</code>'s meta is JSON-safe only because <code class="inline-code">LambdaLR.state_dict()</code> holds floats/ints; a stray tensor in <code class="inline-code">extra_meta</code> would silently serialize as its repr and corrupt the resume contract on the next <code class="inline-code">load</code>.
+</li>
+<li><strong><code class="inline-code">torch.load(..., weights_only=True)</code></strong> (in <code class="inline-code">load</code>) refuses pickled classes — optimizer files must be plain <code class="inline-code">torch.save</code> dicts of tensors. A hand-crafted <code class="inline-code">.pt</code> with custom objects fails loudly, which is the point.
+</li>
+<li><strong>Dedup keys differ between modules.</strong> Checkpoint dedup uses <code class="inline-code">data_ptr()</code> (storage identity); the memory estimator uses <code class="inline-code">id(p)</code> (Parameter object identity). Both catch the tied head, but they are not interchangeable notions.
+</li>
+<li><strong>tps assumes full intervals.</strong> <code class="inline-code">tokens_per_sec</code> divides <code class="inline-code">log_interval × seq_len × batch_size</code> by wall time; a stalled or skipped micro-batch inflates the window's elapsed time and under-reports throughput. It is a rolling average, not a peak.
+</li>
+<li><strong>WandB is frozen at construction.</strong> <code class="inline-code">init_logging</code> decides once whether to attach WandB; setting <code class="inline-code">WANDB_PROJECT</code> later does nothing.
+</li>
+<li><strong>Memory figures are estimates.</strong> No GPU run has executed; <code class="inline-code">estimate_model_memory_gb</code> output and the docs' budget tables are arithmetic, not <code class="inline-code">torch.cuda.max_memory_allocated()</code> measurements.
+</li>
+</ul>
+<hr class='doc-hr'>
+<h2 id="6-check-your-understanding" class="heading-anchor">6. Check your understanding<a href="#6-check-your-understanding" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p><strong>Q1. Why can <code class="inline-code">CheckpointManager.load</code> restore <code class="inline-code">head.weight</code> when the file has no <code class="inline-code">head.weight</code> key?</strong></p>
+<p>The saver dropped the duplicate (caller filter + <code class="inline-code">_atomic_save_safetensors</code> <code class="inline-code">data_ptr</code> dedup). <code class="inline-code">Transformer.__init__</code> re-establishes the tie before loading, so <code class="inline-code">load_state_dict(strict=False)</code> copies into <code class="inline-code">embed.weight</code>, which is the head's storage; <code class="inline-code">head.weight</code> appears in the missing-keys audit and is expected.</p>
+<p><strong>Q2. A crash happens after <code class="inline-code">model_step_4000.safetensors</code> and <code class="inline-code">optim_step_4000.pt</code> are written but before <code class="inline-code">meta_step_4000.json</code>. What does <code class="inline-code">latest_step()</code> return?</strong></p>
+<p>Not 4000 — <code class="inline-code">_checkpoint_complete(4000)</code> is false (meta missing), so <code class="inline-code">latest_step()</code> skips it and returns the next-lower complete step (or <code class="inline-code">None</code>). The torn step is invisible to resume.</p>
+<p><strong>Q3. Why does <code class="inline-code">estimate_model_memory_gb(..., inference=True)</code> return ~0.89 GiB while training mode returns ~29.2 GiB?</strong></p>
+<p><code class="inline-code">inference=True</code> drops the optimizer term (12×N ≈ 4.60 GiB) and the activation term (24×B·S·D·L ≈ 10.13 GiB), leaving weights (0.77) + KV cache (0.12) + overhead — inference carries no AdamW state and forward activations are dominated by the KV cache.</p>
+<p><strong>Q4. <code class="inline-code">TrainingLogger.log</code> is called with <code class="inline-code">step=5</code> and <code class="inline-code">log_interval=10</code>. What happens?</strong></p>
+<p>The loss is appended to <code class="inline-code">_loss_window</code> and the method returns early (<code class="inline-code">5 % 10 != 0</code>). Nothing prints, no WandB write, no window reset — the window keeps accumulating until a step divisible by 10.</p>
+<hr class='doc-hr'>
+<h2 id="references" class="heading-anchor">References<a href="#references" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><a href="../training.html" class="doc-link">Training Pipeline</a> — loop walkthrough (T8)
+</li>
+<li><a href="../concepts/kernels-and-ops.html" class="doc-link">Operations, Testing &amp; Triton Kernels</a> — ops view of the same machinery
+</li>
+<li><a href="../guides/G5_checkpoint_ops.html" class="doc-link">G5 — Checkpoint Ops</a> - recovery playbook
+</li>
+<li><code class="inline-code">tests/test_utils.py</code> - direct consumers of all three modules
+</li>
+</ul>
+                </article>
+
+                
+
+                <div class="doc-footer-nav">
+                    <a href="../../docs/references/R7_training_api.html" class="nav-card prev-card"><span class="card-label">← Previous</span><span class="card-title">R7 — Training API</span></a>
+                    <a href="../../docs/references/R9_inference_api.html" class="nav-card next-card"><span class="card-label">Next →</span><span class="card-title">R9 — Inference API</span></a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar Table of Contents -->
+        <aside class="toc-sidebar">
+            <div class="toc-inner">
+                <div class="toc-title">On This Page</div>
+                <ul class="toc-list"><li class="toc-h2"><a href="#1-checkpointmanager" class="toc-link">1. CheckpointManager — </a></li><li class="toc-h3"><a href="#11-constructor" class="toc-link">1.1 Constructor</a></li><li class="toc-h3"><a href="#12" class="toc-link">1.2 </a></li><li class="toc-h3"><a href="#13" class="toc-link">1.3 </a></li><li class="toc-h3"><a href="#14" class="toc-link">1.4 </a></li><li class="toc-h3"><a href="#15-atomic-write-machinery" class="toc-link">1.5 Atomic write machinery</a></li><li class="toc-h3"><a href="#16-step-discovery" class="toc-link">1.6 Step discovery</a></li><li class="toc-h3"><a href="#17-shared-tensor-dedup-semantics-the-contract" class="toc-link">1.7 Shared-tensor dedup semantics (the contract)</a></li><li class="toc-h2"><a href="#2-traininglogger" class="toc-link">2. TrainingLogger — </a></li><li class="toc-h3"><a href="#21-constructor" class="toc-link">2.1 Constructor</a></li><li class="toc-h3"><a href="#22" class="toc-link">2.2 </a></li><li class="toc-h3"><a href="#23-module-level-factory-pair" class="toc-link">2.3 Module-level factory pair</a></li><li class="toc-h2"><a href="#3-memory-estimator" class="toc-link">3. Memory estimator — </a></li><li class="toc-h3"><a href="#31-module-constant" class="toc-link">3.1 Module constant</a></li><li class="toc-h3"><a href="#32-private-arithmetic-helpers" class="toc-link">3.2 Private arithmetic helpers</a></li><li class="toc-h3"><a href="#33" class="toc-link">3.3 </a></li><li class="toc-h3"><a href="#34" class="toc-link">3.4 </a></li><li class="toc-h2"><a href="#4-callers-map-quick-reference" class="toc-link">4. Callers map (quick reference)</a></li><li class="toc-h2"><a href="#5-pitfalls" class="toc-link">5. Pitfalls</a></li><li class="toc-h2"><a href="#6-check-your-understanding" class="toc-link">6. Check your understanding</a></li><li class="toc-h2"><a href="#references" class="toc-link">References</a></li></ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            if (window.hljs) {
+                hljs.highlightAll();
+            }
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+                    throwOnError: false
+                });
+            }
+        });
+    </script>
+    <script defer src="../../assets/portal.js"></script>
+</body>
+</html>

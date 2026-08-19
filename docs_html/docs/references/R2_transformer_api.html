@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>R2 — Transformer API | DeepSeek-v3-Lite Documentation</title>
+    <!-- Fonts — one voice for the whole portal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Highlight.js for Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- KaTeX for LaTeX Math -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="../../assets/style.css">
+    <script>
+(function () {
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) document.documentElement.classList.add('booting');
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            document.documentElement.classList.remove('booting');
+            var ov = document.getElementById('boot-overlay');
+            if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+        }, reduced ? 0 : 350);
+    });
+})();
+</script>
+</head>
+<body>
+    <div id="boot-overlay" aria-hidden="true"><div class="boot-inner"><div class="boot-wordmark">DEEPSEEK-V3-LITE</div><div class="boot-line">loading weights <span class="boot-bar">[░░░░░░░░░░░░] 0%</span></div></div></div>
+    <!-- Top Header -->
+    <header class="site-header">
+        <div class="header-left">
+            <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
+            <a href="../../index.html" class="brand-logo">
+                <span class="brand-name">DeepSeek-v3-Lite</span>
+                <span class="brand-badge">Docs</span>
+            </a>
+        </div>
+        <div class="header-right">
+            <a href="../../index.html" class="header-link">Portal Home</a>
+            <a href="../../README.html" class="header-link">GitHub README</a>
+        </div>
+    </header>
+
+    <div class="app-layout">
+        <!-- Left Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-inner">
+                <div class="sidebar-search"><input type="text" id="navSearch" placeholder="Search docs..." onkeyup="filterNav()"></div>
+<div class="nav-group">
+<div class="nav-group-title">Core</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../README.html" class="nav-link ">Project Overview (README)</a></li><li class="nav-item"><a href="../../AGENTS.html" class="nav-link ">AGENTS & System Architecture</a></li><li class="nav-item"><a href="../../SKILLS.html" class="nav-link ">Skills Reference</a></li><li class="nav-item"><a href="../../docs/README.html" class="nav-link ">Documentation Index</a></li><li class="nav-item"><a href="../../docs/training.html" class="nav-link ">Training Architecture & Pipeline</a></li><li class="nav-item"><a href="../../docs/inference.html" class="nav-link ">Inference & Speculative Decoding</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Concepts</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/concepts/foundations.html" class="nav-link ">Foundations & Architecture</a></li><li class="nav-item"><a href="../../docs/concepts/attention-and-precision.html" class="nav-link ">MLA & Mixed Precision</a></li><li class="nav-item"><a href="../../docs/concepts/moe-mtp.html" class="nav-link ">DeepSeekMoE & MTP</a></li><li class="nav-item"><a href="../../docs/concepts/parallelism.html" class="nav-link ">DualPipe Parallelism</a></li><li class="nav-item"><a href="../../docs/concepts/data-pipeline.html" class="nav-link ">Data Pipeline</a></li><li class="nav-item"><a href="../../docs/concepts/kernels-and-ops.html" class="nav-link ">Operations & Triton Kernels</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/guides/getting-started.html" class="nav-link ">Getting Started</a></li><li class="nav-item"><a href="../../docs/guides/G1_debugging_playbook.html" class="nav-link ">G1 — Debugging Playbook</a></li><li class="nav-item"><a href="../../docs/guides/G2_mup_and_lr_tuning.html" class="nav-link ">G2 — μP & LR Tuning</a></li><li class="nav-item"><a href="../../docs/guides/G3_triton_development.html" class="nav-link ">G3 — Triton Development</a></li><li class="nav-item"><a href="../../docs/guides/G4_benchmarking.html" class="nav-link ">G4 — Benchmarking</a></li><li class="nav-item"><a href="../../docs/guides/G5_checkpoint_ops.html" class="nav-link ">G5 — Checkpoint Ops</a></li><li class="nav-item"><a href="../../docs/guides/contributing.html" class="nav-link ">Contributing Guide</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">References</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/references/R1_config_schema.html" class="nav-link ">R1 — Config Schema</a></li><li class="nav-item"><a href="../../docs/references/R2_transformer_api.html" class="nav-link active">R2 — Transformer API</a></li><li class="nav-item"><a href="../../docs/references/R3_mla_api.html" class="nav-link ">R3 — MLA API</a></li><li class="nav-item"><a href="../../docs/references/R4_moe_api.html" class="nav-link ">R4 — MoE API</a></li><li class="nav-item"><a href="../../docs/references/R5_mtp_api.html" class="nav-link ">R5 — MTP API</a></li><li class="nav-item"><a href="../../docs/references/R6_triton_api.html" class="nav-link ">R6 — Triton API</a></li><li class="nav-item"><a href="../../docs/references/R7_training_api.html" class="nav-link ">R7 — Training API</a></li><li class="nav-item"><a href="../../docs/references/R8_utils_api.html" class="nav-link ">R8 — Utils API</a></li><li class="nav-item"><a href="../../docs/references/R9_inference_api.html" class="nav-link ">R9 — Inference API</a></li></ul>
+</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-container">
+                <div class="breadcrumb">
+                    <a href="../../index.html">Docs</a> &gt; <span>References</span> &gt; <span class="current">R2 — Transformer API</span>
+                </div>
+                
+                <div class="doc-header">
+                    <h1 class="doc-title">R2 — Transformer API</h1>
+                    <div class="doc-meta">
+                        <span class="meta-item"><span class="meta-label">source</span><span class="meta-val">docs/references/R2_transformer_api.md</span></span>
+                        <span class="meta-item"><span class="meta-label">words</span><span class="meta-val">3,317</span></span>
+                        <span class="meta-item"><span class="meta-label">read</span><span class="meta-val">~17 min</span></span>
+                    </div>
+                </div>
+
+                <article class="markdown-body" id="articleBody">
+                    <span class="doc-anchor" id="deepseek-v3-lite--r2-transformer-api-reference"></span>
+<blockquote><strong>60-second summary.</strong> <code class="inline-code">models/transformer.py</code> is the model body of DeepSeek-V3-Lite: an embedding, a stack of pre-norm blocks (MLA attention + SwiGLU/MoE FFN), a final RMSNorm and output head, plus the top-level entry points — causal-mask construction, training forward, KV-cached autoregressive <code class="inline-code">generate</code>, the static sampling helper, and a deduplicated parameter counter. Everything else (MLA internals, MoE gating, MTP) lives in sibling modules; this file only wires them together. It is a plain <code class="inline-code">nn.Module</code> — no wrappers, no compilation, no data loading.</blockquote>
+<p><strong>Why it exists.</strong> One file must own the <em>composition</em> contract: how blocks stack, how the causal mask is built and cached, how the KV cache is offset by <code class="inline-code">start_pos</code>, and how training (<code class="inline-code">training/pretrain.py</code>) and inference (<code class="inline-code">inference/</code>) share one forward path. The design goal is that every other subsystem talks to exactly five surfaces: construction, <code class="inline-code">forward</code>, <code class="inline-code">forward_with_hidden</code>, <code class="inline-code">generate</code>, and <code class="inline-code">moe_layers</code>.</p>
+<p><strong>Intuition.</strong> The residual stream <code class="inline-code">h</code> flows <code class="inline-code">(bsz, seqlen, dim)</code> through 18 blocks; each block adds a pre-normed attention sublayer then a pre-normed FFN sublayer (residuals are post-add, so streams never wait on norms). The head is a bias-free linear back to vocab size, tied to the embedding by default so one weight tensor serves both tables — <code class="inline-code">count_parameters</code> exists because that tie makes naive <code class="inline-code">sum(p.numel())</code> overcount by 7.1M… the embedding head, precisely.</p>
+<hr class='doc-hr'>
+<h2 id="1-module-map" class="heading-anchor">1. Module map<a href="#1-module-map" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Public symbol</th><th>Anchor</th><th>Role</th></tr></thead><tbody><tr><td><code class="inline-code">SwiGLUFFN</code></td><td><code class="inline-code">models/transformer.py:SwiGLUFFN</code></td><td>Dense SwiGLU FFN (first <code class="inline-code">n_dense_layers</code> blocks)</td></tr><tr><td><code class="inline-code">TransformerBlock</code></td><td><code class="inline-code">models/transformer.py:TransformerBlock</code></td><td>One pre-norm MLA + FFN block</td></tr><tr><td><code class="inline-code">Transformer</code></td><td><code class="inline-code">models/transformer.py:Transformer</code></td><td>Full model: embed, blocks, norm, head</td></tr><tr><td><code class="inline-code">count_parameters</code></td><td><code class="inline-code">models/transformer.py:count_parameters</code></td><td>Deduped <code class="inline-code">(total, trainable)</code> count</td></tr></tbody></table></div>
+<p>Private helpers are part of the API contract because training/inference reach into them indirectly: <code class="inline-code">_build_causal_mask</code> defines the mask geometry the Triton kernel consumes (see</p>
+<p><a href="../concepts/kernels-and-ops.html" class="doc-link">Kernels &amp; Ops</a>), and <code class="inline-code">_sample</code> is called cross-module by <code class="inline-code">inference/speculative.py</code></p>
+<p>as a static method.</p>
+<hr class='doc-hr'>
+<h2 id="2-config-keys-consumed" class="heading-anchor">2. Config keys consumed<a href="#2-config-keys-consumed" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p><code class="inline-code">Transformer.__init__</code> reads <code class="inline-code">config.get(&quot;model&quot;, config)</code> first, so both a flat dict and a <code class="inline-code">{&quot;model&quot;: {...}}</code> nesting are accepted (<code class="inline-code">tests/test_models.py</code> covers both). Keys consumed here; everything else is forwarded untouched to <code class="inline-code">MultiHeadLatentAttention</code> / <code class="inline-code">DeepSeekMoE</code> (see <code class="inline-code">R3_mla_api.md</code>, <code class="inline-code">R4_moe_api.md</code>).</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Key</th><th>Required / default</th><th>Consumed at</th><th>Notes</th></tr></thead><tbody><tr><td><code class="inline-code">max_seq_len</code></td><td>required</td><td><code class="inline-code">Transformer.__init__</code>, <code class="inline-code">generate</code></td><td>Context bound; <code class="inline-code">generate</code> stops when <code class="inline-code">output.size(1) &gt;= max_seq_len</code></td></tr><tr><td><code class="inline-code">vocab_size</code></td><td>required</td><td><code class="inline-code">__init__</code></td><td><code class="inline-code">embed</code> and <code class="inline-code">head</code> widths (canonical 100,018)</td></tr><tr><td><code class="inline-code">dim</code></td><td>required</td><td><code class="inline-code">__init__</code>, <code class="inline-code">TransformerBlock</code></td><td>Hidden width (canonical 768)</td></tr><tr><td><code class="inline-code">n_layers</code></td><td>required</td><td><code class="inline-code">__init__</code></td><td>Block count (canonical 18)</td></tr><tr><td><code class="inline-code">n_dense_layers</code></td><td>required</td><td><code class="inline-code">TransformerBlock.__init__</code></td><td>First N blocks get dense <code class="inline-code">SwiGLUFFN</code>; the rest get <code class="inline-code">DeepSeekMoE</code> (canonical 2)</td></tr><tr><td><code class="inline-code">inter_dim</code></td><td>required for dense blocks</td><td><code class="inline-code">SwiGLUFFN.__init__</code></td><td>Dense FFN hidden width (canonical 1536)</td></tr><tr><td><code class="inline-code">weight_tying</code></td><td><code class="inline-code">False</code> via <code class="inline-code">.get</code></td><td><code class="inline-code">__init__</code></td><td>Ties <code class="inline-code">head.weight</code> storage to <code class="inline-code">embed.weight</code>; canonical config sets <code class="inline-code">true</code></td></tr><tr><td><code class="inline-code">attn_impl</code>, <code class="inline-code">moe_dispatch</code></td><td>dispatch keys</td><td><code class="inline-code">__init__</code> (guard)</td><td>Rewritten to <code class="inline-code">sdpa</code>/<code class="inline-code">stacked</code> by <code class="inline-code">enforce_triton_env_var</code> unless <code class="inline-code">ENABLE_TRITON_KERNELS=1</code></td></tr></tbody></table></div>
+<p>The guard <code class="inline-code">models/_triton_dispatch.py:enforce_triton_env_var</code> runs inside <code class="inline-code">Transformer.__init__</code> (not only in <code class="inline-code">training/pretrain.py</code>), so model construction from inference scripts or tests cannot silently take a Triton path without the env var.</p>
+<hr class='doc-hr'>
+<h2 id="3" class="heading-anchor">3. <code class="inline-code">SwiGLUFFN</code><a href="#3" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Dense two-gate FFN: <span class="math-inline">$W_2\big(\text{silu}(W_1 x) \odot W_3 x\big)$</span>. Purpose: the <code class="inline-code">n_dense_layers</code> early blocks get a deterministic dense FFN instead of MoE routing.</p>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/transformer.py:SwiGLUFFN.__init__</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def __init__(self, dim: int, inter_dim: int):</code></pre></div>
+<ul class="doc-list">
+<li><code class="inline-code">dim</code> — hidden width in/out. <code class="inline-code">inter_dim</code> — FFN hidden width.
+</li>
+<li>Creates three bias-free linears: <code class="inline-code">w1</code> <code class="inline-code">(inter_dim, dim)</code>, <code class="inline-code">w2</code> <code class="inline-code">(dim, inter_dim)</code>,
+<br> <code class="inline-code">w3</code> <code class="inline-code">(inter_dim, dim)</code> — i.e. gate and up projections share the input, the down projection is <code class="inline-code">silu(gate) * up</code>.
+</li>
+<li>All <code class="inline-code">bias=False</code> (no FFN bias anywhere in the model).
+</li>
+</ul>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/transformer.py:SwiGLUFFN.forward</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def forward(self, x: torch.Tensor) -&gt; torch.Tensor:</code></pre></div>
+<ul class="doc-list">
+<li>Shape contract: <code class="inline-code">(..., dim) -&gt; (..., dim)</code>; <code class="inline-code">nn.Linear</code> handles any leading batch dims.
+</li>
+<li>Body (verbatim): <code class="inline-code">return self.w2(F.silu(self.w1(x)) * self.w3(x))</code> — the SwiGLU gate is
+<br> <code class="inline-code">silu</code> (Sigmoid Linear Unit), not <code class="inline-code">gelu</code>; <span class="math-inline">$W_3$</span> is not the gating sigmoid of a gated linear unit in the classic sense, it is the multiplicative gate input.
+</li>
+<li>Callers: <code class="inline-code">TransformerBlock.__init__</code> for <code class="inline-code">layer_id &lt; n_dense_layers</code>; no module outside
+<br> the block stack instantiates it directly.
+</li>
+</ul>
+<hr class='doc-hr'>
+<h2 id="4" class="heading-anchor">4. <code class="inline-code">TransformerBlock</code><a href="#4" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>One pre-norm residual block. Purpose: the smallest stackable unit — attention sublayer plus FFN sublayer, both with post-add residuals.</p>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/transformer.py:TransformerBlock.__init__</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def __init__(self, layer_id: int, config: dict):</code></pre></div>
+<ul class="doc-list">
+<li><code class="inline-code">layer_id</code> — 0-based index; decides dense vs MoE: <code class="inline-code">layer_id &lt; config[&quot;n_dense_layers&quot;]</code>.
+</li>
+<li>Builds, in order: <code class="inline-code">attn_norm</code> = <code class="inline-code">nn.RMSNorm(dim, eps=1e-6)</code>, <code class="inline-code">attn</code> =
+<br> <code class="inline-code">MultiHeadLatentAttention(config, layer_id)</code>, <code class="inline-code">ffn_norm</code> = <code class="inline-code">nn.RMSNorm(dim, eps=1e-6)</code>, <code class="inline-code">ffn</code> = <code class="inline-code">SwiGLUFFN(dim, config[&quot;inter_dim&quot;])</code> or <code class="inline-code">DeepSeekMoE(config)</code>.
+</li>
+<li>Stores <code class="inline-code">layer_id</code>, <code class="inline-code">dim</code>, <code class="inline-code">n_dense_layers</code> as attributes.
+</li>
+</ul>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/transformer.py:TransformerBlock.forward</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def forward(self, x: torch.Tensor, start_pos: int = 0, mask: Optional[torch.Tensor] = None, use_cache: bool = True) -&gt; torch.Tensor:</code></pre></div>
+<ul class="doc-list">
+<li>Shape contract: <code class="inline-code">(bsz, seqlen, dim) -&gt; (bsz, seqlen, dim)</code>.
+</li>
+<li>Body (verbatim):
+</li>
+</ul>
+<div class="code-wrapper" data-lines="3"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">  x = x + self.attn(self.attn_norm(x), start_pos, mask, use_cache)
+  x = x + self.ffn(self.ffn_norm(x))
+  return x</code></pre></div>
+<ul class="doc-list">
+<li>Pre-norm: the residual is added <em>after</em> the normed sublayer, so the stream itself is
+<br> never normalized — only the branch inputs are. <code class="inline-code">start_pos</code>/<code class="inline-code">mask</code>/<code class="inline-code">use_cache</code> pass straight through to MLA (see <code class="inline-code">R3_mla_api.md</code> for what the attention layer does with them). The FFN never sees them.
+</li>
+<li>Callers: <code class="inline-code">Transformer._run_layers</code>; also the unit of gradient checkpointing there.
+</li>
+</ul>
+<hr class='doc-hr'>
+<h2 id="5" class="heading-anchor">5. <code class="inline-code">Transformer</code><a href="#5" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>The full model. Purpose: instantiate the DeepSeek-V3-style stack (MLA + MoE + optional MTP wiring) and expose the training/inference entry points.</p>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/transformer.py:Transformer.__init__</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def __init__(self, config: dict, use_checkpoint: bool = False):</code></pre></div>
+<ul class="doc-list">
+<li><code class="inline-code">config</code> — flat model dict or <code class="inline-code">{&quot;model&quot;: {...}}</code>; <code class="inline-code">use_checkpoint</code> — enable per-block
+<br> activation checkpointing (only active while <code class="inline-code">self.training</code>).
+</li>
+<li>Sequence of work (verbatim essentials):
+<ol class="doc-list">
+<li><code class="inline-code">model_cfg = config.get(&quot;model&quot;, config)</code>; run
+<br> <code class="inline-code">enforce_triton_env_var(model_cfg, print)</code>.
+</li>
+<li><code class="inline-code">self.embed = nn.Embedding(vocab_size, dim)</code> initialized with
+<br> <code class="inline-code">nn.init.normal_(self.embed.weight, std=0.006)</code> — the whole model's init scheme is this one std (see <a href="../concepts/foundations.html" class="doc-link">Foundations &amp; Architecture</a>).
+</li>
+<li><code class="inline-code">self.layers = nn.ModuleList([TransformerBlock(i, model_cfg) for i in range(n_layers)])</code>.
+</li>
+<li><code class="inline-code">self.norm = nn.RMSNorm(dim, eps=1e-6)</code> — final pre-head norm (pre-norm is applied
+<br> once more before the head).
+</li>
+<li><code class="inline-code">self.head = nn.Linear(dim, vocab_size, bias=False)</code>; if <code class="inline-code">weight_tying</code>:
+<br> <code class="inline-code">self.head.weight = self.embed.weight</code> — <strong>aliases the same <code class="inline-code">Parameter</code> object</strong>, so <code class="inline-code">state_dict</code> has both keys pointing at one storage (<code class="inline-code">tests/test_utils.py</code> asserts equal <code class="inline-code">data_ptr</code>). This is why <code class="inline-code">count_parameters</code> reports 411.6M deduped, not ~419M naive.
+</li>
+<li>Mask memoization fields <code class="inline-code">_mask_cache</code> / <code class="inline-code">_mask_key</code> (see §5.1).
+</li>
+</ol>
+</li>
+<li>Effect on parameter counts (canonical config, verified): 411,632,256 total/trainable
+<br> base (411.6M); <code class="inline-code">MultiTokenPrediction</code> adds ~7.1M → 418,713,984 (418.7M) with MTP. Active params per token ≈ 185M. The file <code class="inline-code">configs/pretrain_a100_422m.yaml</code> is the canonical config <em>filename</em>; "422M" is historical nominal, never a measured count.
+</li>
+<li>Callers: <code class="inline-code">training/pretrain.py</code> (`Transformer(config.model_config,
+<br> use_checkpoint=config.grad_checkpoint)<code class="inline-code">), </code>inference/generate.py<code class="inline-code"> (</code>Transformer(model_cfg)`), and every model-level test.
+</li>
+</ul>
+<h3 id="51" class="heading-anchor">5.1 <code class="inline-code">models/transformer.py:Transformer._build_causal_mask</code><a href="#51" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _build_causal_mask(self, seqlen: int, kv_len: int, start_pos: int, device: torch.device) -&gt; torch.Tensor:</code></pre></div>
+<ul class="doc-list">
+<li>Purpose (docstring verbatim): <em>"Additive causal mask (1,1,S_q,S_kv), causal by global position."</em>
+</li>
+<li><strong>Mask geometry contract</strong> — the exact semantics every consumer (SDPA, the Triton MLA
+<br> kernel, chunked prefill) relies on:
+<ul class="doc-list">
+<li>Shape <code class="inline-code">(1, 1, seqlen, kv_len)</code> — broadcast over batch and heads.
+</li>
+<li>Query global positions are <code class="inline-code">start_pos … start_pos + seqlen − 1</code>; key positions are
+<br> <code class="inline-code">0 … kv_len − 1</code>. Element <code class="inline-code">[0,0,i,j] = 0</code> when <code class="inline-code">start_pos + i &gt;= j</code>, else <code class="inline-code">-inf</code>.
+</li>
+<li>It is an <strong>additive</strong> mask (0 / −∞), not multiplicative; attention adds it to the
+<br> scores (<code class="inline-code">attn_scores + mask</code>).
+</li>
+<li>Causality is by <em>global</em> position: with a KV cache spanning the past
+<br> (<code class="inline-code">kv_len = end_pos</code>), a mid-sequence prefill chunk cannot attend its own future because its query positions are offset by <code class="inline-code">start_pos</code>.
+</li>
+</ul>
+</li>
+<li><strong>Memoization</strong>: cached as <code class="inline-code">self._mask_cache</code> keyed by the exact tuple
+<br> <code class="inline-code">(seqlen, kv_len, start_pos, device)</code>; recomputed only when the key changes. <code class="inline-code">device</code> is part of the key, so moving the model to another device rebuilds automatically. Note the cache key holds <code class="inline-code">torch.device</code> — masks are never shared across devices.
+</li>
+<li>Callers: <code class="inline-code">Transformer.forward</code> and <code class="inline-code">forward_with_hidden</code> (never called directly by
+<br> external code).
+</li>
+</ul>
+<h3 id="52" class="heading-anchor">5.2 <code class="inline-code">models/transformer.py:Transformer._run_layers</code><a href="#52" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _run_layers(self, h: torch.Tensor, start_pos: int, mask: Optional[torch.Tensor], use_cache: bool) -&gt; torch.Tensor:</code></pre></div>
+<ul class="doc-list">
+<li>Purpose: run the block stack, optionally under activation checkpointing.
+</li>
+<li>Body (verbatim):
+</li>
+</ul>
+<div class="code-wrapper" data-lines="8"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">  for layer in self.layers:
+      if self.use_checkpoint and self.training:
+          h = torch.utils.checkpoint.checkpoint(
+              layer, h, start_pos, mask, use_cache, use_reentrant=False,
+          )
+      else:
+          h = layer(h, start_pos, mask, use_cache)
+  return h</code></pre></div>
+<ul class="doc-list">
+<li>Each <code class="inline-code">TransformerBlock</code> (both sublayers, its norms, and any MoE routing) is <strong>one</strong>
+<br> checkpointed segment. Checkpointing engages only while <code class="inline-code">self.training</code> — eval/inference always runs the plain path regardless of <code class="inline-code">use_checkpoint</code>.
+</li>
+<li>Callers: <code class="inline-code">forward</code>, <code class="inline-code">forward_with_hidden</code>.
+</li>
+</ul>
+<h3 id="53" class="heading-anchor">5.3 <code class="inline-code">models/transformer.py:Transformer.reset_cache</code><a href="#53" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def reset_cache(self) -&gt; None:</code></pre></div>
+<ul class="doc-list">
+<li>Purpose: drop every per-layer KV/PE cache so the next forward starts from an empty
+<br> context.
+</li>
+<li>Behavior: iterates <code class="inline-code">self.layers</code> and calls <code class="inline-code">layer.attn.reset_cache()</code> when present
+<br> (<code class="inline-code">hasattr</code> guard). <code class="inline-code">MultiHeadLatentAttention.reset_cache</code> (see <code class="inline-code">R3_mla_api.md</code>) clears <code class="inline-code">kv_cache</code>, <code class="inline-code">pe_cache</code>, and the cached batch size.
+</li>
+<li><strong>Mandatory between sequences</strong>: a stale cache corrupts attention because MLA attends to
+<br> <code class="inline-code">cache[:, :end_pos]</code> — leftover positions from a longer previous sequence would leak in.
+</li>
+<li>Callers: <code class="inline-code">Transformer.generate</code> (before prefill), <code class="inline-code">inference/speculative.py</code>
+<br> <code class="inline-code">SpeculativeDecoder.generate</code>, and chunked-prefill tests (<code class="inline-code">tests/test_mla_triton.py</code>).
+</li>
+</ul>
+<h3 id="54" class="heading-anchor">5.4 <code class="inline-code">models/transformer.py:Transformer.moe_layers</code><a href="#54" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def moe_layers(self):</code></pre></div>
+<ul class="doc-list">
+<li>Purpose: yield the <code class="inline-code">DeepSeekMoE</code> FFN of every MoE block, in layer order. A generator —
+<br> cheap to iterate; returns nothing material.
+</li>
+<li>Body (verbatim): <code class="inline-code">yield layer.ffn</code> for each layer whose <code class="inline-code">ffn</code> is an instance of
+<br> <code class="inline-code">DeepSeekMoE</code>. Dense <code class="inline-code">SwiGLUFFN</code> blocks are skipped, so it yields exactly <code class="inline-code">n_layers − n_dense_layers</code> modules (16 at canonical config).
+</li>
+<li>Callers: <code class="inline-code">training/pretrain.py</code> <code class="inline-code">_update_moe_bias</code> (gate-bias updates) and
+<br> <code class="inline-code">_moe_balance_metric</code> (load-balance loss aggregation); MoE training tests.
+</li>
+</ul>
+<h3 id="55" class="heading-anchor">5.5 <code class="inline-code">models/transformer.py:Transformer.forward</code><a href="#55" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def forward(self, tokens: torch.Tensor, start_pos: int = 0, use_cache: bool = True) -&gt; torch.Tensor:</code></pre></div>
+<ul class="doc-list">
+<li>Purpose (docstring verbatim): <em>"(bsz, seqlen) -&gt; (bsz, seqlen, vocab_size). start_pos: KV-cache offset."</em>
+</li>
+<li>Shape contract:
+</li>
+</ul>
+<div class="table-container"><table class="doc-table"><thead><tr><th>In</th><th>Out</th><th>Notes</th></tr></thead><tbody><tr><td><code class="inline-code">tokens: (bsz, seqlen)</code> int</td><td><code class="inline-code">(bsz, seqlen, vocab_size)</code></td><td>logits over the full vocab</td></tr></tbody></table></div>
+<ul class="doc-list">
+<li>Behavior (verbatim essentials):
+<ol class="doc-list">
+<li><strong>Dtype boundary</strong>: <code class="inline-code">if tokens.dtype != torch.long: tokens = tokens.to(torch.long)</code> —
+<br> accepts <code class="inline-code">uint32</code> (the mmap'd shard dtype in <code class="inline-code">training/pretrain.py</code>) and any other int dtype; <code class="inline-code">nn.Embedding</code> requires <code class="inline-code">int64</code>.
+</li>
+<li><code class="inline-code">h = self.embed(tokens)</code> → <code class="inline-code">(bsz, seqlen, dim)</code>; <code class="inline-code">end_pos = start_pos + seqlen</code>.
+</li>
+<li>Mask selection: if <code class="inline-code">seqlen &gt; 1</code>, <code class="inline-code">kv_len = end_pos if use_cache else seqlen</code> and
+<br> <code class="inline-code">mask = self._build_causal_mask(seqlen, kv_len, start_pos if use_cache else 0, tokens.device)</code>. If <code class="inline-code">seqlen == 1</code> (single-token decode) <code class="inline-code">mask = None</code> — a lone query at the last position needs no constraint, and skipping the mask avoids rebuilding cache entries.
+</li>
+<li><code class="inline-code">h = self._run_layers(h, start_pos, mask, use_cache)</code>; return
+<br> <code class="inline-code">self.head(self.norm(h))</code>.
+</li>
+</ol>
+</li>
+<li>Semantics of the three knobs:
+<ul class="doc-list">
+<li><code class="inline-code">use_cache=True</code> — each MLA layer writes <code class="inline-code">(kv_normed, k_pe)</code> into <code class="inline-code">cache[:, start_pos:end_pos]</code>
+<br> and attends to <code class="inline-code">cache[:, :end_pos]</code> (cache <em>grows</em> per call; see <code class="inline-code">R3_mla_api.md</code>). <code class="inline-code">start_pos</code> also offsets RoPE. Bounds: MLA raises <code class="inline-code">RuntimeError</code> when <code class="inline-code">start_pos + seqlen &gt; max_seq_len</code>.
+</li>
+<li><code class="inline-code">use_cache=False</code> — no cache writes; attention is over the current chunk only
+<br> (<code class="inline-code">kv_len = seqlen</code>, mask offset 0). This is the training path (<code class="inline-code">start_pos=0, use_cache=False</code> from <code class="inline-code">train_step</code>).
+</li>
+<li>Corner combination <code class="inline-code">use_cache=False, start_pos &gt; 0</code>: the mask is purely causal over the
+<br> chunk (offset 0), but <code class="inline-code">start_pos</code> still reaches the layers (RoPE offset). Only sensible for standalone chunk computation; training never does this.
+</li>
+</ul>
+</li>
+<li>Callers: <code class="inline-code">training/pretrain.py</code> <code class="inline-code">train_step</code> (non-MTP path: `self.model(tokens,
+<br> start_pos=0, use_cache=False)<code class="inline-code">), </code>Transformer.generate<code class="inline-code"> (prefill + decode), </code>inference/speculative.py<code class="inline-code"> (prefill), all model tests. When MTP is enabled, </code>train_step<code class="inline-code"> calls </code>self.model(tokens)<code class="inline-code"> — that is the </code>MultiTokenPrediction<code class="inline-code"> wrapper (see </code>R5_mtp_api.md<code class="inline-code">), which internally calls this </code>forward`.
+</li>
+</ul>
+<h3 id="56" class="heading-anchor">5.6 <code class="inline-code">models/transformer.py:Transformer.forward_with_hidden</code><a href="#56" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def forward_with_hidden(self, tokens: torch.Tensor, start_pos: int = 0, use_cache: bool = False) -&gt; Tuple[torch.Tensor, torch.Tensor]:</code></pre></div>
+<ul class="doc-list">
+<li>Purpose (docstring verbatim): *"Returns (logits, h). h is the pre-norm trunk hidden (V3
+<br> feeds this to MTP blocks, which apply their own norms); logits use the normed h."*
+</li>
+<li>Identical computation to <code class="inline-code">forward</code> except it returns the <strong>pre-norm</strong> trunk hidden <code class="inline-code">h</code>
+<br> alongside logits: <code class="inline-code">return self.head(self.norm(h)), h</code>.
+</li>
+<li>Shape contract: <code class="inline-code">(logits: (bsz, seqlen, vocab_size), h: (bsz, seqlen, dim))</code>.
+</li>
+<li>Defaults differ from <code class="inline-code">forward</code>: <code class="inline-code">use_cache=False</code> (training/verification posture; the
+<br> speculative decoder passes <code class="inline-code">use_cache=True</code> explicitly).
+</li>
+<li>Callers: <code class="inline-code">inference/speculative.py</code> <code class="inline-code">SpeculativeDecoder.generate_step</code> — one call feeds
+<br> both the main-token logits and the hidden state that the MTP draft block consumes (<code class="inline-code">mtp(hidden_last, token_main_emb)</code>). Tests: <code class="inline-code">tests/test_models.py</code> (<code class="inline-code">forward_with_hidden</code> shape).
+</li>
+</ul>
+<h3 id="57" class="heading-anchor">5.7 <code class="inline-code">models/transformer.py:Transformer.generate</code><a href="#57" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="3"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">@torch.inference_mode()
+def generate(self, input_ids: torch.Tensor, max_new_tokens: int = 512, temperature: float = 1.0,
+             top_p: float = 0.9, top_k: int = 0, eos_token_id: Optional[int] = None) -&gt; torch.Tensor:</code></pre></div>
+<ul class="doc-list">
+<li>Purpose (docstring verbatim): <em>"Autoregressive generation with KV-cache, top-p and top-k sampling."</em>
+</li>
+<li>Shape contract: <code class="inline-code">input_ids: (bsz, prompt_len)</code> → <code class="inline-code">(bsz, prompt_len + n_generated)</code> where
+<br> <code class="inline-code">n_generated &lt;= max_new_tokens</code>. <code class="inline-code">bsz</code> must be 1 for a single <code class="inline-code">eos_token_id</code> comparison to be meaningful across the batch (the <code class="inline-code">finished</code> mask is per-row, so batch &gt; 1 works, stopping only when all rows finish).
+</li>
+<li>Guard: raises <code class="inline-code">ValueError</code> if <code class="inline-code">temperature &lt; 0.0</code>.
+</li>
+<li>Loop invariants (verbatim essentials):
+<ol class="doc-list">
+<li>Saves <code class="inline-code">was_training = self.training</code>, calls <code class="inline-code">reset_cache()</code>, <code class="inline-code">self.eval()</code>; restores
+<br> <code class="inline-code">self.train()</code> at the end if it was training. <code class="inline-code">@torch.inference_mode()</code> suppresses autograd graph building for the whole call.
+</li>
+<li><strong>Prefill</strong>: <code class="inline-code">self.forward(output, start_pos=0, use_cache=True)</code> over the whole
+<br> prompt; <code class="inline-code">next_logits = prefill_logits[:, -1, :]</code>. The full prompt is cached in one forward; decode then appends one token per step.
+</li>
+<li>Per step: <code class="inline-code">next_token = self._sample(next_logits, temperature, top_p, top_k)</code> →
+<br> <code class="inline-code">(bsz, 1)</code>; <code class="inline-code">output = torch.cat([output, next_token], dim=1)</code>.
+</li>
+<li>Termination, in order: (a) if <code class="inline-code">eos_token_id</code> is not <code class="inline-code">None</code>, `finished |= (token ==
+<br> eos)<code class="inline-code"> and break when </code>finished.all()<code class="inline-code">; (b) break when </code>output.size(1) &gt;= self.max_seq_len<code class="inline-code"> (context cap); (c) the </code>for` loop bound.
+</li>
+<li>Decode: <code class="inline-code">self.forward(next_token, start_pos=prompt_len + step, use_cache=True)</code> —
+<br> single-token forward (<code class="inline-code">seqlen == 1</code> → <code class="inline-code">mask=None</code>), cache offset advances by one each step; <code class="inline-code">next_logits = decode_logits[:, -1, :]</code>.
+</li>
+</ol>
+</li>
+<li>Callers: <code class="inline-code">inference/generate.py</code> <code class="inline-code">generate_interactive</code> (the non-speculative branch),
+<br> <code class="inline-code">tests/test_inference.py</code>. The speculative path deliberately does <strong>not</strong> use <code class="inline-code">generate</code> — it drives <code class="inline-code">forward</code>/<code class="inline-code">forward_with_hidden</code> directly (<code class="inline-code">inference/speculative.py</code>).
+</li>
+</ul>
+<h3 id="58" class="heading-anchor">5.8 <code class="inline-code">models/transformer.py:Transformer._sample</code><a href="#58" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">@staticmethod
+def _sample(logits: torch.Tensor, temperature: float, top_p: float, top_k: int) -&gt; torch.Tensor:</code></pre></div>
+<ul class="doc-list">
+<li>Purpose (docstring verbatim): <em>"Temperature + top-k + top-p sampling. Temperature==0 -&gt; argmax."</em>
+</li>
+<li>Shape contract: <code class="inline-code">(..., vocab_size) -&gt; (..., 1)</code> — leading dims preserved, last dim
+<br> collapsed to one sampled index. Returns the sampled token ids, <code class="inline-code">keepdim=True</code>.
+</li>
+<li>Algorithm (verbatim essentials):
+<ol class="doc-list">
+<li><code class="inline-code">temperature == 0.0</code> → <code class="inline-code">logits.argmax(dim=-1, keepdim=True)</code> (deterministic greedy).
+</li>
+<li><code class="inline-code">logits = logits / temperature</code>; if <code class="inline-code">top_k &gt; 0</code>, keep only the top
+<br> <code class="inline-code">min(top_k, vocab)</code> logits by masking the rest with <code class="inline-code">-inf</code> (<code class="inline-code">kth_vals = logits.topk(...)[0][:, -1:]</code>; <code class="inline-code">masked_fill(logits &lt; kth_vals, -inf)</code>).
+</li>
+<li><code class="inline-code">probs = softmax(logits, -1)</code>; if <code class="inline-code">top_p &lt; 1.0</code>, sort descending, drop the tail whose
+<br> <code class="inline-code">(cumulative − sorted_probs) &gt; top_p</code> (keeps the smallest set whose <em>prefix</em> crosses top_p — the classic mass-based filter, equivalent to <em>cumulative − p</em> &gt; top_p), renormalize with <code class="inline-code">sum.clamp(min=1e-10)</code>, and sample by <code class="inline-code">torch.multinomial</code> over the <strong>sorted</strong> index order, gathering back the original indices.
+</li>
+<li><code class="inline-code">top_p &gt;= 1.0</code> → plain <code class="inline-code">torch.multinomial(probs, num_samples=1)</code>.
+</li>
+</ol>
+</li>
+<li>Notes: negative temperature is not guarded here — <code class="inline-code">generate</code> rejects it before calling;
+<br> <code class="inline-code">SpeculativeDecoder</code> calls <code class="inline-code">_sample</code> directly with <code class="inline-code">temperature &gt;= 0</code> (<code class="inline-code">Transformer._sample(main_logits[:, -1, :], temperature, top_p=1.0, top_k=0)</code>). With <code class="inline-code">top_p=1.0, top_k=0</code> the method reduces to temperature sampling / argmax.
+</li>
+<li>Callers: <code class="inline-code">Transformer.generate</code>, <code class="inline-code">inference/speculative.py</code>, sampling tests. See
+<br> <a href="../inference.html" class="doc-link">Inference &amp; Serving</a> for the theory.
+</li>
+</ul>
+<hr class='doc-hr'>
+<h2 id="6" class="heading-anchor">6. <code class="inline-code">models/transformer.py:count_parameters</code><a href="#6" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def count_parameters(model: nn.Module) -&gt; Tuple[int, int]:</code></pre></div>
+<ul class="doc-list">
+<li>Purpose (docstring verbatim): <em>"(total, trainable) — deduplicated by tensor id (shared weights counted once)."</em>
+</li>
+<li>Algorithm: iterate <code class="inline-code">model.parameters()</code>, skip any parameter whose <code class="inline-code">id(p)</code> was already
+<br> seen, accumulate <code class="inline-code">p.numel()</code> into <code class="inline-code">total</code> and (only if <code class="inline-code">p.requires_grad</code>) into <code class="inline-code">trainable</code>. Returns <code class="inline-code">(total, trainable)</code>.
+</li>
+<li><strong>Why dedup matters</strong>: with <code class="inline-code">weight_tying=True</code>, <code class="inline-code">embed.weight</code> and <code class="inline-code">head.weight</code> are the
+<br> same <code class="inline-code">Parameter</code> object and appear twice in <code class="inline-code">parameters()</code>; dedup by id counts the shared storage once. Without dedup the base model would overcount by 100,018 × 768 ≈ 76.8M.
+</li>
+<li>Verified canonical numbers (from <code class="inline-code">training/pretrain.py</code> logging): 411,632,256 total =
+<br> trainable for the base Transformer (411.6M); <code class="inline-code">MultiTokenPrediction(config, raw_model)</code> → 418,713,984 (418.7M), MTP delta ≈ 7.1M. The μP LR is then <span class="math-inline">$6.0\mathrm{e}{-4}\times\sqrt{757\,226\,496/N}$</span> → <strong>8.14e-4</strong> base / <strong>8.07e-4</strong> with MTP (exact: 8.138e-4 / 8.069e-4); see <a href="../training.html" class="doc-link">Training Pipeline</a>.
+</li>
+<li>Callers: <code class="inline-code">training/pretrain.py</code> (base + MTP totals feed the μP LR computation and the
+<br> param log), <code class="inline-code">tests/test_training.py</code> (LR formula), memory estimator tests.
+</li>
+</ul>
+<hr class='doc-hr'>
+<h2 id="7-caller-map" class="heading-anchor">7. Caller map<a href="#7-caller-map" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Caller</th><th>Uses</th><th>Contract relied on</th></tr></thead><tbody><tr><td><code class="inline-code">training/pretrain.py</code> <code class="inline-code">Pretrainer.__init__</code></td><td><code class="inline-code">Transformer(config.model_config, use_checkpoint=config.grad_checkpoint)</code>, <code class="inline-code">count_parameters</code></td><td>flat/nested config, deduped totals</td></tr><tr><td><code class="inline-code">training/pretrain.py</code> <code class="inline-code">_update_moe_bias</code>, <code class="inline-code">_moe_balance_metric</code></td><td><code class="inline-code">raw_model.moe_layers()</code></td><td>yields only MoE FFNs, layer order</td></tr><tr><td><code class="inline-code">training/pretrain.py</code> <code class="inline-code">train_step</code></td><td><code class="inline-code">self.model(tokens, start_pos=0, use_cache=False)</code> (non-MTP); <code class="inline-code">self.model(tokens)</code> (MTP wrapper)</td><td>training forward: no cache, no mask offset</td></tr><tr><td><code class="inline-code">inference/generate.py</code></td><td><code class="inline-code">Transformer(model_cfg)</code>, <code class="inline-code">model.generate(...)</code></td><td><code class="inline-code">generate</code> loop + sampling</td></tr><tr><td><code class="inline-code">inference/speculative.py</code></td><td><code class="inline-code">Transformer._sample</code> (static), <code class="inline-code">forward_with_hidden</code>, <code class="inline-code">main_model.embed</code>, <code class="inline-code">reset_cache</code>, prefill <code class="inline-code">forward</code></td><td>hidden-return contract, static sampler</td></tr><tr><td><code class="inline-code">tests/test_models.py</code>, <code class="inline-code">test_inference.py</code>, <code class="inline-code">test_mla_triton.py</code>, <code class="inline-code">test_training.py</code>, <code class="inline-code">test_utils.py</code></td><td>construction, weight-tying pointer identity, chunked-prefill equality, cache reset</td><td>mask geometry, storage aliasing, cache lifecycle</td></tr></tbody></table></div>
+<hr class='doc-hr'>
+<h2 id="8-pitfalls" class="heading-anchor">8. Pitfalls<a href="#8-pitfalls" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><strong>Stale KV cache between sequences.</strong> <code class="inline-code">forward(..., use_cache=True)</code> never clears the
+<br> cache; MLA attends to <code class="inline-code">cache[:, :end_pos]</code>, so a shorter next sequence reads leftover positions. <code class="inline-code">generate</code> and <code class="inline-code">SpeculativeDecoder.generate</code> call <code class="inline-code">reset_cache()</code> internally; any hand-rolled decode loop must do the same.
+</li>
+<li><strong><code class="inline-code">max_seq_len</code> overflow raises, not clips.</strong> <code class="inline-code">start_pos + seqlen &gt; max_seq_len</code> raises
+<br> <code class="inline-code">RuntimeError</code> inside the MLA layer. <code class="inline-code">generate</code> avoids it by breaking at <code class="inline-code">output.size(1) &gt;= max_seq_len</code>, but a manual forward past the bound is a hard error.
+</li>
+<li><strong>Mask cache is keyed by device.</strong> The memoized <code class="inline-code">(1,1,S_q,S_kv)</code> mask is per
+<br> <code class="inline-code">(seqlen, kv_len, start_pos, device)</code> — correct across device moves, but be aware the cache holds one mask per distinct key per model instance.
+</li>
+<li><strong><code class="inline-code">use_checkpoint</code> is training-only.</strong> <code class="inline-code">_run_layers</code> gates checkpointing on
+<br> <code class="inline-code">self.training</code>; eval always runs the eager path. Expect no memory savings at inference.
+</li>
+<li>*<em><code class="inline-code">forward_with_hidden</code> returns the </em>pre-norm<em> hidden.</em>* MTP blocks apply their own
+<br> norms; do not reuse the returned <code class="inline-code">h</code> as if it were <code class="inline-code">norm(h)</code> — logits come from the normed stream, the hidden does not.
+</li>
+<li><strong><code class="inline-code">_sample</code> does not validate temperature.</strong> Only <code class="inline-code">generate</code> rejects negatives;
+<br> <code class="inline-code">SpeculativeDecoder</code> calls it directly with non-negative values by construction. A negative temperature silently inverts the logit sign.
+</li>
+<li><strong>Weight tying is storage aliasing.</strong> <code class="inline-code">head.weight</code> and <code class="inline-code">embed.weight</code> share one
+<br> <code class="inline-code">Parameter</code>; <code class="inline-code">state_dict</code> contains both keys (same storage), and loading must preserve the aliasing (<code class="inline-code">tests/test_utils.py</code> guards this). Optimizer parameter lists also see the tensor twice — AdamW updates it twice per step unless deduplicated (the trainer's optimizer setup handles this; see <code class="inline-code">R7_training_api.md</code>).
+</li>
+<li><strong>Chunked prefill depends on mask offset.</strong> With <code class="inline-code">use_cache=True</code> and <code class="inline-code">start_pos &gt; 0</code>,
+<br> the mask is causal by global position — a mid-sequence chunk cannot attend its own future. Passing <code class="inline-code">start_pos=0</code> for a cached chunk would leak future tokens.
+</li>
+</ul>
+<hr class='doc-hr'>
+<h2 id="9-check-your-understanding" class="heading-anchor">9. Check your understanding<a href="#9-check-your-understanding" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ol class="doc-list">
+<li><strong>Q:</strong> With <code class="inline-code">use_cache=True</code>, <code class="inline-code">start_pos=8</code>, and a chunk of 8 tokens, what <code class="inline-code">kv_len</code>
+<br> does <code class="inline-code">forward</code> request and what does element <code class="inline-code">[0,0,3,5]</code> of the mask equal? <strong>A:</strong> <code class="inline-code">kv_len = end_pos = 16</code>; the query at global position <code class="inline-code">8+3=11 &gt;= 5</code>, so the mask value is <code class="inline-code">0</code> (attend). Query global positions run 8…15, keys 0…15.
+</li>
+<li><strong>Q:</strong> Why does <code class="inline-code">count_parameters</code> report 411.6M while summing <code class="inline-code">p.numel()</code> over
+<br> <code class="inline-code">model.parameters()</code> naively gives more? <strong>A:</strong> With <code class="inline-code">weight_tying=True</code> the tied head is the same tensor as the embedding and appears twice; <code class="inline-code">id(p)</code> dedup counts it once.
+</li>
+<li><strong>Q:</strong> <code class="inline-code">generate</code> with <code class="inline-code">top_k=0, top_p=1.0, temperature=0.0</code> — what does each step
+<br> produce, and why is the loop still required? <strong>A:</strong> Deterministic argmax tokens; the loop is still needed because each step depends on the previously sampled token (autoregressive dependence) and the KV cache.
+</li>
+<li><strong>Q:</strong> When is <code class="inline-code">mask=None</code> in <code class="inline-code">forward</code>, and why is that safe?
+<br> <strong>A:</strong> When <code class="inline-code">seqlen == 1</code> — a single query at the (last) position has no future to hide, and skipping the mask avoids churning the mask cache during decode steps.
+</li>
+</ol>
+<hr class='doc-hr'>
+<p><strong>Related docs:</strong> <code class="inline-code">R3_mla_api.md</code> (attention + cache contract), <code class="inline-code">R4_moe_api.md</code> (MoE gate/bias), <code class="inline-code">R5_mtp_api.md</code> (MTP wrapper over this model), <code class="inline-code">R7_training_api.md</code> (trainer callsites), <code class="inline-code">R9_inference_api.md</code> (generation entry points),</p>
+<p><a href="../concepts/foundations.html" class="doc-link">Foundations &amp; Architecture</a> (topology walkthrough), <a href="../training.html" class="doc-link">Training Pipeline</a> (μP LR</p>
+<p>derivation), <a href="../inference.html" class="doc-link">Inference &amp; Serving</a> (sampling theory), <a href="../concepts/kernels-and-ops.html" class="doc-link">Kernels &amp; Ops</a> (mask consumption in kernels).</p>
+<h2 id="references" class="heading-anchor">References<a href="#references" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><a href="../references/R3_mla_api.html" class="doc-link">R3 — MLA API</a> - attention + cache contract
+</li>
+<li><a href="../references/R4_moe_api.html" class="doc-link">R4 — MoE API</a> - MoE gate/bias
+</li>
+<li><a href="../references/R5_mtp_api.html" class="doc-link">R5 — MTP API</a> - MTP wrapper over this model
+</li>
+<li><a href="../references/R7_training_api.html" class="doc-link">R7 — Training API</a> - trainer callsites
+</li>
+<li><a href="../references/R9_inference_api.html" class="doc-link">R9 — Inference API</a> - generation entry points
+</li>
+<li><a href="../concepts/foundations.html" class="doc-link">Foundations &amp; Architecture</a> — topology walkthrough
+</li>
+<li><a href="../training.html" class="doc-link">Training Pipeline</a> — μP LR derivation
+</li>
+<li><a href="../inference.html" class="doc-link">Inference &amp; Serving</a> — sampling theory
+</li>
+<li><a href="../concepts/kernels-and-ops.html" class="doc-link">Kernels &amp; Ops</a> — mask consumption in kernels
+</li>
+</ul>
+                </article>
+
+                
+
+                <div class="doc-footer-nav">
+                    <a href="../../docs/references/R1_config_schema.html" class="nav-card prev-card"><span class="card-label">← Previous</span><span class="card-title">R1 — Config Schema</span></a>
+                    <a href="../../docs/references/R3_mla_api.html" class="nav-card next-card"><span class="card-label">Next →</span><span class="card-title">R3 — MLA API</span></a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar Table of Contents -->
+        <aside class="toc-sidebar">
+            <div class="toc-inner">
+                <div class="toc-title">On This Page</div>
+                <ul class="toc-list"><li class="toc-h2"><a href="#1-module-map" class="toc-link">1. Module map</a></li><li class="toc-h2"><a href="#2-config-keys-consumed" class="toc-link">2. Config keys consumed</a></li><li class="toc-h2"><a href="#3" class="toc-link">3. </a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h2"><a href="#4" class="toc-link">4. </a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h2"><a href="#5" class="toc-link">5. </a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h3"><a href="#51" class="toc-link">5.1 </a></li><li class="toc-h3"><a href="#52" class="toc-link">5.2 </a></li><li class="toc-h3"><a href="#53" class="toc-link">5.3 </a></li><li class="toc-h3"><a href="#54" class="toc-link">5.4 </a></li><li class="toc-h3"><a href="#55" class="toc-link">5.5 </a></li><li class="toc-h3"><a href="#56" class="toc-link">5.6 </a></li><li class="toc-h3"><a href="#57" class="toc-link">5.7 </a></li><li class="toc-h3"><a href="#58" class="toc-link">5.8 </a></li><li class="toc-h2"><a href="#6" class="toc-link">6. </a></li><li class="toc-h2"><a href="#7-caller-map" class="toc-link">7. Caller map</a></li><li class="toc-h2"><a href="#8-pitfalls" class="toc-link">8. Pitfalls</a></li><li class="toc-h2"><a href="#9-check-your-understanding" class="toc-link">9. Check your understanding</a></li><li class="toc-h2"><a href="#references" class="toc-link">References</a></li></ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            if (window.hljs) {
+                hljs.highlightAll();
+            }
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+                    throwOnError: false
+                });
+            }
+        });
+    </script>
+    <script defer src="../../assets/portal.js"></script>
+</body>
+</html>

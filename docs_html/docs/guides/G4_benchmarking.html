@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G4 — Benchmarking | DeepSeek-v3-Lite Documentation</title>
+    <!-- Fonts — one voice for the whole portal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Highlight.js for Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- KaTeX for LaTeX Math -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="../../assets/style.css">
+    <script>
+(function () {
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) document.documentElement.classList.add('booting');
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            document.documentElement.classList.remove('booting');
+            var ov = document.getElementById('boot-overlay');
+            if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+        }, reduced ? 0 : 350);
+    });
+})();
+</script>
+</head>
+<body>
+    <div id="boot-overlay" aria-hidden="true"><div class="boot-inner"><div class="boot-wordmark">DEEPSEEK-V3-LITE</div><div class="boot-line">loading weights <span class="boot-bar">[░░░░░░░░░░░░] 0%</span></div></div></div>
+    <!-- Top Header -->
+    <header class="site-header">
+        <div class="header-left">
+            <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
+            <a href="../../index.html" class="brand-logo">
+                <span class="brand-name">DeepSeek-v3-Lite</span>
+                <span class="brand-badge">Docs</span>
+            </a>
+        </div>
+        <div class="header-right">
+            <a href="../../index.html" class="header-link">Portal Home</a>
+            <a href="../../README.html" class="header-link">GitHub README</a>
+        </div>
+    </header>
+
+    <div class="app-layout">
+        <!-- Left Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-inner">
+                <div class="sidebar-search"><input type="text" id="navSearch" placeholder="Search docs..." onkeyup="filterNav()"></div>
+<div class="nav-group">
+<div class="nav-group-title">Core</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../README.html" class="nav-link ">Project Overview (README)</a></li><li class="nav-item"><a href="../../AGENTS.html" class="nav-link ">AGENTS & System Architecture</a></li><li class="nav-item"><a href="../../SKILLS.html" class="nav-link ">Skills Reference</a></li><li class="nav-item"><a href="../../docs/README.html" class="nav-link ">Documentation Index</a></li><li class="nav-item"><a href="../../docs/training.html" class="nav-link ">Training Architecture & Pipeline</a></li><li class="nav-item"><a href="../../docs/inference.html" class="nav-link ">Inference & Speculative Decoding</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Concepts</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/concepts/foundations.html" class="nav-link ">Foundations & Architecture</a></li><li class="nav-item"><a href="../../docs/concepts/attention-and-precision.html" class="nav-link ">MLA & Mixed Precision</a></li><li class="nav-item"><a href="../../docs/concepts/moe-mtp.html" class="nav-link ">DeepSeekMoE & MTP</a></li><li class="nav-item"><a href="../../docs/concepts/parallelism.html" class="nav-link ">DualPipe Parallelism</a></li><li class="nav-item"><a href="../../docs/concepts/data-pipeline.html" class="nav-link ">Data Pipeline</a></li><li class="nav-item"><a href="../../docs/concepts/kernels-and-ops.html" class="nav-link ">Operations & Triton Kernels</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/guides/getting-started.html" class="nav-link ">Getting Started</a></li><li class="nav-item"><a href="../../docs/guides/G1_debugging_playbook.html" class="nav-link ">G1 — Debugging Playbook</a></li><li class="nav-item"><a href="../../docs/guides/G2_mup_and_lr_tuning.html" class="nav-link ">G2 — μP & LR Tuning</a></li><li class="nav-item"><a href="../../docs/guides/G3_triton_development.html" class="nav-link ">G3 — Triton Development</a></li><li class="nav-item"><a href="../../docs/guides/G4_benchmarking.html" class="nav-link active">G4 — Benchmarking</a></li><li class="nav-item"><a href="../../docs/guides/G5_checkpoint_ops.html" class="nav-link ">G5 — Checkpoint Ops</a></li><li class="nav-item"><a href="../../docs/guides/contributing.html" class="nav-link ">Contributing Guide</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">References</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/references/R1_config_schema.html" class="nav-link ">R1 — Config Schema</a></li><li class="nav-item"><a href="../../docs/references/R2_transformer_api.html" class="nav-link ">R2 — Transformer API</a></li><li class="nav-item"><a href="../../docs/references/R3_mla_api.html" class="nav-link ">R3 — MLA API</a></li><li class="nav-item"><a href="../../docs/references/R4_moe_api.html" class="nav-link ">R4 — MoE API</a></li><li class="nav-item"><a href="../../docs/references/R5_mtp_api.html" class="nav-link ">R5 — MTP API</a></li><li class="nav-item"><a href="../../docs/references/R6_triton_api.html" class="nav-link ">R6 — Triton API</a></li><li class="nav-item"><a href="../../docs/references/R7_training_api.html" class="nav-link ">R7 — Training API</a></li><li class="nav-item"><a href="../../docs/references/R8_utils_api.html" class="nav-link ">R8 — Utils API</a></li><li class="nav-item"><a href="../../docs/references/R9_inference_api.html" class="nav-link ">R9 — Inference API</a></li></ul>
+</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-container">
+                <div class="breadcrumb">
+                    <a href="../../index.html">Docs</a> &gt; <span>Guides</span> &gt; <span class="current">G4 — Benchmarking</span>
+                </div>
+                
+                <div class="doc-header">
+                    <h1 class="doc-title">G4 — Benchmarking</h1>
+                    <div class="doc-meta">
+                        <span class="meta-item"><span class="meta-label">source</span><span class="meta-val">docs/guides/G4_benchmarking.md</span></span>
+                        <span class="meta-item"><span class="meta-label">words</span><span class="meta-val">3,026</span></span>
+                        <span class="meta-item"><span class="meta-label">read</span><span class="meta-val">~15 min</span></span>
+                    </div>
+                </div>
+
+                <article class="markdown-body" id="articleBody">
+                    <span class="doc-anchor" id="deepseek-v3-lite--benchmarking"></span>
+<blockquote><strong>Status:</strong> guide · <strong>Applies to:</strong> anyone who quotes a throughput, VRAM, or MFU number <strong>Depends on:</strong> <a href="../concepts/kernels-and-ops.html" class="doc-link">Operations, Testing &amp; Triton Kernels</a>, <a href="../training.html" class="doc-link">Training Pipeline</a> · <strong>Read next:</strong> <a href="G2_mup_and_lr_tuning.html" class="doc-link">G2 — μP &amp; LR Tuning</a>, <a href="G3_triton_development.html" class="doc-link">G3 — Triton Development</a></blockquote>
+<h2 id="60-second-summary" class="heading-anchor">60-Second Summary<a href="#60-second-summary" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>The repo ships three GPU benchmark scripts plus a built-in training-log throughput meter, but <strong>no GPU run has ever executed</strong> — every wall-clock, VRAM-peak, and MFU figure in this repo's prose is an estimate. This guide explains what each tool actually measures, shows the arithmetic you can verify on CPU today, lists what a real A100 benchmark must capture to be trustworthy, and sets the labeling rules for publishing results back into the docs. The run order on a fresh A100 is: <code class="inline-code">scripts/e2e_test_gpu.py</code> (does the whole pipeline work?) → <code class="inline-code">scripts/microbench_a100.py</code> (does it fit, and is the estimator honest?) → <code class="inline-code">scripts/step_time_a100.py</code> (how fast, what MFU?) → a real <code class="inline-code">training/pretrain.py</code> run (steady-state tps from the logger).</p>
+<h2 id="1-the-honest-baseline-no-a100-run-has-executed" class="heading-anchor">1. The Honest Baseline: No A100 Run Has Executed<a href="#1-the-honest-baseline-no-a100-run-has-executed" class="anchor-link" aria-label="Link to section">#</a></h2>
+<h3 id="11-why-this-section-exists" class="heading-anchor">1.1 Why this section exists<a href="#11-why-this-section-exists" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>Every number in a benchmark report must carry one of three labels: <code class="inline-code">[MEASURED]</code> (read off a real device), <code class="inline-code">[DERIVED]</code> (computed from a formula — reproducible by anyone), or <code class="inline-code">[ESTIMATE]</code> (a guess with an unverified model behind it). The <code class="inline-code">.benchmarks/</code> directory at the repo root exists and is <strong>empty</strong> (verified 2026-08-04), so the current state of this repo is: <strong>zero measured numbers</strong>. Any prose that reads like a result is an estimate or a target, and the moment a real run produces numbers, the old estimates must be replaced — never mixed in silently.</p>
+<h3 id="12-the-figures-currently-in-the-repo-and-their-true-status" class="heading-anchor">1.2 The figures currently in the repo, and their true status<a href="#12-the-figures-currently-in-the-repo-and-their-true-status" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Figure</th><th>Where it lives</th><th>Status</th></tr></thead><tbody><tr><td>"~30–45 h wall time"</td><td><code class="inline-code">configs/pretrain_a100_422m.yaml</code> header comment; <code class="inline-code">scripts/launch_a100.sh</code> (corrected 2026-08-04 from the arithmetically impossible 13–15 h, see §1.3)</td><td><code class="inline-code">[ESTIMATE]</code> — derived, unverified</td></tr><tr><td>"~30–35 GB peak VRAM / 80 GB"</td><td><code class="inline-code">scripts/launch_a100.sh</code></td><td><code class="inline-code">[ESTIMATE]</code> — consistent with the estimator math in §3.3</td></tr><tr><td>"30–45% MFU"</td><td><code class="inline-code">scripts/step_time_a100.py</code> docstring and closing thresholds</td><td><code class="inline-code">[TARGET]</code>, not a result</td></tr><tr><td>"MFU &gt; 30%" (prereq gate)</td><td><code class="inline-code">scripts/launch_a100.sh</code> header comment</td><td>gate the microbench must satisfy before a launch</td></tr><tr><td>411.6M base / 418.7M with MTP params</td><td>docs, configs, this guide</td><td><code class="inline-code">[COUNTED]</code> — deterministic via <code class="inline-code">models/transformer.py:count_parameters</code></td></tr></tbody></table></div>
+<p>Note the config header comment itself says the run is "targeted" at those figures; nothing in the repo claims a measured value. Keep it that way until a real run lands.</p>
+<h3 id="13-a-reconciliation-you-can-do-on-cpu-today" class="heading-anchor">1.3 A reconciliation you can do on CPU today<a href="#13-a-reconciliation-you-can-do-on-cpu-today" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>The 13–15 h claim deserves a sanity check before anyone books GPU time. All inputs below are verified from <code class="inline-code">configs/pretrain_a100_422m.yaml</code>:</p>
+<ul class="doc-list">
+<li>The scheduler horizon is <code class="inline-code">max_steps // gradient_accumulation_steps</code> opt-steps (computed in <code class="inline-code">Pretrainer.__init__</code>; <code class="inline-code">training/pretrain.py:Pretrainer.train_step</code> is where opt-steps are actually counted via <code class="inline-code">_opt_steps</code>): <span class="math-inline">$512\,000 / 4 = 128\,000$</span>.
+</li>
+<li>Tokens per schedule: <span class="math-inline">$128\,000 \times 4 \times 8 \times 2048 = 8.39 \times 10^9$</span> — this matches the config's "8.4B Chinchilla-optimal tokens" comment, good.
+</li>
+<li>FLOPs per micro-step (see §4.2): <span class="math-inline">$6 \times 334\,818\,432 \times 2048 \times 8 \approx 32.9 \times 10^{12}$</span>.
+</li>
+<li>At 40% MFU of the A100 SXM BF16 peak (312 TFLOPS): <span class="math-inline">$32.9 \times 10^{12} / (0.40 \times 312 \times 10^{12}) \approx 0.264$</span> s/step <span class="math-inline">$\rightarrow$</span> 62.1k tok/s <span class="math-inline">$\rightarrow$</span> <strong>37.5 h</strong>. At 35% MFU: <strong>42.9 h</strong>.
+</li>
+</ul>
+<p>The old 13–15 h claim implied <span class="math-inline">$8.39 \times 10^9 / 14\,\text{h} \approx 172.6$</span>k tok/s <span class="math-inline">$\rightarrow$</span> 0.095 s/step <span class="math-inline">$\rightarrow$</span> ~347 TFLOPS <span class="math-inline">$\rightarrow$</span> <strong>111% MFU — impossible on A100</strong>. It contradicted the very MFU assumption it cited. On 2026-08-04 the repo's wall-clock claims were corrected to <strong>~30–45 h</strong>, which brackets the two CPU-side reconciliations above (37.5 h @ 40% MFU, 42.9 h @ 35% MFU). The first real benchmark must still reconcile the residual spread: batch size, the logits GEMM, and grad-checkpoint recompute all move the number.</p>
+<h3 id="14-known-defect-in-the-benchmark-tooling-itself-fixed-2026-08-04" class="heading-anchor">1.4 Known defect in the benchmark tooling itself (fixed 2026-08-04)<a href="#14-known-defect-in-the-benchmark-tooling-itself-fixed-2026-08-04" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">scripts/microbench_a100.py:main</code> previously called <code class="inline-code">count_parameters(m)</code> without importing it — the first GPU invocation died with <code class="inline-code">NameError</code> before measuring anything. The import is now present:</p>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">from models.transformer import Transformer, count_parameters</code></pre></div>
+<p>This defect is the canonical example of why this guide exists: a benchmark script nobody has run can look complete and still be broken.</p>
+<h2 id="2-choosing-a-benchmark--decision-tree" class="heading-anchor">2. Choosing a Benchmark — Decision Tree<a href="#2-choosing-a-benchmark--decision-tree" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Question you are answering</th><th>Tool</th><th>GPU needed</th></tr></thead><tbody><tr><td>Does the whole train→checkpoint→generate pipeline work on this GPU?</td><td><code class="inline-code">scripts/e2e_test_gpu.py</code></td><td>any CUDA GPU ≥ 4 GB</td></tr><tr><td>Will the canonical 411.6M config fit, and is the memory estimator honest?</td><td><code class="inline-code">scripts/microbench_a100.py</code></td><td>A100 80 GB (or the target card)</td></tr><tr><td>How fast is one training step, and what MFU do we get?</td><td><code class="inline-code">scripts/step_time_a100.py</code></td><td>A100 80 GB</td></tr><tr><td>What is real steady-state throughput with loss + MTP + logging?</td><td><code class="inline-code">TrainingLogger.log</code> tps meter during a <code class="inline-code">training/pretrain.py</code> run</td><td>any training GPU</td></tr><tr><td>Eager vs <code class="inline-code">torch.compile</code>, stacked vs Triton dispatch?</td><td><code class="inline-code">step_time_a100.py</code> with <code class="inline-code">--no-compile</code> / config flags; see <a href="G3_triton_development.html" class="doc-link">G3 — Triton development</a></td><td>A100</td></tr></tbody></table></div>
+<p>Decision tree:</p>
+<div class="code-wrapper" data-lines="7"><div class="code-header"><span class="code-lang">code</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code>Is the GPU new to this repo? ──yes──► e2e_test_gpu.py (pipeline proof)
+        │ no
+Canonical config fits &amp; estimator sane? ──no──► microbench_a100.py ──► fix config/safety margins
+        │ yes
+Need ms/step + MFU? ──yes──► step_time_a100.py ──► report [MEASURED]
+        │ no
+Need real-training throughput? ──yes──► training/pretrain.py + logger tps</code></pre></div>
+<h2 id="3-microbench--vram-estimate-vs-measured" class="heading-anchor">3. Microbench — VRAM Estimate vs Measured<a href="#3-microbench--vram-estimate-vs-measured" class="anchor-link" aria-label="Link to section">#</a></h2>
+<h3 id="31-what-it-measures" class="heading-anchor">3.1 What it measures<a href="#31-what-it-measures" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">scripts/microbench_a100.py:main</code> builds the full canonical model (<code class="inline-code">Transformer(cfg, use_checkpoint=True)</code> on CUDA), prints the deduped parameter count, runs the memory estimator, asserts the estimate fits with a safety margin, then executes one real forward+backward while <code class="inline-code">torch.cuda.max_memory_allocated()</code> tracks the <strong>measured</strong> peak. Output: estimated GB, measured GB, percentage delta, and a graded verdict (headroom / comfortable / dangerously close). It answers one question: <em>"does the estimator lie, and by how much?"</em> — it does <strong>not</strong> measure speed.</p>
+<h3 id="32--dedup" class="heading-anchor">3.2 <code class="inline-code">count_parameters</code> dedup<a href="#32--dedup" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>Both the microbench and the estimator rely on deduplicated counts. Naive <code class="inline-code">sum(p.numel() for p in model.parameters())</code> double-counts the tied output head, because <code class="inline-code">self.head.weight = self.embed.weight</code> makes the same tensor appear under two modules. <code class="inline-code">models/transformer.py:count_parameters</code> fixes this by tracking tensor <code class="inline-code">id</code>s:</p>
+<div class="code-wrapper" data-lines="11"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def count_parameters(model: nn.Module) -&gt; Tuple[int, int]:
+    &quot;&quot;&quot;(total, trainable) — deduplicated by tensor id (shared weights counted once).&quot;&quot;&quot;
+    seen = set()
+    total = 0
+    ...
+    for p in model.parameters():
+        pid = id(p)
+        if pid in seen:
+            continue
+        seen.add(pid)
+        ...</code></pre></div>
+<p>Verified on CPU (2026-08-04): <span class="math-inline">$411\,632\,256$</span> total and trainable — the tied head counted once, matching the locked constant. The naive sum would report <span class="math-inline">$488\,446\,080$</span> (off by <span class="math-inline">$76\,813\,824 = 100\,018 \times 768$</span>).</p>
+<h3 id="33-the-estimator-component-by-component" class="heading-anchor">3.3 The estimator, component by component<a href="#33-the-estimator-component-by-component" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">utils/memory.py:estimate_model_memory_gb</code> sums five terms. Running it on CPU against the canonical config (bs=8, seq=2048) gives these <code class="inline-code">[DERIVED]</code> numbers, reproducible by anyone:</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Component</th><th>Formula (source)</th><th>GB</th></tr></thead><tbody><tr><td>Weights (BF16)</td><td><span class="math-inline">$411\,632\,256 \times 2$</span> B</td><td>0.82</td></tr><tr><td>Optimizer (fp32 AdamW)</td><td><span class="math-inline">$411\,632\,256 \times 12$</span> B (master + m + v)</td><td>4.94</td></tr><tr><td>KV cache (MLA)</td><td><span class="math-inline">$8 \times 2048 \times (192 + 24) \times 2$</span> B <span class="math-inline">$\times$</span> 18 layers</td><td>0.13</td></tr><tr><td>Activations, grad-checkpointed</td><td><code class="inline-code">_activation_bytes</code> heuristic <span class="math-inline">$\times$</span> 8·2048·768·18·2 B</td><td>10.87</td></tr><tr><td>Activations, no checkpoint</td><td>same, larger factor</td><td>16.31</td></tr><tr><td>PyTorch/CUDA overhead</td><td><code class="inline-code">_detect_overhead_gb</code>: CPU 2.0; CUDA min(13.7, 17% of VRAM)</td><td>2.0 / 13.6</td></tr></tbody></table></div>
+<p>Sum with CUDA overhead: <span class="math-inline">$0.82 + 4.94 + 0.13 + 10.87 + 13.6 \approx$</span> <strong>30.4 GB</strong> on an A100 80 GB — consistent with the "~30–35 GB" claim in <code class="inline-code">scripts/launch_a100.sh</code>. The 13.7 GB static overhead line is the single biggest term after activations; treat it as the estimator's weakest assumption, which is exactly why the measured-vs-estimated delta matters.</p>
+<h3 id="34-safety-margin" class="heading-anchor">3.4 Safety margin<a href="#34-safety-margin" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">scripts/microbench_a100.py:main</code> passes <code class="inline-code">safety_margin_gb=2.0</code> to <code class="inline-code">utils/memory.py:assert_fits_in_available_gpu</code>, which raises <code class="inline-code">RuntimeError</code> if the estimate exceeds free VRAM minus the margin. After measuring, the script warns when the measured peak sits within 8 GB of capacity ("consider halving micro_batch_size or seq_len"), prints a notice above 70% of VRAM, and otherwise reports headroom.</p>
+<h3 id="35-running-it" class="heading-anchor">3.5 Running it<a href="#35-running-it" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">bash</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-bash"># after the §1.4 import fix; A100 80 GB
+python3 scripts/microbench_a100.py</code></pre></div>
+<p>Expected output shape: <code class="inline-code">estimated peak</code>, <code class="inline-code">measured peak</code>, <code class="inline-code">delta vs estimate = X%</code>. A delta above ~20% should trigger an investigation of the activation-factor and overhead assumptions in <code class="inline-code">utils/memory.py</code>, not a silent acceptance.</p>
+<h2 id="4-step-time--msstep-tokenss-mfu" class="heading-anchor">4. Step-Time — ms/Step, Tokens/s, MFU<a href="#4-step-time--msstep-tokenss-mfu" class="anchor-link" aria-label="Link to section">#</a></h2>
+<h3 id="41-what-it-measures" class="heading-anchor">4.1 What it measures<a href="#41-what-it-measures" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">scripts/step_time_a100.py:main</code> builds the canonical model, sets TF32 flags, creates a fused AdamW, optionally wraps the model in <code class="inline-code">torch.compile</code>, runs <code class="inline-code">--warmup</code> steps, then times <code class="inline-code">--steps</code> synthetic steps (randint input → forward → <code class="inline-code">sum().backward()</code> → <code class="inline-code">optimizer.step()</code>). It prints mean <strong>ms/step</strong>, <strong>tok/s</strong>, achieved TFLOPS, and <strong>MFU</strong> against the configurable peak (<code class="inline-code">--peak-tflops</code>, default 312.0 = A100 SXM BF16 dense).</p>
+<h3 id="42-the-mfu-formula" class="heading-anchor">4.2 The MFU formula<a href="#42-the-mfu-formula" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>The script counts non-embedding params as <code class="inline-code">n_p − vocab·dim</code> when weight tying is on (it sums raw <code class="inline-code">parameters()</code>, which double-counts the head — the subtraction removes the duplicate, and both benchmark scripts are consistent with <code class="inline-code">count_parameters</code> on this point): <span class="math-inline">$n_{nonembed} = 411\,632\,256 - 76\,813\,824 = 334\,818\,432$</span>. Then</p>
+<div class="math-block">$$
+\text{FLOPs/step} = 6 \times n_{nonembed} \times seq \times bs \approx 32.9 \times 10^{12}
+$$</div>
+<p>(the 6 covers the 2× fwd + 4× bwd multiply-accumulates), and</p>
+<div class="math-block">$$
+\text{MFU} = \frac{\text{FLOPs/step} / \text{step\_time}}{\text{peak\_tflops}}.
+$$</div>
+<p>The docstring's "validates ~30–45% MFU" is a <strong>target for MoE-on-A100 BF16</strong>, not a measured result. The script's own grading: MFU &lt; 25% → investigate (suspected MoE Python-loop overhead, missing compile, missing TF32); 25–35% → workable but improvable; ≥ 35% → "expected 30–45% range".</p>
+<h3 id="43-flags-you-must-know" class="heading-anchor">4.3 Flags you must know<a href="#43-flags-you-must-know" class="anchor-link" aria-label="Link to section">#</a></h3>
+<ul class="doc-list">
+<li><code class="inline-code">--no-compile</code> — disables <code class="inline-code">torch.compile</code>. <strong>Watch for silent fallback</strong>: compile is wrapped in try/except; a failure prints <code class="inline-code">torch.compile: FAILED (...) continuing without</code> and the run proceeds eager. Always grep the output for <code class="inline-code">torch.compile: enabled</code> before trusting an MFU number.
+</li>
+<li><code class="inline-code">--compile-mode</code> (default <code class="inline-code">max-autotune</code>) — the expensive-but-fastest mode; first-call compilation can take minutes, which is why warmup exists.
+</li>
+<li><code class="inline-code">--warmup 5</code> / <code class="inline-code">--steps 20</code> — the script reports the <strong>mean</strong> over the timed window. For publication, use <code class="inline-code">--steps 50</code> and report the median plus spread (see §7).
+</li>
+</ul>
+<p>TF32 note: this script sets <code class="inline-code">torch.backends.cuda.matmul.allow_tf32 = True</code>, <code class="inline-code">torch.backends.cudnn.allow_tf32 = True</code>, and <code class="inline-code">cudnn.benchmark = True</code>. TF32 changes numerics — a TF32 benchmark's loss curve is not directly comparable to a CPU fp32 reference run. Record the flags next to every number you publish.</p>
+<h3 id="44-running-it" class="heading-anchor">4.4 Running it<a href="#44-running-it" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">bash</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-bash">python3 scripts/step_time_a100.py --steps 50 --warmup 10          # compiled, max-autotune
+python3 scripts/step_time_a100.py --no-compile --steps 50         # eager baseline for comparison</code></pre></div>
+<h2 id="5-e2e-gpu-smoke--the-1650-run" class="heading-anchor">5. E2E GPU Smoke — the 1650 Run<a href="#5-e2e-gpu-smoke--the-1650-run" class="anchor-link" aria-label="Link to section">#</a></h2>
+<h3 id="51-what-it-verifies" class="heading-anchor">5.1 What it verifies<a href="#51-what-it-verifies" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">scripts/e2e_test_gpu.py:run_e2e</code> runs seven gates on the tiny <code class="inline-code">configs/pretrain_1650_2m.yaml</code> (dim 64, 4 layers, ~2M params, but all architecture features: MLA, aux-loss-free MoE, MTP depth 1):</p>
+<ol class="doc-list">
+<li>data pipeline — <code class="inline-code">PretrainDataset</code> loads, sample shape/shift invariant <code class="inline-code">x[1:] == y[:-1]</code>, batched GPU transfer;
+</li>
+<li>model construction — <code class="inline-code">Transformer</code> on GPU, forward logits <code class="inline-code">(2, 16, vocab_size)</code>, finite;
+</li>
+</ol>
+<p>3+4. training — a real <code class="inline-code">Pretrainer</code> runs <code class="inline-code">--train-steps</code> (default 20) micro-steps with the NaN guard and MTP loss, loss must stay finite and not explode;</p>
+<ol class="doc-list">
+<li>checkpoint round-trip — save, reload, finite logits;
+</li>
+<li>autoregressive generation with KV cache;
+</li>
+<li>speculative MTP decoding via <code class="inline-code">SpeculativeDecoder</code>.
+</li>
+</ol>
+<p><code class="inline-code">scripts/e2e_test_gpu.py:Results.add</code> records each case; <code class="inline-code">scripts/e2e_test_gpu.py:main</code> exits non-zero if any case failed. The explicit "Peak VRAM &lt; 4GB" case is the 1650 fit gate.</p>
+<h3 id="52-the-deliberate-degradations--and-why-it-is-not-a-speed-benchmark" class="heading-anchor">5.2 The deliberate degradations — and why it is not a speed benchmark<a href="#52-the-deliberate-degradations--and-why-it-is-not-a-speed-benchmark" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>Two things are forcibly turned off inside <code class="inline-code">run_e2e</code>: <code class="inline-code">config.compile_model = False</code> ("1650: torch.compile can OOM or hang") and fused AdamW is monkeypatched to <code class="inline-code">fused=False</code> (the fused CUDA path may be absent on the test host). The e2e test is a <strong>correctness</strong> smoke on constrained hardware; its ms/step is meaningless as a performance number. Do not quote it as throughput.</p>
+<h3 id="53-prerequisites-and-running" class="heading-anchor">5.3 Prerequisites and running<a href="#53-prerequisites-and-running" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>The script hardcodes the dataset path <code class="inline-code">data/pretrain_chinchilla</code>, which does <strong>not</strong> exist in the repo checkout right now — prepare it first, then run:</p>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">bash</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-bash">python3 data/prepare_data.py --stage pretrain
+python3 scripts/e2e_test_gpu.py --config configs/pretrain_1650_2m.yaml --train-steps 20</code></pre></div>
+<h2 id="6-the-traininglogger-tps-meter--steady-state-throughput" class="heading-anchor">6. The TrainingLogger tps Meter — Steady-State Throughput<a href="#6-the-traininglogger-tps-meter--steady-state-throughput" class="anchor-link" aria-label="Link to section">#</a></h2>
+<h3 id="61-formula" class="heading-anchor">6.1 Formula<a href="#61-formula" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p><code class="inline-code">utils/logging.py:TrainingLogger.log</code> maintains a rolling loss window and, every <code class="inline-code">log_interval</code> micro-steps, prints <code class="inline-code">step=… loss=… ppl=… lr=… tps=…</code> where</p>
+<div class="math-block">$$
+\text{tps} = \frac{\text{log\_interval} \times seq\_len \times batch\_size}{\text{elapsed}}.
+$$</div>
+<p><code class="inline-code">batch_size</code> here is <code class="inline-code">config.batch_size</code> — which <code class="inline-code">training/pretrain.py</code> populates from <code class="inline-code">micro_batch_size</code>, not the accumulated batch. So the meter reports <strong>micro-step stream</strong> tokens per second: with the canonical config, 50 × 2048 × 8 = 819,200 tokens per window. <code class="inline-code">ppl</code> is <span class="math-inline">$\exp(\text{avg\_loss})$</span> over the window. WandB logging is opt-in via the <code class="inline-code">WANDB_PROJECT</code> environment variable (which <code class="inline-code">scripts/launch_a100.sh</code> sets).</p>
+<h3 id="62-what-the-number-includes" class="heading-anchor">6.2 What the number includes<a href="#62-what-the-number-includes" class="anchor-link" aria-label="Link to section">#</a></h3>
+<p>The window wall-time includes data loading, the optimizer step, and — deliberately — only <strong>one</strong> <code class="inline-code">.item()</code> GPU-sync per log window (see the comment at the log call site in <code class="inline-code">training/pretrain.py</code>): the meter is a genuine steady-state figure, not a microbenchmark. Checkpoint saves happen on a separate branch and can stretch one window; a tps outlier right after a save is expected. It is a rolling window that resets every log (<code class="inline-code">self._step_start = time.time()</code>), so it is never a cumulative average.</p>
+<h3 id="63-from-tps-to-mfu" class="heading-anchor">6.3 From tps to MFU<a href="#63-from-tps-to-mfu" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="math-block">$$
+\text{MFU} = \frac{6 \times 334\,818\,432 \times \text{tps}}{312 \times 10^{12}} \times 100
+$$</div>
+<p>This is the only conversion you need to compare logger tps against <code class="inline-code">step_time_a100.py</code> output — but expect real-training tps to sit below the synthetic step-time figure, because the real loop adds loss computation (including MTP, +7.1M params) and checkpoint/save traffic that the microbench omits.</p>
+<h2 id="7-what-a-real-benchmark-must-capture" class="heading-anchor">7. What a Real Benchmark Must Capture<a href="#7-what-a-real-benchmark-must-capture" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Checklist for the first genuine A100 run — every item is either handled by a script or must be added by the operator:</p>
+<ul class="doc-list">
+<li class="task-item"><input type="checkbox" disabled > <strong>Pipeline proof first</strong>: <code class="inline-code">e2e_test_gpu.py</code> green on the target card before any perf run.
+</li>
+<li class="task-item"><input type="checkbox" disabled > <strong>Pre-warm</strong>: discard ≥ 10 steps; verify <code class="inline-code">torch.compile: enabled</code> in the log (a silent eager fallback invalidates the number).
+</li>
+<li class="task-item"><input type="checkbox" disabled > <strong>Compile amortization</strong>: record compile time separately; time only post-compile steps. <code class="inline-code">max-autotune</code> first call can take minutes.
+</li>
+<li class="task-item"><input type="checkbox" disabled > <strong>TF32 flags recorded</strong>: note <code class="inline-code">allow_tf32</code> settings next to every number; never mix TF32 and non-TF32 runs in one comparison without a label.
+</li>
+<li class="task-item"><input type="checkbox" disabled > <strong>Memory peak vs steady</strong>: call <code class="inline-code">torch.cuda.reset_peak_memory_stats()</code> after init, then report both the window peak and the steady level (caching-allocator growth can push peak far above steady; the microbench's measured peak is the number the fit decision should use).
+</li>
+<li class="task-item"><input type="checkbox" disabled > <strong>Median, not just mean</strong>: <code class="inline-code">step_time_a100.py</code> prints the mean; re-time with <code class="inline-code">--steps 50</code> and report p50/p95 from the raw per-step samples.
+</li>
+<li class="task-item"><input type="checkbox" disabled > <strong>Environment block</strong>: <code class="inline-code">torch.__version__</code>, CUDA version, driver, GPU name, clocks (<code class="inline-code">nvidia-smi</code>), cuDNN version — attach it to the results file.
+</li>
+<li class="task-item"><input type="checkbox" disabled > <strong>Token reconciliation</strong>: recompute total tokens from <code class="inline-code">total_steps // grad_accum × grad_accum × bs × seq</code> and compare with the data size (see §1.3 — the current config's claims disagree with each other).
+</li>
+<li class="task-item"><input type="checkbox" disabled > <strong>Results file</strong>: write JSON to <code class="inline-code">.benchmarks/&lt;date&gt;_a100.json</code> (the dir exists and is empty — this is what it is for): config hash, env block, flags, per-step samples, peak/steady memory, tps, MFU.
+</li>
+<li class="task-item"><input type="checkbox" disabled > <strong>Correctness sidecar</strong>: one short <code class="inline-code">training/pretrain.py</code> run with the same flags, confirming loss decreases — a fast-but-diverging run is not a benchmark result.
+</li>
+</ul>
+<h2 id="8-reporting-numbers-back-into-the-docs" class="heading-anchor">8. Reporting Numbers Back Into the Docs<a href="#8-reporting-numbers-back-into-the-docs" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Rules, in order of importance:</p>
+<ol class="doc-list">
+<li><strong>Label everything</strong>: <code class="inline-code">[MEASURED 2026-08-04 A100-80GB]</code> with the §7 environment block, or <code class="inline-code">[ESTIMATE]</code>, or <code class="inline-code">[DERIVED]</code> with the formula. Never a bare number.
+</li>
+<li><strong>Replace, don't mix</strong>: when measured data exists, the old estimate in the same location is deleted, not annotated. Two numbers for one figure in one place is how stale claims survive.
+</li>
+<li><strong>Every perf claim cites its script</strong>: anchor the tool that produced it (<code class="inline-code">scripts/step_time_a100.py:main</code> for MFU, <code class="inline-code">scripts/microbench_a100.py:main</code> for VRAM, <code class="inline-code">utils/logging.py:TrainingLogger.log</code> for tps). No script, no claim.
+</li>
+<li><strong>Parameter counts stay <code class="inline-code">[COUNTED]</code></strong> via <code class="inline-code">models/transformer.py:count_parameters</code> — 411.6M / 418.7M is not a benchmark and never gets relabeled.
+</li>
+</ol>
+<p>Where the numbers live today, and what to touch after the first run: the "13–15 h / 35–40% MFU" comment in <code class="inline-code">configs/pretrain_a100_422m.yaml</code> and the <code class="inline-code">scripts/launch_a100.sh</code> echoes (both <code class="inline-code">[ESTIMATE]</code>, §1.3 says they are wrong); the VRAM budget section of <code class="inline-code">concepts/kernels-and-ops.md</code> (the estimator walkthrough lives in <code class="inline-code">../references/R8_utils_api.md</code>); the budget tables in <code class="inline-code">concepts/foundations.md</code>; and this guide's §1.2 table.</p>
+<h2 id="9-pitfalls-consolidated" class="heading-anchor">9. Pitfalls (Consolidated)<a href="#9-pitfalls-consolidated" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Trap</th><th>Symptom</th><th>Defense</th></tr></thead><tbody><tr><td>Unrun benchmark script</td><td><code class="inline-code">NameError: count_parameters</code> in <code class="inline-code">microbench_a100.py</code></td><td>apply the §1.4 import fix; treat every script as suspect until run once</td></tr><tr><td>Silent eager fallback</td><td>output has no <code class="inline-code">torch.compile: enabled</code> line</td><td>grep the log; <code class="inline-code">--no-compile</code> runs are labeled</td></tr><tr><td>Mean instead of median</td><td>one slow step (dataloader, save) inflates ms/step</td><td>report p50/p95 from <code class="inline-code">--steps 50</code> samples</td></tr><tr><td>Quoting e2e ms/step as throughput</td><td>1650 run is correctness-only, compile off, fused off</td><td>only <code class="inline-code">step_time_a100.py</code> or logger tps are throughput</td></tr><tr><td>TF32/non-TF32 mixing</td><td>loss curves differ from fp32 references</td><td>record <code class="inline-code">allow_tf32</code> next to every number</td></tr><tr><td>Counting the tied head</td><td>params reported 488.4M instead of 411.6M</td><td>always <code class="inline-code">count_parameters</code>, never raw <code class="inline-code">parameters()</code></td></tr><tr><td>Estimating instead of measuring</td><td>"fits" but OOMs at step 17</td><td>trust <code class="inline-code">measured peak</code>, not <code class="inline-code">estimated peak</code></td></tr><tr><td>MTP omitted</td><td>microbench/step-time build base-only; training adds 7.1M params</td><td>label which model the number is for</td></tr></tbody></table></div>
+<h2 id="10-check-your-understanding" class="heading-anchor">10. Check Your Understanding<a href="#10-check-your-understanding" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ol class="doc-list">
+<li><strong>Q:</strong> Why is the "13–15 h" comment untrustworthy even before any GPU time? <strong>A:</strong> At bs=8, seq=2048 and 8.39B scheduled tokens it implies ~111% MFU of the A100 BF16 peak — mathematically impossible at the 35–40% MFU it claims (§1.3).
+</li>
+<li><strong>Q:</strong> <code class="inline-code">sum(p.numel() for p in model.parameters())</code> on the canonical config reports ~488M params. Where does the error come from? <strong>A:</strong> The tied output head shares the embedding tensor, so <code class="inline-code">parameters()</code> yields it twice; <code class="inline-code">count_parameters</code> dedups by tensor id (§3.2).
+</li>
+<li><strong>Q:</strong> You measure 62,000 tok/s on the logger during a real run. What is the MFU? <strong>A:</strong> <span class="math-inline">$6 \times 334\,818\,432 \times 62\,000 / (312 \times 10^{12}) \approx 40\%$</span>, before accounting for MTP's extra FLOPs — and only if TF32 + compile were on and recorded (§6.3).
+</li>
+</ol>
+<h2 id="references" class="heading-anchor">References<a href="#references" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><a href="../concepts/kernels-and-ops.html" class="doc-link">Operations, Testing &amp; Triton Kernels</a> — VRAM budget, test suite
+</li>
+<li><a href="../training.html" class="doc-link">Training Pipeline</a> — loop semantics behind step-time numbers
+</li>
+<li><a href="../references/R8_utils_api.html" class="doc-link">R8 — Utils API</a> - <code class="inline-code">estimate_model_memory_gb</code> estimator walkthrough
+</li>
+<li><a href="../guides/G2_mup_and_lr_tuning.html" class="doc-link">G2 — μP &amp; LR tuning</a> / <a href="../guides/G3_triton_development.html" class="doc-link">G3 - Triton development</a>
+</li>
+<li>Scripts: <code class="inline-code">scripts/microbench_a100.py</code>, <code class="inline-code">scripts/step_time_a100.py</code>, <code class="inline-code">scripts/e2e_test_gpu.py</code>
+</li>
+</ul>
+                </article>
+
+                
+
+                <div class="doc-footer-nav">
+                    <a href="../../docs/guides/G3_triton_development.html" class="nav-card prev-card"><span class="card-label">← Previous</span><span class="card-title">G3 — Triton Development</span></a>
+                    <a href="../../docs/guides/G5_checkpoint_ops.html" class="nav-card next-card"><span class="card-label">Next →</span><span class="card-title">G5 — Checkpoint Ops</span></a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar Table of Contents -->
+        <aside class="toc-sidebar">
+            <div class="toc-inner">
+                <div class="toc-title">On This Page</div>
+                <ul class="toc-list"><li class="toc-h2"><a href="#60-second-summary" class="toc-link">60-Second Summary</a></li><li class="toc-h2"><a href="#1-the-honest-baseline-no-a100-run-has-executed" class="toc-link">1. The Honest Baseline: No A100 Run Has Executed</a></li><li class="toc-h3"><a href="#11-why-this-section-exists" class="toc-link">1.1 Why this section exists</a></li><li class="toc-h3"><a href="#12-the-figures-currently-in-the-repo-and-their-true-status" class="toc-link">1.2 The figures currently in the repo, and their true status</a></li><li class="toc-h3"><a href="#13-a-reconciliation-you-can-do-on-cpu-today" class="toc-link">1.3 A reconciliation you can do on CPU today</a></li><li class="toc-h3"><a href="#14-known-defect-in-the-benchmark-tooling-itself-fixed-2026-08-04" class="toc-link">1.4 Known defect in the benchmark tooling itself (fixed 2026-08-04)</a></li><li class="toc-h2"><a href="#2-choosing-a-benchmark--decision-tree" class="toc-link">2. Choosing a Benchmark — Decision Tree</a></li><li class="toc-h2"><a href="#3-microbench--vram-estimate-vs-measured" class="toc-link">3. Microbench — VRAM Estimate vs Measured</a></li><li class="toc-h3"><a href="#31-what-it-measures" class="toc-link">3.1 What it measures</a></li><li class="toc-h3"><a href="#32--dedup" class="toc-link">3.2  dedup</a></li><li class="toc-h3"><a href="#33-the-estimator-component-by-component" class="toc-link">3.3 The estimator, component by component</a></li><li class="toc-h3"><a href="#34-safety-margin" class="toc-link">3.4 Safety margin</a></li><li class="toc-h3"><a href="#35-running-it" class="toc-link">3.5 Running it</a></li><li class="toc-h2"><a href="#4-step-time--msstep-tokenss-mfu" class="toc-link">4. Step-Time — ms/Step, Tokens/s, MFU</a></li><li class="toc-h3"><a href="#41-what-it-measures" class="toc-link">4.1 What it measures</a></li><li class="toc-h3"><a href="#42-the-mfu-formula" class="toc-link">4.2 The MFU formula</a></li><li class="toc-h3"><a href="#43-flags-you-must-know" class="toc-link">4.3 Flags you must know</a></li><li class="toc-h3"><a href="#44-running-it" class="toc-link">4.4 Running it</a></li><li class="toc-h2"><a href="#5-e2e-gpu-smoke--the-1650-run" class="toc-link">5. E2E GPU Smoke — the 1650 Run</a></li><li class="toc-h3"><a href="#51-what-it-verifies" class="toc-link">5.1 What it verifies</a></li><li class="toc-h3"><a href="#52-the-deliberate-degradations--and-why-it-is-not-a-speed-benchmark" class="toc-link">5.2 The deliberate degradations — and why it is not a speed benchmark</a></li><li class="toc-h3"><a href="#53-prerequisites-and-running" class="toc-link">5.3 Prerequisites and running</a></li><li class="toc-h2"><a href="#6-the-traininglogger-tps-meter--steady-state-throughput" class="toc-link">6. The TrainingLogger tps Meter — Steady-State Throughput</a></li><li class="toc-h3"><a href="#61-formula" class="toc-link">6.1 Formula</a></li><li class="toc-h3"><a href="#62-what-the-number-includes" class="toc-link">6.2 What the number includes</a></li><li class="toc-h3"><a href="#63-from-tps-to-mfu" class="toc-link">6.3 From tps to MFU</a></li><li class="toc-h2"><a href="#7-what-a-real-benchmark-must-capture" class="toc-link">7. What a Real Benchmark Must Capture</a></li><li class="toc-h2"><a href="#8-reporting-numbers-back-into-the-docs" class="toc-link">8. Reporting Numbers Back Into the Docs</a></li><li class="toc-h2"><a href="#9-pitfalls-consolidated" class="toc-link">9. Pitfalls (Consolidated)</a></li><li class="toc-h2"><a href="#10-check-your-understanding" class="toc-link">10. Check Your Understanding</a></li><li class="toc-h2"><a href="#references" class="toc-link">References</a></li></ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            if (window.hljs) {
+                hljs.highlightAll();
+            }
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+                    throwOnError: false
+                });
+            }
+        });
+    </script>
+    <script defer src="../../assets/portal.js"></script>
+</body>
+</html>

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skills Reference | DeepSeek-v3-Lite Documentation</title>
+    <!-- Fonts — one voice for the whole portal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Highlight.js for Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- KaTeX for LaTeX Math -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="./assets/style.css">
+    <script>
+(function () {
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) document.documentElement.classList.add('booting');
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            document.documentElement.classList.remove('booting');
+            var ov = document.getElementById('boot-overlay');
+            if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+        }, reduced ? 0 : 350);
+    });
+})();
+</script>
+</head>
+<body>
+    <div id="boot-overlay" aria-hidden="true"><div class="boot-inner"><div class="boot-wordmark">DEEPSEEK-V3-LITE</div><div class="boot-line">loading weights <span class="boot-bar">[░░░░░░░░░░░░] 0%</span></div></div></div>
+    <!-- Top Header -->
+    <header class="site-header">
+        <div class="header-left">
+            <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
+            <a href="./index.html" class="brand-logo">
+                <span class="brand-name">DeepSeek-v3-Lite</span>
+                <span class="brand-badge">Docs</span>
+            </a>
+        </div>
+        <div class="header-right">
+            <a href="./index.html" class="header-link">Portal Home</a>
+            <a href="./README.html" class="header-link">GitHub README</a>
+        </div>
+    </header>
+
+    <div class="app-layout">
+        <!-- Left Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-inner">
+                <div class="sidebar-search"><input type="text" id="navSearch" placeholder="Search docs..." onkeyup="filterNav()"></div>
+<div class="nav-group">
+<div class="nav-group-title">Core</div>
+<ul class="nav-list"><li class="nav-item"><a href="./README.html" class="nav-link ">Project Overview (README)</a></li><li class="nav-item"><a href="./AGENTS.html" class="nav-link ">AGENTS & System Architecture</a></li><li class="nav-item"><a href="./SKILLS.html" class="nav-link active">Skills Reference</a></li><li class="nav-item"><a href="./docs/README.html" class="nav-link ">Documentation Index</a></li><li class="nav-item"><a href="./docs/training.html" class="nav-link ">Training Architecture & Pipeline</a></li><li class="nav-item"><a href="./docs/inference.html" class="nav-link ">Inference & Speculative Decoding</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Concepts</div>
+<ul class="nav-list"><li class="nav-item"><a href="./docs/concepts/foundations.html" class="nav-link ">Foundations & Architecture</a></li><li class="nav-item"><a href="./docs/concepts/attention-and-precision.html" class="nav-link ">MLA & Mixed Precision</a></li><li class="nav-item"><a href="./docs/concepts/moe-mtp.html" class="nav-link ">DeepSeekMoE & MTP</a></li><li class="nav-item"><a href="./docs/concepts/parallelism.html" class="nav-link ">DualPipe Parallelism</a></li><li class="nav-item"><a href="./docs/concepts/data-pipeline.html" class="nav-link ">Data Pipeline</a></li><li class="nav-item"><a href="./docs/concepts/kernels-and-ops.html" class="nav-link ">Operations & Triton Kernels</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<ul class="nav-list"><li class="nav-item"><a href="./docs/guides/getting-started.html" class="nav-link ">Getting Started</a></li><li class="nav-item"><a href="./docs/guides/G1_debugging_playbook.html" class="nav-link ">G1 — Debugging Playbook</a></li><li class="nav-item"><a href="./docs/guides/G2_mup_and_lr_tuning.html" class="nav-link ">G2 — μP & LR Tuning</a></li><li class="nav-item"><a href="./docs/guides/G3_triton_development.html" class="nav-link ">G3 — Triton Development</a></li><li class="nav-item"><a href="./docs/guides/G4_benchmarking.html" class="nav-link ">G4 — Benchmarking</a></li><li class="nav-item"><a href="./docs/guides/G5_checkpoint_ops.html" class="nav-link ">G5 — Checkpoint Ops</a></li><li class="nav-item"><a href="./docs/guides/contributing.html" class="nav-link ">Contributing Guide</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">References</div>
+<ul class="nav-list"><li class="nav-item"><a href="./docs/references/R1_config_schema.html" class="nav-link ">R1 — Config Schema</a></li><li class="nav-item"><a href="./docs/references/R2_transformer_api.html" class="nav-link ">R2 — Transformer API</a></li><li class="nav-item"><a href="./docs/references/R3_mla_api.html" class="nav-link ">R3 — MLA API</a></li><li class="nav-item"><a href="./docs/references/R4_moe_api.html" class="nav-link ">R4 — MoE API</a></li><li class="nav-item"><a href="./docs/references/R5_mtp_api.html" class="nav-link ">R5 — MTP API</a></li><li class="nav-item"><a href="./docs/references/R6_triton_api.html" class="nav-link ">R6 — Triton API</a></li><li class="nav-item"><a href="./docs/references/R7_training_api.html" class="nav-link ">R7 — Training API</a></li><li class="nav-item"><a href="./docs/references/R8_utils_api.html" class="nav-link ">R8 — Utils API</a></li><li class="nav-item"><a href="./docs/references/R9_inference_api.html" class="nav-link ">R9 — Inference API</a></li></ul>
+</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-container">
+                <div class="breadcrumb">
+                    <a href="./index.html">Docs</a> &gt; <span>Core</span> &gt; <span class="current">Skills Reference</span>
+                </div>
+                
+                <div class="doc-header">
+                    <h1 class="doc-title">Skills Reference</h1>
+                    <div class="doc-meta">
+                        <span class="meta-item"><span class="meta-label">source</span><span class="meta-val">SKILLS.md</span></span>
+                        <span class="meta-item"><span class="meta-label">words</span><span class="meta-val">710</span></span>
+                        <span class="meta-item"><span class="meta-label">read</span><span class="meta-val">~4 min</span></span>
+                    </div>
+                </div>
+
+                <article class="markdown-body" id="articleBody">
+                    <span class="doc-anchor" id="skillsmd--deepseek-v3-lite"></span>
+<blockquote>Skills for the faithful V3 reproduction. Pair with <code class="inline-code">.agents/skills/llm-architecture/SKILL.md</code>.</blockquote>
+<hr class='doc-hr'>
+<h2 id="skill-1-run-a-smoke-test-on-the-architecture" class="heading-anchor">Skill 1: Run a smoke test on the architecture<a href="#skill-1-run-a-smoke-test-on-the-architecture" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="code-wrapper collapsed" data-lines="19"><div class="code-header"><span class="code-lang">bash</span><span class="code-actions"><button class="expand-btn" data-label="expand ▾ · 19 lines" onclick="toggleCode(this)">expand ▾ · 19 lines</button><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-bash">cd LLM/DeepSeek-v3-Lite
+python -c &quot;
+import torch
+from models.transformer import Transformer
+cfg = {
+  &#x27;vocab_size&#x27;: 100018, &#x27;dim&#x27;: 768, &#x27;n_layers&#x27;: 18, &#x27;n_heads&#x27;: 12,
+  &#x27;n_dense_layers&#x27;: 2, &#x27;n_routed_experts&#x27;: 20, &#x27;n_shared_experts&#x27;: 1,
+  &#x27;n_activated_experts&#x27;: 4, &#x27;inter_dim&#x27;: 1536, &#x27;moe_inter_dim&#x27;: 384,
+  &#x27;kv_lora_rank&#x27;: 192, &#x27;q_lora_rank&#x27;: 0, &#x27;qk_nope_head_dim&#x27;: 48,
+  &#x27;qk_rope_head_dim&#x27;: 24, &#x27;v_head_dim&#x27;: 64, &#x27;max_seq_len&#x27;: 2048,
+  &#x27;rope_theta&#x27;: 10000, &#x27;rope_factor&#x27;: 1.0, &#x27;mscale&#x27;: 1.0,
+  &#x27;attn_impl&#x27;: &#x27;sdpa&#x27;, &#x27;moe_dispatch&#x27;: &#x27;stacked&#x27;, &#x27;weight_tying&#x27;: True,
+  &#x27;dtype&#x27;: &#x27;bf16&#x27;, &#x27;mtp_depth&#x27;: 1, &#x27;mtp_loss_weight&#x27;: 0.3,
+}
+m = Transformer(cfg).to(&#x27;cuda&#x27;).to(dtype=torch.bfloat16)
+x = torch.randint(0, cfg[&#x27;vocab_size&#x27;], (2, 128), device=&#x27;cuda&#x27;)
+y = m(x)
+print(y.shape)  # expected: torch.Size([2, 128, 100018])
+&quot;</code></pre></div>
+<p>A working forward + a non-NaN loss is the minimum.</p>
+<h2 id="skill-2-add-a-new-mla-hyperparameter" class="heading-anchor">Skill 2: Add a new MLA hyperparameter<a href="#skill-2-add-a-new-mla-hyperparameter" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>See <a href="docs/concepts/attention-and-precision.html" class="doc-link"><code class="inline-code">docs/concepts/attention-and-precision.md</code></a> for dimension breakdown and absorption algebra.</p>
+<p><code class="inline-code">kv_lora_rank</code> (default 192), <code class="inline-code">qk_nope_head_dim</code> (48), <code class="inline-code">qk_rope_head_dim</code> (24),</p>
+<p><code class="inline-code">v_head_dim</code> (64), <code class="inline-code">q_lora_rank</code> (0 in 422M). Changes:</p>
+<ol class="doc-list">
+<li>Update <code class="inline-code">configs/pretrain_a100_422m.yaml</code>.
+</li>
+<li>Update the config dict passed to <code class="inline-code">Transformer</code> (no separate <code class="inline-code">ModelConfig</code> class exists — the dataclass defaults live in <code class="inline-code">TrainingConfig</code> in <code class="inline-code">training/pretrain.py</code>).
+</li>
+<li>Re-init affected weights (the absorption trick must be re-applied if
+<br> <code class="inline-code">q_lora_rank</code> or <code class="inline-code">kv_lora_rank</code> changes).
+</li>
+<li>Re-run μP LR scaling.
+</li>
+</ol>
+<p><strong>Pitfall:</strong> changing <code class="inline-code">qk_rope_head_dim</code> invalidates existing KV cache shape.</p>
+<h2 id="skill-3-tune-auxlossfreegate" class="heading-anchor">Skill 3: Tune AuxLossFreeGate<a href="#skill-3-tune-auxlossfreegate" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>The bias update rule (in <code class="inline-code">models/moe.py::AuxLossFreeGate.update_bias</code>):</p>
+<div class="code-wrapper" data-lines="3"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python"># Deadband rule — no change inside ±bias_upper/lower_threshold of the mean.
+self.bias[counts &gt; avg * (1.0 + self.bias_upper)] -= speed
+self.bias[counts &lt; avg * (1.0 - self.bias_lower)] += speed</code></pre></div>
+<ul class="doc-list">
+<li><code class="inline-code">bias_update_speed=0.001</code> default (per <code class="inline-code">configs/pretrain_a100_422m.yaml</code>).
+</li>
+<li><code class="inline-code">bias_update_every=1</code> in the canonical config (the dataclass default is 10; yaml wins).
+</li>
+<li>The bias is a <code class="inline-code">register_buffer</code> (not a Parameter) and is not in the gradient.
+</li>
+<li>Do not add a load-balancing loss term — the framework is <strong>aux-loss-free</strong>; a separate
+<br> loss would double-count load balancing and break convergence.
+</li>
+<li>Defaults: <code class="inline-code">bias_upper_threshold=0.10</code>, <code class="inline-code">bias_lower_threshold=0.10</code> (10% deadband).
+</li>
+</ul>
+<h2 id="skill-4-use-mtp-for-speculative-decoding" class="heading-anchor">Skill 4: Use MTP for speculative decoding<a href="#skill-4-use-mtp-for-speculative-decoding" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="code-wrapper" data-lines="6"><div class="code-header"><span class="code-lang">bash</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-bash"># Load a checkpoint and run interactive generation with the MTP draft head.
+python inference/generate.py \
+  --config configs/pretrain_a100_422m.yaml \
+  --checkpoint checkpoints/pretrain \
+  --use_speculative --acceptance_threshold 0.8 \
+  --max_new_tokens 200</code></pre></div>
+<p>The speculative decoder is constructed by <code class="inline-code">inference/generate.py</code> when <code class="inline-code">--use_speculative</code></p>
+<p>is passed. Acceptance ~0.8 is the expected rate; <code class="inline-code">acceptance_threshold=1.0</code> means "always</p>
+<p>accept the draft" (useful for sanity-checking the draft head). <code class="inline-code">inference/speculative.py</code></p>
+<p>is a library — it has no CLI of its own.</p>
+<h2 id="skill-5-validate-μp-lr-scaling" class="heading-anchor">Skill 5: Validate μP LR scaling<a href="#skill-5-validate-μp-lr-scaling" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>The formula in <code class="inline-code">training/pretrain.py</code>:</p>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">new_lr = mup_lr_reference * (mup_lr_reference_params / total) ** 0.5</code></pre></div>
+<div class="code-wrapper" data-lines="9"><div class="code-header"><span class="code-lang">bash</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-bash">python -c &quot;
+# Reference: 6e-4 at 757,226,496 params. Scale = sqrt(ref / total).
+ref_lr, ref_params = 6.0e-4, 757_226_496
+target = 411_632_256   # real deduped count of the 422M config (base, no MTP)
+scale = (ref_params / target) ** 0.5
+print(f&#x27;μP scale: {scale:.3f}&#x27;)
+print(f&#x27;μP LR:    {ref_lr * scale:.3e}&#x27;)
+&quot;
+# Expected: μP scale ≈ 1.356, μP LR ≈ 8.14e-4 (base); 8.07e-4 with MTP (418.7M).</code></pre></div>
+<h2 id="skill-6-add-a-new-data-source-to-the-mixture" class="heading-anchor">Skill 6: Add a new data source to the mixture<a href="#skill-6-add-a-new-data-source-to-the-mixture" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Edit the <strong>universal</strong> mixture at <code class="inline-code">LLM/shared_data/config/mixture.yaml</code> (in the LLM</p>
+<p>umbrella — this project imports it via <code class="inline-code">sys.path</code>, it is not vendored here). Re-run:</p>
+<div class="code-wrapper" data-lines="3"><div class="code-header"><span class="code-lang">bash</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-bash">python3 data/prepare_data.py --stage pretrain
+# Or restrict to the new source for a dry-run:
+python3 data/prepare_data.py --stage pretrain --source &lt;new-source-id&gt;</code></pre></div>
+<p>The mixture weights must sum to 1.0. To override per-project, pass</p>
+<p><code class="inline-code">--mixture &lt;path-to-yaml&gt;</code> to the shim.</p>
+<h2 id="doc-routing" class="heading-anchor">Doc routing<a href="#doc-routing" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Question</th><th>Start here</th></tr></thead><tbody><tr><td>Run smoke tests / first training</td><td><a href="docs/guides/getting-started.html" class="doc-link">Getting Started</a></td></tr><tr><td>Tune YAML</td><td><a href="docs/training.html" class="doc-link">Training Pipeline</a></td></tr><tr><td>MLA dimensions / absorption</td><td><a href="docs/concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a> + <code class="inline-code">models/mla.py</code></td></tr><tr><td>MoE bias / routing</td><td><a href="docs/concepts/moe-mtp.html" class="doc-link">DeepSeekMoE &amp; MTP</a> + <code class="inline-code">models/moe.py</code></td></tr><tr><td>Checkpoints / VRAM</td><td><a href="docs/concepts/kernels-and-ops.html" class="doc-link">Operations, Testing &amp; Triton Kernels</a></td></tr><tr><td>Invariants / what tests prove</td><td><a href="docs/concepts/kernels-and-ops.html" class="doc-link">Operations, Testing &amp; Triton Kernels</a></td></tr><tr><td>Enable Triton</td><td><a href="docs/concepts/kernels-and-ops.html" class="doc-link">Triton Kernels</a> + <code class="inline-code">ENABLE_TRITON_KERNELS=1</code></td></tr></tbody></table></div>
+<h2 id="pitfalls-cross-cutting" class="heading-anchor">Pitfalls (cross-cutting)<a href="#pitfalls-cross-cutting" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><strong>NaN guard</strong> is <code class="inline-code">nan_guard_max_consecutive=5</code> — after 5 consecutive NaN
+<br> steps the run auto-rolls back to the last good checkpoint.
+</li>
+<li><strong>Speculative decoding</strong> acceptance rate is prompt-dependent. Measure
+<br> per-batch on a held-out set; do not rely on a single prompt.
+</li>
+<li><strong>Embedding tied?</strong> Yes (<code class="inline-code">weight_tying: true</code>). Removing tying breaks
+<br> generation quality.
+</li>
+<li><strong><code class="inline-code">inference/generate.py --device</code></strong> defaults to <code class="inline-code">cuda</code> if available,
+<br> else <code class="inline-code">cpu</code>. Pass <code class="inline-code">--device cpu</code> to run on a Mac or any non-CUDA host.
+</li>
+</ul>
+                </article>
+
+                
+
+                <div class="doc-footer-nav">
+                    <a href="./AGENTS.html" class="nav-card prev-card"><span class="card-label">← Previous</span><span class="card-title">AGENTS & System Architecture</span></a>
+                    <a href="./docs/README.html" class="nav-card next-card"><span class="card-label">Next →</span><span class="card-title">Documentation Index</span></a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar Table of Contents -->
+        <aside class="toc-sidebar">
+            <div class="toc-inner">
+                <div class="toc-title">On This Page</div>
+                <ul class="toc-list"><li class="toc-h2"><a href="#skill-1-run-a-smoke-test-on-the-architecture" class="toc-link">Skill 1: Run a smoke test on the architecture</a></li><li class="toc-h2"><a href="#skill-2-add-a-new-mla-hyperparameter" class="toc-link">Skill 2: Add a new MLA hyperparameter</a></li><li class="toc-h2"><a href="#skill-3-tune-auxlossfreegate" class="toc-link">Skill 3: Tune AuxLossFreeGate</a></li><li class="toc-h2"><a href="#skill-4-use-mtp-for-speculative-decoding" class="toc-link">Skill 4: Use MTP for speculative decoding</a></li><li class="toc-h2"><a href="#skill-5-validate-μp-lr-scaling" class="toc-link">Skill 5: Validate μP LR scaling</a></li><li class="toc-h2"><a href="#skill-6-add-a-new-data-source-to-the-mixture" class="toc-link">Skill 6: Add a new data source to the mixture</a></li><li class="toc-h2"><a href="#doc-routing" class="toc-link">Doc routing</a></li><li class="toc-h2"><a href="#pitfalls-cross-cutting" class="toc-link">Pitfalls (cross-cutting)</a></li></ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            if (window.hljs) {
+                hljs.highlightAll();
+            }
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+                    throwOnError: false
+                });
+            }
+        });
+    </script>
+    <script defer src="./assets/portal.js"></script>
+</body>
+</html>

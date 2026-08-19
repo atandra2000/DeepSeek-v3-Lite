@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation Index | DeepSeek-v3-Lite Documentation</title>
+    <!-- Fonts — one voice for the whole portal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Highlight.js for Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- KaTeX for LaTeX Math -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="../assets/style.css">
+    <script>
+(function () {
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) document.documentElement.classList.add('booting');
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            document.documentElement.classList.remove('booting');
+            var ov = document.getElementById('boot-overlay');
+            if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+        }, reduced ? 0 : 350);
+    });
+})();
+</script>
+</head>
+<body>
+    <div id="boot-overlay" aria-hidden="true"><div class="boot-inner"><div class="boot-wordmark">DEEPSEEK-V3-LITE</div><div class="boot-line">loading weights <span class="boot-bar">[░░░░░░░░░░░░] 0%</span></div></div></div>
+    <!-- Top Header -->
+    <header class="site-header">
+        <div class="header-left">
+            <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
+            <a href="../index.html" class="brand-logo">
+                <span class="brand-name">DeepSeek-v3-Lite</span>
+                <span class="brand-badge">Docs</span>
+            </a>
+        </div>
+        <div class="header-right">
+            <a href="../index.html" class="header-link">Portal Home</a>
+            <a href="../README.html" class="header-link">GitHub README</a>
+        </div>
+    </header>
+
+    <div class="app-layout">
+        <!-- Left Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-inner">
+                <div class="sidebar-search"><input type="text" id="navSearch" placeholder="Search docs..." onkeyup="filterNav()"></div>
+<div class="nav-group">
+<div class="nav-group-title">Core</div>
+<ul class="nav-list"><li class="nav-item"><a href="../README.html" class="nav-link ">Project Overview (README)</a></li><li class="nav-item"><a href="../AGENTS.html" class="nav-link ">AGENTS & System Architecture</a></li><li class="nav-item"><a href="../SKILLS.html" class="nav-link ">Skills Reference</a></li><li class="nav-item"><a href="../docs/README.html" class="nav-link active">Documentation Index</a></li><li class="nav-item"><a href="../docs/training.html" class="nav-link ">Training Architecture & Pipeline</a></li><li class="nav-item"><a href="../docs/inference.html" class="nav-link ">Inference & Speculative Decoding</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Concepts</div>
+<ul class="nav-list"><li class="nav-item"><a href="../docs/concepts/foundations.html" class="nav-link ">Foundations & Architecture</a></li><li class="nav-item"><a href="../docs/concepts/attention-and-precision.html" class="nav-link ">MLA & Mixed Precision</a></li><li class="nav-item"><a href="../docs/concepts/moe-mtp.html" class="nav-link ">DeepSeekMoE & MTP</a></li><li class="nav-item"><a href="../docs/concepts/parallelism.html" class="nav-link ">DualPipe Parallelism</a></li><li class="nav-item"><a href="../docs/concepts/data-pipeline.html" class="nav-link ">Data Pipeline</a></li><li class="nav-item"><a href="../docs/concepts/kernels-and-ops.html" class="nav-link ">Operations & Triton Kernels</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<ul class="nav-list"><li class="nav-item"><a href="../docs/guides/getting-started.html" class="nav-link ">Getting Started</a></li><li class="nav-item"><a href="../docs/guides/G1_debugging_playbook.html" class="nav-link ">G1 — Debugging Playbook</a></li><li class="nav-item"><a href="../docs/guides/G2_mup_and_lr_tuning.html" class="nav-link ">G2 — μP & LR Tuning</a></li><li class="nav-item"><a href="../docs/guides/G3_triton_development.html" class="nav-link ">G3 — Triton Development</a></li><li class="nav-item"><a href="../docs/guides/G4_benchmarking.html" class="nav-link ">G4 — Benchmarking</a></li><li class="nav-item"><a href="../docs/guides/G5_checkpoint_ops.html" class="nav-link ">G5 — Checkpoint Ops</a></li><li class="nav-item"><a href="../docs/guides/contributing.html" class="nav-link ">Contributing Guide</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">References</div>
+<ul class="nav-list"><li class="nav-item"><a href="../docs/references/R1_config_schema.html" class="nav-link ">R1 — Config Schema</a></li><li class="nav-item"><a href="../docs/references/R2_transformer_api.html" class="nav-link ">R2 — Transformer API</a></li><li class="nav-item"><a href="../docs/references/R3_mla_api.html" class="nav-link ">R3 — MLA API</a></li><li class="nav-item"><a href="../docs/references/R4_moe_api.html" class="nav-link ">R4 — MoE API</a></li><li class="nav-item"><a href="../docs/references/R5_mtp_api.html" class="nav-link ">R5 — MTP API</a></li><li class="nav-item"><a href="../docs/references/R6_triton_api.html" class="nav-link ">R6 — Triton API</a></li><li class="nav-item"><a href="../docs/references/R7_training_api.html" class="nav-link ">R7 — Training API</a></li><li class="nav-item"><a href="../docs/references/R8_utils_api.html" class="nav-link ">R8 — Utils API</a></li><li class="nav-item"><a href="../docs/references/R9_inference_api.html" class="nav-link ">R9 — Inference API</a></li></ul>
+</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-container">
+                <div class="breadcrumb">
+                    <a href="../index.html">Docs</a> &gt; <span>Core</span> &gt; <span class="current">Documentation Index</span>
+                </div>
+                
+                <div class="doc-header">
+                    <h1 class="doc-title">Documentation Index</h1>
+                    <div class="doc-meta">
+                        <span class="meta-item"><span class="meta-label">source</span><span class="meta-val">docs/README.md</span></span>
+                        <span class="meta-item"><span class="meta-label">words</span><span class="meta-val">1,355</span></span>
+                        <span class="meta-item"><span class="meta-label">read</span><span class="meta-val">~7 min</span></span>
+                    </div>
+                </div>
+
+                <article class="markdown-body" id="articleBody">
+                    <span class="doc-anchor" id="deepseek-v3-lite--documentation-index"></span>
+<blockquote>Navigation map for the DeepSeek-v3-Lite documentation: <code class="inline-code">concepts/</code> (theory + architecture), <code class="inline-code">references/</code> (symbol-anchored API docs), <code class="inline-code">guides/</code> (how-to / ops), plus the top-level pipeline docs <code class="inline-code">training.md</code> and <code class="inline-code">inference.md</code>. Every code-symbol citation (path + class/method) is machine-verified by <code class="inline-code">tests/test_doc_refs.py</code>; prose hygiene and relative links are checked by <code class="inline-code">scripts/check_docs.py</code> — both run in CI.</blockquote>
+<h2 id="quick-reference" class="heading-anchor">Quick Reference<a href="#quick-reference" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>A faithful, from-scratch, raw-PyTorch reproduction of the <strong>DeepSeek-V3 architecture</strong> at Chinchilla-optimal scale — <strong>~412 M total / ~185 M active parameters per token</strong> (411.6M deduped; 418.7M with MTP) — built to be fully inspectable (no HuggingFace Trainer, no Lightning). It implements the four architectural pillars of DeepSeek-V3 at a scale that fits on one A100 80 GB:</p>
+<ol class="doc-list">
+<li><strong>Multi-Head Latent Attention (MLA)</strong> — low-rank KV compression with decoupled RoPE and the matrix-absorption trick.
+</li>
+<li><strong>DeepSeekMoE with auxiliary-loss-free load balancing</strong> — fine-grained routed experts + a shared expert, balanced by a control-theory bias update rather than an auxiliary loss.
+</li>
+<li><strong>Multi-Token Prediction (MTP)</strong> — a depth-1 auxiliary prediction head that densifies the training signal and enables speculative decoding at inference.
+</li>
+<li><strong>μP learning-rate scaling</strong> — maximal-update parameterization so the LR transfers across model widths.
+</li>
+</ol>
+<p>FP8 mixed precision and DualPipe bidirectional pipeline parallelism are DeepSeek-V3 <em>paper</em> techniques documented for completeness in <a href="concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a> and <a href="concepts/parallelism.html" class="doc-link">DualPipe Parallelism</a>; they are <strong>not implemented</strong> here because the target is single-GPU BF16 training.</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Parameter / Feature</th><th>Canonical Value</th></tr></thead><tbody><tr><td><strong>Total / Active params</strong></td><td><strong>~422 M nominal / 411.6 M deduped (weight-tied) · ~185 M active per token</strong></td></tr><tr><td><strong>Compute target</strong></td><td>8.4 B tokens (Chinchilla-optimal for 422 M) · 512 000 steps</td></tr><tr><td><strong>Topology</strong></td><td>18 layers = <strong>2 dense + 16 MoE</strong> · <code class="inline-code">d_model = 768</code></td></tr><tr><td><strong>Attention heads</strong></td><td>12 query heads · <code class="inline-code">d_head_nope = 48</code> · <code class="inline-code">d_head_rope = 24</code> · <code class="inline-code">d_v = 64</code></td></tr><tr><td><strong>MLA compression</strong></td><td>KV LoRA rank <code class="inline-code">d_c = 192</code> · decoupled RoPE <code class="inline-code">d_R = 24</code> · <code class="inline-code">q_lora_rank = 0</code> (full-rank Q projection)</td></tr><tr><td><strong>MoE layout</strong></td><td>20 routed experts · <strong>4 activated per token</strong> · 1 shared expert · <code class="inline-code">moe_inter_dim = 384</code></td></tr><tr><td><strong>Dense FFN</strong></td><td>SwiGLU · <code class="inline-code">inter_dim = 1536</code> (layers 0–1)</td></tr><tr><td><strong>MTP</strong></td><td>depth 1 · loss weight 0.3 · shared embedding + output head with main model</td></tr><tr><td><strong>Precision</strong></td><td><strong>BF16</strong> autocast · FP32 AdamW master weights · TF32 matmul on CUDA</td></tr><tr><td><strong>Attention impl</strong></td><td><code class="inline-code">sdpa</code> (default) · optional fused <code class="inline-code">triton</code> kernel, opt-in via <code class="inline-code">ENABLE_TRITON_KERNELS=1</code></td></tr><tr><td><strong>MoE dispatch</strong></td><td><code class="inline-code">stacked</code> (default) · optional fused <code class="inline-code">triton_grouped</code> grouped-GEMM, opt-in</td></tr><tr><td><strong>Optimizer / schedule</strong></td><td>AdamW (β = 0.9 / 0.95, wd = 0.1) · 2000-step linear warmup → cosine decay to 5% · grad clip 1.0</td></tr><tr><td><strong>μP LR</strong></td><td>reference LR 6.0e-4 @ 757 M params → scaled <code class="inline-code">lr_ref · (n_ref / n) ^ 0.5</code></td></tr><tr><td><strong>Context</strong></td><td><code class="inline-code">max_seq_len = 2048</code> · <code class="inline-code">rope_theta = 10000</code> · <code class="inline-code">rope_factor = 1.0</code> (YaRN off at train; decode-time scaling only)</td></tr><tr><td><strong>Tokenizer</strong></td><td><code class="inline-code">deepseek-ai/deepseek-coder-v2-lite</code> · vocab 100 018 (EOS 100 017, PAD 100 016)</td></tr><tr><td><strong>Weight tying</strong></td><td><code class="inline-code">true</code> — LM head shares the embedding table</td></tr><tr><td><strong>Checkpointing</strong></td><td>atomic safetensors (<code class="inline-code">model_step_N.safetensors</code> + <code class="inline-code">optim_step_N.pt</code> + <code class="inline-code">meta_step_N.json</code>) · gradient checkpointing on</td></tr><tr><td><strong>Hardware target</strong></td><td>1 × A100 80 GB SXM (single-GPU, no distributed)</td></tr></tbody></table></div>
+<blockquote>A second toy config <code class="inline-code">configs/pretrain_1650_2m.yaml</code> (dim=64, 4 layers, 4 experts, 1 active, GPT-2 50 257 vocab) exists for local smoke tests on a laptop GPU — it preserves every MLA/MoE/MTP invariant at miniature scale.</blockquote>
+<h2 id="concepts" class="heading-anchor">Concepts (<code class="inline-code">concepts/</code>)<a href="#concepts" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Theory and architecture, consolidated from the original spine chapters 01–13.</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Doc</th><th>Covers</th><th>Status</th></tr></thead><tbody><tr><td><a href="concepts/foundations.html" class="doc-link">Foundations &amp; Architecture</a></td><td>DeepSeek lineage (V1 → V2 → V3), causal LM objective, RMSNorm, SwiGLU, attention, RoPE, KV caching, Chinchilla, μP, mixed precision; full 18-layer topology, parameter budget, memory budget, file map, config→code routing; portfolio comparison vs GPT-OSS-Lite, LLaMA-3-Lite, Mamba-3-Lite</td><td>implemented</td></tr><tr><td><a href="concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a></td><td>MLA: low-rank KV compression, absorption trick, decoupled RoPE, KV-cache lifecycle, Triton path; FP8 E4M3/E5M2 scheme, tile/block scaling</td><td>implemented / FP8 paper-spec</td></tr><tr><td><a href="concepts/moe-mtp.html" class="doc-link">DeepSeekMoE &amp; MTP</a></td><td>Fine-grained experts, shared expert, aux-loss-free bias feedback loop; MTP depth-1 loss, length-alignment algebra, shared head, speculative-decoding theory</td><td>implemented</td></tr><tr><td><a href="concepts/parallelism.html" class="doc-link">DualPipe Parallelism</a></td><td>Pipeline bubbles, GPipe, 1F1B, interleaved schedules, all-to-all, bidirectional overlap</td><td>paper-spec, not implemented</td></tr><tr><td><a href="concepts/data-pipeline.html" class="doc-link">Data Pipeline</a></td><td>Shared 8.0B-token universal pipeline, DeepSeek shim, tokenizer deep dive, mixture, shard format, <code class="inline-code">PretrainDataset</code> consumption</td><td>implemented</td></tr><tr><td><a href="concepts/kernels-and-ops.html" class="doc-link">Operations, Testing &amp; Triton Kernels</a></td><td>Real pytest suite, atomic checkpoint system, VRAM budget, CI walkthrough, doc↔code gate; fused MLA attention + grouped-GEMM MoE Triton kernels, double-opt-in guard, register-pressure math</td><td>implemented (Triton opt-in)</td></tr></tbody></table></div>
+<h2 id="references" class="heading-anchor">References (<code class="inline-code">references/</code>)<a href="#references" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Terse, symbol-anchored references — every signature, shape contract, default, and caller. The anchor gate (<code class="inline-code">tests/test_doc_refs.py</code>) verifies every code-symbol citation (file path + class/method) resolves.</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Doc</th><th>Covers</th></tr></thead><tbody><tr><td><a href="references/R1_config_schema.html" class="doc-link">R1 — Config Schema</a></td><td>Every YAML key, default, and its reader</td></tr><tr><td><a href="references/R2_transformer_api.html" class="doc-link">R2 — Transformer API</a></td><td><code class="inline-code">models/transformer.py</code> — Transformer, blocks, generate</td></tr><tr><td><a href="references/R3_mla_api.html" class="doc-link">R3 — MLA API</a></td><td><code class="inline-code">models/mla.py</code> — attention paths, cache contract</td></tr><tr><td><a href="references/R4_moe_api.html" class="doc-link">R4 — MoE API</a></td><td><code class="inline-code">models/moe.py</code> — gate, experts, dispatch</td></tr><tr><td><a href="references/R5_mtp_api.html" class="doc-link">R5 — MTP API</a></td><td><code class="inline-code">models/mtp.py</code> — blocks, loss math, alignment</td></tr><tr><td><a href="references/R6_triton_api.html" class="doc-link">R6 — Triton API</a></td><td>Both kernels, dispatch gate, dim caps</td></tr><tr><td><a href="references/R7_training_api.html" class="doc-link">R7 — Training API</a></td><td><code class="inline-code">training/pretrain.py</code> — config, dataset, trainer</td></tr><tr><td><a href="references/R8_utils_api.html" class="doc-link">R8 — Utils API</a></td><td>Checkpoints, logging, memory estimator</td></tr><tr><td><a href="references/R9_inference_api.html" class="doc-link">R9 — Inference API</a></td><td>Generation, speculative decoding</td></tr></tbody></table></div>
+<h2 id="guides" class="heading-anchor">Guides (<code class="inline-code">guides/</code>)<a href="#guides" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Procedural, checklist-driven operating manuals.</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Doc</th><th>Use when…</th></tr></thead><tbody><tr><td><a href="guides/getting-started.html" class="doc-link">Getting Started</a></td><td>New to the repo: install, smoke tests, first run, learning path</td></tr><tr><td><a href="guides/G1_debugging_playbook.html" class="doc-link">G1 — Debugging Playbook</a></td><td>NaN, shape errors, Triton fallback, cache bugs</td></tr><tr><td><a href="guides/G2_mup_and_lr_tuning.html" class="doc-link">G2 — μP &amp; LR Tuning</a></td><td>Adjusting LR / μP reference, running an LR sweep</td></tr><tr><td><a href="guides/G3_triton_development.html" class="doc-link">G3 — Triton Development</a></td><td>Writing or extending a Triton kernel</td></tr><tr><td><a href="guides/G4_benchmarking.html" class="doc-link">G4 — Benchmarking</a></td><td>Measuring VRAM / throughput / MFU honestly</td></tr><tr><td><a href="guides/G5_checkpoint_ops.html" class="doc-link">G5 — Checkpoint Ops</a></td><td>Save / load / resume / disaster recovery</td></tr><tr><td><a href="guides/contributing.html" class="doc-link">Contributing</a></td><td>Doc contract, gates, test &amp; code conventions</td></tr></tbody></table></div>
+<h2 id="pipeline-docs" class="heading-anchor">Pipeline Docs<a href="#pipeline-docs" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Doc</th><th>Covers</th></tr></thead><tbody><tr><td><a href="training.html" class="doc-link">Training Pipeline</a></td><td>Pretrain loop, AdamW, gradient accumulation, LR scheduler, μP scaling, <code class="inline-code">PretrainDataset</code>, NaN guard, checkpointing, YAML reference; data pipeline (shim, tokenizer, mixture, shards)</td></tr><tr><td><a href="inference.html" class="doc-link">Inference &amp; Serving</a></td><td>Autoregressive decode, KV cache prefill/decode, sampling theory, speculative decoding, CLI</td></tr></tbody></table></div>
+<h2 id="configs" class="heading-anchor">Configs<a href="#configs" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><code class="inline-code">configs/pretrain_a100_422m.yaml</code> — canonical 422M A100 recipe (full key-by-key reference in <a href="references/R1_config_schema.html" class="doc-link">R1</a> and <a href="training.html" class="doc-link">Training Pipeline</a> §Part B).
+</li>
+<li><code class="inline-code">configs/pretrain_1650_2m.yaml</code> — ~2M-param GTX 1650 4GB smoke-test config; same MLA/MoE/MTP invariants at miniature scale, GPT-2 vocab.
+</li>
+</ul>
+<h2 id="doc-size-reference" class="heading-anchor">Doc size reference<a href="#doc-size-reference" class="anchor-link" aria-label="Link to section">#</a></h2>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Doc</th><th>~Lines</th><th>Status</th></tr></thead><tbody><tr><td>foundations.md</td><td>3,656</td><td>Comprehensive</td></tr><tr><td>training.md</td><td>2,815</td><td>Comprehensive</td></tr><tr><td>moe-mtp.md</td><td>2,483</td><td>Comprehensive</td></tr><tr><td>attention-and-precision.md</td><td>1,950</td><td>Comprehensive</td></tr><tr><td>kernels-and-ops.md</td><td>1,364</td><td>Comprehensive</td></tr><tr><td>inference.md</td><td>1,007</td><td>Comprehensive</td></tr><tr><td>data-pipeline.md</td><td>712</td><td>Comprehensive</td></tr><tr><td>R2_transformer_api.md</td><td>381</td><td>Comprehensive</td></tr><tr><td>getting-started.md</td><td>380</td><td>Comprehensive</td></tr><tr><td>R4_moe_api.md</td><td>373</td><td>Comprehensive</td></tr><tr><td>R6_triton_api.md</td><td>373</td><td>Comprehensive</td></tr><tr><td>G1_debugging_playbook.md</td><td>361</td><td>Comprehensive</td></tr><tr><td>parallelism.md</td><td>336</td><td>Comprehensive</td></tr><tr><td>R5_mtp_api.md</td><td>327</td><td>Comprehensive</td></tr><tr><td>R8_utils_api.md</td><td>324</td><td>Comprehensive</td></tr><tr><td>R7_training_api.md</td><td>285</td><td>Comprehensive</td></tr><tr><td>G5_checkpoint_ops.md</td><td>279</td><td>Comprehensive</td></tr><tr><td>G3_triton_development.md</td><td>272</td><td>Comprehensive</td></tr><tr><td>R9_inference_api.md</td><td>269</td><td>Comprehensive</td></tr><tr><td>G2_mup_and_lr_tuning.md</td><td>266</td><td>Comprehensive</td></tr><tr><td>G4_benchmarking.md</td><td>256</td><td>Comprehensive</td></tr><tr><td>R3_mla_api.md</td><td>250</td><td>Comprehensive</td></tr><tr><td>contributing.md</td><td>241</td><td>Comprehensive</td></tr><tr><td>R1_config_schema.md</td><td>219</td><td>Comprehensive</td></tr><tr><td><strong>Total</strong></td><td><strong>19,179</strong></td><td></td></tr></tbody></table></div>
+<h2 id="references" class="heading-anchor">References<a href="#references" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><a href="training.html" class="doc-link">Training Pipeline</a> — loop, μP, NaN guard, YAML reference
+</li>
+<li><a href="inference.html" class="doc-link">Inference &amp; Serving</a> — decode, KV cache, speculative decoding
+</li>
+<li><code class="inline-code">tests/test_doc_refs.py</code> — machine-verified doc↔code anchor gate
+</li>
+<li><code class="inline-code">scripts/check_docs.py</code> — prose hygiene, link/path lint, size table
+</li>
+</ul>
+                </article>
+
+                
+
+                <div class="doc-footer-nav">
+                    <a href="../SKILLS.html" class="nav-card prev-card"><span class="card-label">← Previous</span><span class="card-title">Skills Reference</span></a>
+                    <a href="../docs/training.html" class="nav-card next-card"><span class="card-label">Next →</span><span class="card-title">Training Architecture & Pipeline</span></a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar Table of Contents -->
+        <aside class="toc-sidebar">
+            <div class="toc-inner">
+                <div class="toc-title">On This Page</div>
+                <ul class="toc-list"><li class="toc-h2"><a href="#quick-reference" class="toc-link">Quick Reference</a></li><li class="toc-h2"><a href="#concepts" class="toc-link">Concepts ()</a></li><li class="toc-h2"><a href="#references" class="toc-link">References ()</a></li><li class="toc-h2"><a href="#guides" class="toc-link">Guides ()</a></li><li class="toc-h2"><a href="#pipeline-docs" class="toc-link">Pipeline Docs</a></li><li class="toc-h2"><a href="#configs" class="toc-link">Configs</a></li><li class="toc-h2"><a href="#doc-size-reference" class="toc-link">Doc size reference</a></li><li class="toc-h2"><a href="#references" class="toc-link">References</a></li></ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            if (window.hljs) {
+                hljs.highlightAll();
+            }
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+                    throwOnError: false
+                });
+            }
+        });
+    </script>
+    <script defer src="../assets/portal.js"></script>
+</body>
+</html>

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>R3 — MLA API | DeepSeek-v3-Lite Documentation</title>
+    <!-- Fonts — one voice for the whole portal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Highlight.js for Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- KaTeX for LaTeX Math -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="../../assets/style.css">
+    <script>
+(function () {
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) document.documentElement.classList.add('booting');
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            document.documentElement.classList.remove('booting');
+            var ov = document.getElementById('boot-overlay');
+            if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+        }, reduced ? 0 : 350);
+    });
+})();
+</script>
+</head>
+<body>
+    <div id="boot-overlay" aria-hidden="true"><div class="boot-inner"><div class="boot-wordmark">DEEPSEEK-V3-LITE</div><div class="boot-line">loading weights <span class="boot-bar">[░░░░░░░░░░░░] 0%</span></div></div></div>
+    <!-- Top Header -->
+    <header class="site-header">
+        <div class="header-left">
+            <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
+            <a href="../../index.html" class="brand-logo">
+                <span class="brand-name">DeepSeek-v3-Lite</span>
+                <span class="brand-badge">Docs</span>
+            </a>
+        </div>
+        <div class="header-right">
+            <a href="../../index.html" class="header-link">Portal Home</a>
+            <a href="../../README.html" class="header-link">GitHub README</a>
+        </div>
+    </header>
+
+    <div class="app-layout">
+        <!-- Left Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-inner">
+                <div class="sidebar-search"><input type="text" id="navSearch" placeholder="Search docs..." onkeyup="filterNav()"></div>
+<div class="nav-group">
+<div class="nav-group-title">Core</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../README.html" class="nav-link ">Project Overview (README)</a></li><li class="nav-item"><a href="../../AGENTS.html" class="nav-link ">AGENTS & System Architecture</a></li><li class="nav-item"><a href="../../SKILLS.html" class="nav-link ">Skills Reference</a></li><li class="nav-item"><a href="../../docs/README.html" class="nav-link ">Documentation Index</a></li><li class="nav-item"><a href="../../docs/training.html" class="nav-link ">Training Architecture & Pipeline</a></li><li class="nav-item"><a href="../../docs/inference.html" class="nav-link ">Inference & Speculative Decoding</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Concepts</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/concepts/foundations.html" class="nav-link ">Foundations & Architecture</a></li><li class="nav-item"><a href="../../docs/concepts/attention-and-precision.html" class="nav-link ">MLA & Mixed Precision</a></li><li class="nav-item"><a href="../../docs/concepts/moe-mtp.html" class="nav-link ">DeepSeekMoE & MTP</a></li><li class="nav-item"><a href="../../docs/concepts/parallelism.html" class="nav-link ">DualPipe Parallelism</a></li><li class="nav-item"><a href="../../docs/concepts/data-pipeline.html" class="nav-link ">Data Pipeline</a></li><li class="nav-item"><a href="../../docs/concepts/kernels-and-ops.html" class="nav-link ">Operations & Triton Kernels</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/guides/getting-started.html" class="nav-link ">Getting Started</a></li><li class="nav-item"><a href="../../docs/guides/G1_debugging_playbook.html" class="nav-link ">G1 — Debugging Playbook</a></li><li class="nav-item"><a href="../../docs/guides/G2_mup_and_lr_tuning.html" class="nav-link ">G2 — μP & LR Tuning</a></li><li class="nav-item"><a href="../../docs/guides/G3_triton_development.html" class="nav-link ">G3 — Triton Development</a></li><li class="nav-item"><a href="../../docs/guides/G4_benchmarking.html" class="nav-link ">G4 — Benchmarking</a></li><li class="nav-item"><a href="../../docs/guides/G5_checkpoint_ops.html" class="nav-link ">G5 — Checkpoint Ops</a></li><li class="nav-item"><a href="../../docs/guides/contributing.html" class="nav-link ">Contributing Guide</a></li></ul>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">References</div>
+<ul class="nav-list"><li class="nav-item"><a href="../../docs/references/R1_config_schema.html" class="nav-link ">R1 — Config Schema</a></li><li class="nav-item"><a href="../../docs/references/R2_transformer_api.html" class="nav-link ">R2 — Transformer API</a></li><li class="nav-item"><a href="../../docs/references/R3_mla_api.html" class="nav-link active">R3 — MLA API</a></li><li class="nav-item"><a href="../../docs/references/R4_moe_api.html" class="nav-link ">R4 — MoE API</a></li><li class="nav-item"><a href="../../docs/references/R5_mtp_api.html" class="nav-link ">R5 — MTP API</a></li><li class="nav-item"><a href="../../docs/references/R6_triton_api.html" class="nav-link ">R6 — Triton API</a></li><li class="nav-item"><a href="../../docs/references/R7_training_api.html" class="nav-link ">R7 — Training API</a></li><li class="nav-item"><a href="../../docs/references/R8_utils_api.html" class="nav-link ">R8 — Utils API</a></li><li class="nav-item"><a href="../../docs/references/R9_inference_api.html" class="nav-link ">R9 — Inference API</a></li></ul>
+</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-container">
+                <div class="breadcrumb">
+                    <a href="../../index.html">Docs</a> &gt; <span>References</span> &gt; <span class="current">R3 — MLA API</span>
+                </div>
+                
+                <div class="doc-header">
+                    <h1 class="doc-title">R3 — MLA API</h1>
+                    <div class="doc-meta">
+                        <span class="meta-item"><span class="meta-label">source</span><span class="meta-val">docs/references/R3_mla_api.md</span></span>
+                        <span class="meta-item"><span class="meta-label">words</span><span class="meta-val">3,485</span></span>
+                        <span class="meta-item"><span class="meta-label">read</span><span class="meta-val">~17 min</span></span>
+                    </div>
+                </div>
+
+                <article class="markdown-body" id="articleBody">
+                    <span class="doc-anchor" id="deepseek-v3-lite--r3-mla-api-reference"></span>
+<blockquote><strong>What this is:</strong> the complete symbol-level reference for <code class="inline-code">MultiHeadLatentAttention</code>, the DeepSeek-V3-style multi-head latent attention layer used by every transformer block in this repo. Every entry is a signature, a shape contract, a default, and a caller list — no tutorial prose (that lives in <a href="../concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a> and <a href="../concepts/foundations.html" class="doc-link">Foundations &amp; Architecture</a> §5–7).<br><strong>Scope:</strong> one class, eight public methods, three attention implementations (<code class="inline-code">sdpa</code> / <code class="inline-code">manual</code> / <code class="inline-code">triton</code>), one KV-cache contract, one RoPE table. All shapes below use the canonical config (<code class="inline-code">configs/pretrain_a100_422m.yaml</code>): <span class="math-inline">$D{=}768$</span>, <span class="math-inline">$H{=}12$</span>, <span class="math-inline">$R{=}192$</span>, <span class="math-inline">$D_{\text{nope}}{=}48$</span>, <span class="math-inline">$D_{\text{rope}}{=}24$</span>, <span class="math-inline">$D_v{=}64$</span>, <span class="math-inline">$D_{\text{qk}}{=}72$</span>, <span class="math-inline">$S_{\max}{=}2048$</span>.<br><strong>Companion files:</strong> R1 Config Schema (every YAML key read here), R2 Transformer API (the caller), R6 Triton API (the kernel this layer dispatches to). The math and the worked example are in <a href="../concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a>.</blockquote>
+<hr class='doc-hr'>
+<h2 id="1-60-second-summary" class="heading-anchor">1. 60-second summary<a href="#1-60-second-summary" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>MLA replaces the per-head K/V cache of MHA with a single per-token latent <span class="math-inline">$c \in \mathbb{R}^{R}$</span> plus a small rotation-only key <span class="math-inline">$k^{pe} \in \mathbb{R}^{D_{\text{rope}}}$</span> — <span class="math-inline">$192 + 24 = 216$</span> floats per token instead of <span class="math-inline">$12 \times (72 + 64) = 1\\,632$</span> (a <span class="math-inline">$\sim$</span>7.6<span class="math-inline">$\times$</span> cache cut). The per-head keys and values are <em>reconstructed</em> from the latent on the fly by the up-projection <code class="inline-code">wkv_b</code>; the absorption trick folds that up-projection into the query and output projections so the reconstruction only happens as a fused batched matmul (<code class="inline-code">sdpa</code> path) or never at all (<code class="inline-code">manual</code> path scores directly in latent space).</p>
+<p>The layer has one job per forward: take hidden states <span class="math-inline">$(B, S_q, D)$</span>, produce attention output <span class="math-inline">$(B, S_q, D)$</span>, and — when <code class="inline-code">use_cache=True</code> — write the normalized latent and rotated rope key of the current positions into a lazily-allocated, batch-growable, length-fixed cache so later decode steps can attend to them.</p>
+<h2 id="2-why-it-exists" class="heading-anchor">2. Why it exists<a href="#2-why-it-exists" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Standard MHA caches per-head K and V; at 12 heads × 2048 positions that is a large, mostly-redundant tensor (the paper's argument: per-head K/V are up-projections of a shared low-rank representation). MLA caches the small shared representation instead and pays a slightly larger attention-time matmul. For this repo the win is architectural demonstration plus long-context decode memory; at the canonical 2,048 context the absolute cache is small, but the <em>contract</em> (what is cached, where it is written, when it is dropped) is load-bearing for <code class="inline-code">generate</code>, chunked prefill, and speculative decoding.</p>
+<h2 id="3-intuition" class="heading-anchor">3. Intuition<a href="#3-intuition" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Think of each token's <code class="inline-code">wkv_b</code> up-projection as a <strong>shared codebook</strong>: instead of storing 12 decoded keys and 12 decoded values, store the 192-dim code. At attention time, either decode the code into the 12 keys/values you need (SDPA path — one fused bmm does all heads at once), or keep the code folded into the query and score directly in code space (manual path — the absorption trick). RoPE breaks this algebra, so positions get a separate 24-dim rotation-only key shared across heads. The cache is just a scratchpad holding every past token's code and rotation key.</p>
+<h2 id="4-class-and-configuration" class="heading-anchor">4. Class and configuration<a href="#4-class-and-configuration" class="anchor-link" aria-label="Link to section">#</a></h2>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/mla.py:MultiHeadLatentAttention</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">class MultiHeadLatentAttention(nn.Module):
+    def __init__(self, config: dict, layer_idx: int = 0):</code></pre></div>
+<p>One instance per transformer block. <code class="inline-code">config</code> is the <code class="inline-code">model:</code> section of the YAML (or an equivalent dict); every key below is read at construction and the resolved values become attributes. All canonical values from <code class="inline-code">configs/pretrain_a100_422m.yaml</code>; for the complete key list and defaults see R1 §Config keys.</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Config key</th><th>Default</th><th>Attribute</th><th>Canonical</th><th>Notes</th></tr></thead><tbody><tr><td><code class="inline-code">dim</code></td><td>—</td><td><code class="inline-code">dim</code></td><td>768</td><td>hidden size; <code class="inline-code">config[&quot;dim&quot;]</code> (required)</td></tr><tr><td><code class="inline-code">n_heads</code></td><td>—</td><td><code class="inline-code">n_heads</code>, <code class="inline-code">n_local_heads</code></td><td>12</td><td>query heads; no GQA split, so <code class="inline-code">n_local_heads == n_heads</code></td></tr><tr><td><code class="inline-code">q_lora_rank</code></td><td>—</td><td><code class="inline-code">q_lora_rank</code></td><td>0</td><td>0 → direct <code class="inline-code">wq</code>; &gt;0 → <code class="inline-code">wq_a</code> + <code class="inline-code">q_norm</code> + <code class="inline-code">wq_b</code> LoRA path</td></tr><tr><td><code class="inline-code">kv_lora_rank</code></td><td>—</td><td><code class="inline-code">kv_lora_rank</code></td><td>192</td><td>latent width <span class="math-inline">$R$</span>; the KV-cache contraction dim</td></tr><tr><td><code class="inline-code">qk_nope_head_dim</code></td><td>—</td><td><code class="inline-code">qk_nope_head_dim</code></td><td>48</td><td>content part of each query/key head</td></tr><tr><td><code class="inline-code">qk_rope_head_dim</code></td><td>—</td><td><code class="inline-code">qk_rope_head_dim</code></td><td>24</td><td>rotation part of each query/key head</td></tr><tr><td><code class="inline-code">v_head_dim</code></td><td>—</td><td><code class="inline-code">v_head_dim</code></td><td>64</td><td>value head width</td></tr><tr><td><code class="inline-code">max_seq_len</code></td><td>—</td><td><code class="inline-code">max_seq_len</code></td><td>2048</td><td>hard cache bound; also switches <code class="inline-code">softmax_scale</code> at &gt;4096</td></tr><tr><td><code class="inline-code">rope_theta</code></td><td>—</td><td><code class="inline-code">rope_theta</code></td><td>10000</td><td>RoPE base frequency</td></tr><tr><td><code class="inline-code">rope_factor</code></td><td><code class="inline-code">1.0</code></td><td><code class="inline-code">rope_factor</code></td><td>1.0</td><td>YaRN stretch; &gt;1.0 enables mscale correction</td></tr><tr><td><code class="inline-code">mscale</code></td><td><code class="inline-code">1.0</code></td><td><code class="inline-code">mscale</code></td><td>1.0</td><td>YaRN attention-scale factor</td></tr><tr><td><code class="inline-code">attn_impl</code></td><td><code class="inline-code">&quot;sdpa&quot;</code></td><td><code class="inline-code">attn_impl</code></td><td><code class="inline-code">&quot;sdpa&quot;</code></td><td><code class="inline-code">&quot;sdpa&quot;</code> \</td><td><code class="inline-code">&quot;manual&quot;</code> \</td><td><code class="inline-code">&quot;triton&quot;</code>; see §6</td></tr></tbody></table></div>
+<p>Derived attributes set in <code class="inline-code">__init__</code>:</p>
+<ul class="doc-list">
+<li><code class="inline-code">qk_head_dim = qk_nope_head_dim + qk_rope_head_dim</code> (72) — the concatenated query/key width used by <code class="inline-code">wq</code>/<code class="inline-code">wq_b</code>.
+</li>
+<li><code class="inline-code">mscale</code> and <code class="inline-code">softmax_scale</code> — see §5.
+</li>
+<li><code class="inline-code">_cache_batch: int = 0</code>, <code class="inline-code">kv_cache: Optional[Tensor] = None</code>, <code class="inline-code">pe_cache: Optional[Tensor] = None</code> — cache state, see §7.
+</li>
+<li><code class="inline-code">_rope_seq_len: int = 0</code> — length of the currently-materialized RoPE table.
+</li>
+<li><code class="inline-code">freqs_cis</code> — non-persistent buffer, shape <code class="inline-code">(0, qk_rope_head_dim // 2)</code>, <code class="inline-code">torch.complex64</code>, grown lazily by <code class="inline-code">_extend_rope</code> (see §8).
+</li>
+</ul>
+<h3 id="sub-modules-created" class="heading-anchor">Sub-modules created<a href="#sub-modules-created" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Branch</th><th>Sub-module</th><th>Weight shape</th><th>Notes</th></tr></thead><tbody><tr><td><code class="inline-code">q_lora_rank &gt; 0</code></td><td><code class="inline-code">wq_a = Linear(dim, q_lora_rank, bias=False)</code></td><td><span class="math-inline">$(q_{\text{lora}}, D)$</span></td><td>—</td></tr><tr><td></td><td><code class="inline-code">q_norm = RMSNorm(q_lora_rank, eps=1e-6)</code></td><td>—</td><td>—</td></tr><tr><td></td><td><code class="inline-code">wq_b = Linear(q_lora_rank, n_heads * qk_head_dim, bias=False)</code></td><td><span class="math-inline">$(H \cdot D_{\text{qk}}, q_{\text{lora}})$</span></td><td>—</td></tr><tr><td><code class="inline-code">q_lora_rank == 0</code> (canonical)</td><td><code class="inline-code">wq = Linear(dim, n_heads * qk_head_dim, bias=False)</code></td><td><span class="math-inline">$(864, 768)$</span></td><td>direct query</td></tr><tr><td>always</td><td><code class="inline-code">wkv_a = Linear(dim, kv_lora_rank + qk_rope_head_dim, bias=False)</code></td><td><span class="math-inline">$(216, 768)$</span></td><td>latent + raw rope key</td></tr><tr><td>always</td><td><code class="inline-code">kv_norm = RMSNorm(kv_lora_rank, eps=1e-6)</code></td><td>—</td><td>normalizes the latent <strong>before</strong> caching</td></tr><tr><td>always</td><td><code class="inline-code">wkv_b = Linear(kv_lora_rank, n_heads * (qk_nope_head_dim + v_head_dim), bias=False)</code></td><td><span class="math-inline">$(12 \cdot 112, 192)$</span></td><td>the shared up-projection; viewed as <code class="inline-code">(H, D_nope + D_v, R)</code> in forward</td></tr><tr><td>always</td><td><code class="inline-code">wo = Linear(n_heads * v_head_dim, dim, bias=False)</code></td><td><span class="math-inline">$(768, 768)$</span></td><td>output projection</td></tr></tbody></table></div>
+<p>The bias-free <code class="inline-code">Linear</code> layers are the repo's default; all parameters are float32 at construction (BF16 comes from autocast at training time).</p>
+<h2 id="5-the-mscale--softmax_scale-computation" class="heading-anchor">5. The mscale / softmax_scale computation<a href="#5-the-mscale--softmax_scale-computation" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Source: <code class="inline-code">models/mla.py:MultiHeadLatentAttention.__init__</code>.</p>
+<div class="code-wrapper" data-lines="9"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">mscale_raw = config.get(&quot;mscale&quot;, 1.0)
+if self.rope_factor &gt; 1.0:
+    self.mscale = 0.1 * mscale_raw * math.log(self.rope_factor) + 1.0
+else:
+    self.mscale = mscale_raw
+if self.max_seq_len &gt; 4096:
+    self.softmax_scale = (self.qk_head_dim ** -0.5) * (self.mscale ** 2)
+else:
+    self.softmax_scale = self.qk_head_dim ** -0.5</code></pre></div>
+<ul class="doc-list">
+<li><strong><code class="inline-code">mscale</code></strong>: the YaRN attention-scale correction. When <code class="inline-code">rope_factor &gt; 1.0</code> (context stretching), <code class="inline-code">mscale = 0.1 \cdot mscale_{\text{raw}} \cdot \ln(\text{rope\_factor}) + 1.0</code>; the logarithm compensates for the density of the stretched frequency grid. When <code class="inline-code">rope_factor == 1.0</code> (canonical config), <code class="inline-code">mscale = mscale_raw</code> — the whole branch is dormant, guarded by <code class="inline-code">config.get(&quot;mscale&quot;, 1.0)</code>.
+</li>
+<li><strong><code class="inline-code">softmax_scale</code></strong>: passed verbatim as the <code class="inline-code">scale=</code> argument of <code class="inline-code">F.scaled_dot_product_attention</code> and into the Triton kernel. For <code class="inline-code">max_seq_len &lt;= 4096</code> it is the plain <span class="math-inline">$\sqrt{D_{\text{qk}}}^{-1}$</span>; for <code class="inline-code">max_seq_len &gt; 4096</code> it is multiplied by <code class="inline-code">mscale ** 2</code> to counteract the attention entropy loss of stretched RoPE.
+</li>
+<li><strong>Canonical value:</strong> <span class="math-inline">$D_{\text{qk}} = 48 + 24 = 72$</span>, so <code class="inline-code">softmax_scale = 72^{-1/2} = 0.11785...</code> and <code class="inline-code">mscale = 1.0</code>.
+</li>
+</ul>
+<h2 id="6-attention-implementation-modes" class="heading-anchor">6. Attention implementation modes<a href="#6-attention-implementation-modes" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p><code class="inline-code">attn_impl</code> selects among three forward strategies; all three consume the <em>same</em> cache contract (§7) and produce numerically-equivalent outputs (guarded by <code class="inline-code">tests/test_models.py:TestMLA.test_sdpa_and_manual_agree</code>).</p>
+<div class="table-container"><table class="doc-table"><thead><tr><th>Mode</th><th>Path in forward</th><th>What it computes</th><th>Used for</th></tr></thead><tbody><tr><td><code class="inline-code">&quot;sdpa&quot;</code> (default)</td><td>SDPA branch</td><td>reconstructs <span class="math-inline">$K^{\text{nope}}, V$</span> from the cached latent with one fused bmm, then <code class="inline-code">F.scaled_dot_product_attention</code></td><td>training + inference; the canonical mode</td></tr><tr><td><code class="inline-code">&quot;manual&quot;</code></td><td>fall-through branch</td><td>scores directly in latent space via <code class="inline-code">_per_batch_bmm</code> (true absorption); softmax in fp32; per-batch output bmm</td><td>reference / debug; <code class="inline-code">tests/test_models.py:TestMLA</code></td></tr><tr><td><code class="inline-code">&quot;triton&quot;</code></td><td>Triton branch</td><td>delegates to <code class="inline-code">triton_mla_attention</code> via <code class="inline-code">_forward_triton</code> (fused materialize+RoPE+attention)</td><td>opt-in fast path; needs <code class="inline-code">ENABLE_TRITON_KERNELS=1</code> + Triton installed</td></tr></tbody></table></div>
+<p><strong>Fallback semantics (<code class="inline-code">triton</code> mode only).</strong> The Triton branch is wrapped in <code class="inline-code">try/except (ImportError, ValueError)</code> inside <code class="inline-code">models/mla.py:MultiHeadLatentAttention.forward</code>. On the first failure it prints one warning (<code class="inline-code">[mla] triton attn_impl unavailable (...); falling back to &#x27;sdpa&#x27; for this model.</code>), sets <code class="inline-code">self.attn_impl = &quot;sdpa&quot;</code> (persistent for this layer), and completes the forward via the SDPA branch. Later failures are silent — the layer is permanently on SDPA until the module is rebuilt. Any <code class="inline-code">ImportError</code> (Triton missing) or <code class="inline-code">ValueError</code> (kernel dimension limits, e.g. <code class="inline-code">D_nope &gt; 256</code>) triggers the fallback; other exceptions propagate. A <code class="inline-code">RuntimeError</code> from <code class="inline-code">_forward_triton</code> does <strong>not</strong> trigger it — this matches the MoE layers' behavior (see R6 §dispatch and R4).</p>
+<h2 id="7-kv-cache-contract" class="heading-anchor">7. KV-cache contract<a href="#7-kv-cache-contract" class="anchor-link" aria-label="Link to section">#</a></h2>
+<p>Two tensors per layer, both allocated lazily and <strong>per-layer</strong> (18 layers × the shapes below at the canonical config; there is no sharing between layers):</p>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">code</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code>kv_cache: Tensor(new_bsz, max_seq_len, kv_lora_rank)   # (B_alloc, S_max, 192)  — normalized latent, pre-up-projection
+pe_cache: Tensor(new_bsz, max_seq_len, qk_rope_head_dim)  # (B_alloc, S_max, 24)  — RoPE-rotated key, shared across heads</code></pre></div>
+<ul class="doc-list">
+<li><strong>Batch axis is allocated, sequence axis is fixed.</strong> <code class="inline-code">new_bsz = max(bsz, _cache_batch * 2, 16)</code>: the first <code class="inline-code">use_cache=True</code> forward allocates at least 16 rows, and any later forward whose batch exceeds the allocation reallocates at double the previous capacity (amortized growth). The sequence axis is always <code class="inline-code">max_seq_len</code> — pre-allocated, never grown. See <code class="inline-code">models/mla.py:MultiHeadLatentAttention._ensure_cache</code>.
+</li>
+<li><strong>Reallocation drops contents.</strong> The trigger is <code class="inline-code">bsz &gt; _cache_batch</code> <strong>or</strong> a device/dtype change; the new allocation is <code class="inline-code">torch.zeros</code>, so the previous prefix is lost. Change batch shape only via <code class="inline-code">reset_cache()</code>.
+</li>
+<li><strong>Write is positional, read is a prefix.</strong> Forward writes <code class="inline-code">kv_cache[:bsz, start_pos:end_pos]</code> and <code class="inline-code">pe_cache[:bsz, start_pos:end_pos]</code>, then reads <code class="inline-code">[:bsz, :end_pos]</code> as the attended context. <code class="inline-code">start_pos</code> is the global (not per-chunk) offset — this is what makes chunked prefill and decode work (guarded by <code class="inline-code">tests/test_models.py:TestTransformer.test_chunked_prefill_matches_full_forward</code> and the Triton twin in <code class="inline-code">tests/test_mla_triton.py</code>).
+</li>
+<li><strong>Sequence bound is a hard error.</strong> <code class="inline-code">end_pos = start_pos + seqlen &gt; max_seq_len</code> raises <code class="inline-code">RuntimeError(f&quot;Layer {self.layer_idx}: end_pos {end_pos} exceeds max_seq_len {self.max_seq_len}&quot;)</code> — never a silent truncation.
+</li>
+<li><strong>Writes are detached.</strong> <code class="inline-code">kv_cache[...] = kv_normed.detach()</code>, <code class="inline-code">pe_cache[...] = k_pe.detach()</code>: cache entries carry no autograd graph, so decode-step forwards never build a graph through past positions. With <code class="inline-code">use_cache=False</code> (training) the cache is never touched.
+</li>
+<li><strong>State machine:</strong> <code class="inline-code">UNINIT</code> (both <code class="inline-code">None</code>, <code class="inline-code">_cache_batch = 0</code>) → <code class="inline-code">READY</code> (first <code class="inline-code">use_cache=True</code> forward) → <code class="inline-code">RESET</code> (back to <code class="inline-code">UNINIT</code> via <code class="inline-code">reset_cache()</code>). <code class="inline-code">Transformer.generate</code> calls <code class="inline-code">Transformer.reset_cache</code> (which fans out to every layer) before every generation; bare <code class="inline-code">forward(use_cache=True)</code> calls in a serving loop must reset by hand or they inherit the previous prompt's prefix.
+</li>
+</ul>
+<h2 id="8-method-reference" class="heading-anchor">8. Method reference<a href="#8-method-reference" class="anchor-link" aria-label="Link to section">#</a></h2>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/mla.py:MultiHeadLatentAttention._extend_rope</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _extend_rope(self, seq_len: int, device: torch.device) -&gt; None:</code></pre></div>
+<p>Lazily materializes the complex RoPE table <code class="inline-code">freqs_cis</code> to cover <code class="inline-code">seq_len</code> positions; no-op if <code class="inline-code">seq_len &lt;= _rope_seq_len</code>.</p>
+<ul class="doc-list">
+<li><strong>Growth:</strong> <code class="inline-code">grow_to = min(max(seq_len, _rope_seq_len * 2, 64), max_seq_len)</code> — doubles from the previous size (floor 64) to amortize table rebuilds across decode steps.
+</li>
+<li><strong>Construction:</strong> <code class="inline-code">inv_freq = 1.0 / (rope_theta ** (arange(0, dim, 2, dtype=float32, device) / dim))</code> — note the exponent <code class="inline-code">arange / dim</code> (full <code class="inline-code">qk_rope_head_dim</code>, not half); then <code class="inline-code">freqs_cis = polar(ones_like(freqs), outer(t, inv_freq))</code> stored as <code class="inline-code">torch.complex64</code> on the device of the first forward.
+</li>
+<li><strong>Invariants:</strong> table length never exceeds <code class="inline-code">max_seq_len</code>; <code class="inline-code">_rope_seq_len</code> tracks the table length. With <code class="inline-code">rope_factor &gt; 1.0</code> the base frequency would be divided by the factor (YaRN); at the canonical <code class="inline-code">rope_factor = 1.0</code> the path is plain RoPE.
+</li>
+<li><strong>Caller:</strong> <code class="inline-code">forward</code> (once per forward, with <code class="inline-code">end_pos</code>).
+</li>
+</ul>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/mla.py:MultiHeadLatentAttention._apply_rope</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _apply_rope(self, x: torch.Tensor, start_pos: int, seqlen: int) -&gt; torch.Tensor:</code></pre></div>
+<p>Rotates the last dim of <code class="inline-code">x</code> by the absolute positions <code class="inline-code">[start_pos, start_pos + seqlen)</code>.</p>
+<ul class="doc-list">
+<li><strong>Contract:</strong> <code class="inline-code">x</code> has last dim <code class="inline-code">qk_rope_head_dim</code> (any leading shape; the rope dim must be even) → returns same shape, same dtype.
+</li>
+<li><strong>Mechanics:</strong> <code class="inline-code">x.float()</code> → <code class="inline-code">view_as_complex(x.reshape(*x.shape[:-1], -1, 2))</code> → multiply by <code class="inline-code">freqs_cis[start_pos:start_pos+seqlen].view(1, seqlen, 1, -1)</code> → <code class="inline-code">view_as_real(...).flatten(-2)</code> → cast back to <code class="inline-code">x.dtype</code>. One complex multiply per element; the table row index is the <strong>absolute</strong> position, which is what makes the score depend only on relative offset (rotation-composition property, see <a href="../concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a> §6).
+</li>
+<li><strong>dtype note:</strong> the rotation happens in fp32 (via <code class="inline-code">.float()</code>), the result is cast back to the input dtype — no precision loss from BF16 table arithmetic.
+</li>
+<li><strong>Callers:</strong> <code class="inline-code">forward</code> (twice: query rope key <code class="inline-code">q_pe</code> with shape <code class="inline-code">(B, S_q, H, D_rope)</code>; key rope key <code class="inline-code">k_pe</code> from <code class="inline-code">(B, S_q, 1, D_rope)</code>, squeezed back to <code class="inline-code">(B, S_q, D_rope)</code>).
+</li>
+<li><strong>Requires</strong> <code class="inline-code">freqs_cis</code> to already cover <code class="inline-code">start_pos + seqlen</code> (guaranteed by <code class="inline-code">_extend_rope</code> earlier in <code class="inline-code">forward</code>).
+</li>
+</ul>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/mla.py:MultiHeadLatentAttention._per_batch_bmm</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _per_batch_bmm(self, q: torch.Tensor, k: torch.Tensor) -&gt; torch.Tensor:
+    return torch.matmul(q.transpose(1, 2), k.unsqueeze(1).transpose(2, 3))</code></pre></div>
+<p>The absorption-trick score primitive: <code class="inline-code">q</code> of shape <code class="inline-code">(B, S_q, H, D_k)</code> and <code class="inline-code">k</code> of shape <code class="inline-code">(B, S_k, D_k)</code> → scores <code class="inline-code">(B, H, S_q, S_k)</code>. <code class="inline-code">k</code> is unsqueezed to <code class="inline-code">(B, 1, S_k, D_k)</code> so the head axis broadcasts; the matmul runs per batch element. Used only by the <code class="inline-code">manual</code> path (<code class="inline-code">q_nope_proj</code> in latent space, <code class="inline-code">q_pe</code> against <code class="inline-code">ctx_pe</code>). Guarded for equivalence by <code class="inline-code">tests/test_models.py:TestMLA.test_sdpa_and_manual_agree</code>.</p>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/mla.py:MultiHeadLatentAttention._ensure_cache</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="1"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _ensure_cache(self, bsz: int, device: torch.device, dtype: torch.dtype) -&gt; None:</code></pre></div>
+<p>Allocates (or grows) <code class="inline-code">kv_cache</code> and <code class="inline-code">pe_cache</code> per §7. Reallocation trigger: <code class="inline-code">kv_cache is None or bsz &gt; _cache_batch or kv_cache.device != device or kv_cache.dtype != dtype</code>. Growth formula: <code class="inline-code">new_bsz = max(bsz, _cache_batch * 2, 16)</code>; both tensors are <code class="inline-code">torch.zeros</code> on <code class="inline-code">(device, dtype)</code> — the dtype is captured from the first cached forward's input, so under autocast a later forward in a different dtype would trigger a reallocation (content loss). Sets <code class="inline-code">_cache_batch = new_bsz</code>. Caller: <code class="inline-code">forward</code> (only when <code class="inline-code">use_cache=True</code>).</p>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/mla.py:MultiHeadLatentAttention.reset_cache</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="4"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def reset_cache(self) -&gt; None:
+    self.kv_cache = None
+    self.pe_cache = None
+    self._cache_batch = 0</code></pre></div>
+<p>Full teardown of this layer's cache: next <code class="inline-code">use_cache=True</code> forward allocates from scratch. No partial clear exists. Callers: <code class="inline-code">models/transformer.py:Transformer.reset_cache</code> (loops <code class="inline-code">if hasattr(layer.attn, &quot;reset_cache&quot;)</code> over all 18 layers), <code class="inline-code">models/transformer.py:Transformer.generate</code> (via the fan-out, before every generation), and tests (<code class="inline-code">tests/test_models.py:TestMLA.test_reset_cache</code>).</p>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/mla.py:MultiHeadLatentAttention.forward</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def forward(self, x: torch.Tensor, start_pos: int = 0,
+            mask: Optional[torch.Tensor] = None, use_cache: bool = True) -&gt; torch.Tensor:</code></pre></div>
+<p>The one public entry point. <strong>Inputs → outputs contract:</strong></p>
+<ul class="doc-list">
+<li><code class="inline-code">x</code>: <code class="inline-code">(B, S_q, D)</code> hidden states (the caller passes <code class="inline-code">attn_norm</code>'s output — the layer itself applies no norm to <code class="inline-code">x</code>).
+</li>
+<li><code class="inline-code">start_pos</code>: global KV-cache offset of the first query position; <code class="inline-code">end_pos = start_pos + seqlen</code> must be <code class="inline-code">&lt;= max_seq_len</code> (else <code class="inline-code">RuntimeError</code>).
+</li>
+<li><code class="inline-code">mask</code>: additive causal mask <code class="inline-code">(1, 1, S_q, S_kv)</code>, produced by <code class="inline-code">models/transformer.py:Transformer._build_causal_mask</code>; expanded inside the layer to <code class="inline-code">(B, H, S_q, S_kv)</code>. <code class="inline-code">None</code> → no masking (only safe for full-length self-attention already handled upstream).
+</li>
+<li><code class="inline-code">use_cache</code>: <code class="inline-code">True</code> writes positions <code class="inline-code">[start_pos, end_pos)</code> into the cache and attends over the cache prefix <code class="inline-code">[0, end_pos)</code>; <code class="inline-code">False</code> attends over the current step's own latents only (training mode — the cache is never allocated).
+</li>
+<li>Returns <code class="inline-code">(B, S_q, D)</code>.
+</li>
+</ul>
+<p><strong>Step-by-step (all intermediate shapes canonical):</strong></p>
+<ol class="doc-list">
+<li>Guards + rope: bounds check; <code class="inline-code">_extend_rope(end_pos, x.device)</code>; <code class="inline-code">_ensure_cache(bsz, x.device, x.dtype)</code> if <code class="inline-code">use_cache</code>.
+</li>
+<li>Query: <code class="inline-code">q = wq(x)</code> (or <code class="inline-code">wq_b(q_norm(wq_a(x)))</code> when <code class="inline-code">q_lora_rank &gt; 0</code>) → <code class="inline-code">(B, S_q, H, 72)</code>; split → <code class="inline-code">q_nope (B, S_q, H, 48)</code>, <code class="inline-code">q_pe (B, S_q, H, 24)</code>; <code class="inline-code">q_pe = _apply_rope(q_pe, start_pos, seqlen)</code>.
+</li>
+<li>Key/value latent: <code class="inline-code">kv_a(x)</code> → split into <code class="inline-code">kv_latent (B, S_q, 192)</code> and <code class="inline-code">k_pe_raw (B, S_q, 24)</code>; <code class="inline-code">kv_normed = kv_norm(kv_latent)</code>; <code class="inline-code">k_pe = _apply_rope(k_pe_raw.unsqueeze(2), ...).squeeze(2)</code> → <code class="inline-code">(B, S_q, 24)</code>.
+</li>
+<li>Cache write/read (if <code class="inline-code">use_cache</code>): <code class="inline-code">kv_cache[:bsz, start_pos:end_pos] = kv_normed.detach()</code>, <code class="inline-code">pe_cache[:bsz, start_pos:end_pos] = k_pe.detach()</code>; context = <code class="inline-code">kv_cache[:bsz, :end_pos]</code> (<code class="inline-code">(B, S_kv, 192)</code>) and <code class="inline-code">pe_cache[:bsz, :end_pos]</code> (<code class="inline-code">(B, S_kv, 24)</code>). Else context = current-step <code class="inline-code">kv_normed</code> / <code class="inline-code">k_pe</code>.
+</li>
+<li>Up-projection view: <code class="inline-code">wkv_b.weight.view(H, D_nope + D_v, R)</code> → <code class="inline-code">wkv_b_k = wkv_b_full[:, :48]</code> (<code class="inline-code">(12, 48, 192)</code>), <code class="inline-code">wkv_b_v = wkv_b_full[:, 48:]</code> (<code class="inline-code">(12, 64, 192)</code>).
+</li>
+<li>Absorbed query: <code class="inline-code">q_nope_h = q_nope.permute(2, 0, 1, 3).reshape(H, B*S_q, D_nope)</code>; <code class="inline-code">q_nope_proj_h = bmm(q_nope_h, wkv_b_k)</code> → <code class="inline-code">(12, B*S_q, 192)</code> → reshaped back to <code class="inline-code">q_nope_proj (B, S_q, H, 192)</code>.
+</li>
+<li>Dispatch to <code class="inline-code">attn_impl</code> (§6), all paths ending in <code class="inline-code">self.wo(out.flatten(2))</code> with <code class="inline-code">out</code> of shape <code class="inline-code">(B, S_q, H, D_v)</code>:
+<ul class="doc-list">
+<li><strong>SDPA:</strong> <code class="inline-code">ctx_kv_bmm = ctx_kv.reshape(B*S_kv, R).unsqueeze(0).expand(H, -1, -1)</code>; fused <code class="inline-code">bmm(ctx_kv_bmm, cat([wkv_b_k, wkv_b_v], dim=1).T)</code> → split into <code class="inline-code">K_nope (B, H, S_kv, 48)</code> and <code class="inline-code">V (B, H, S_kv, 64)</code>; <code class="inline-code">K_rope = ctx_pe.unsqueeze(1).expand(B, H, S_kv, 24)</code>; <code class="inline-code">attn_mask = mask.expand(B, H, S_q, -1)</code>; <code class="inline-code">F.scaled_dot_product_attention(cat([Q_nope, Q_rope], -1), cat([K_nope, K_rope], -1), V, attn_mask=attn_mask, scale=self.softmax_scale)</code> → <code class="inline-code">(B, H, S_q, 64)</code> → transpose + flatten.
+</li>
+<li><strong>Manual:</strong> <code class="inline-code">scores = (_per_batch_bmm(q_nope_proj, ctx_kv) + _per_batch_bmm(q_pe, ctx_pe)) * softmax_scale</code> → <code class="inline-code">(B, H, S_q, S_kv)</code>; add <code class="inline-code">mask.expand(bsz, h, seqlen_q, -1)</code>; <code class="inline-code">scores.softmax(dim=-1, dtype=torch.float32).to(x.dtype)</code>; per-batch <code class="inline-code">bmm(attn[b], ctx_kv[b].expand(H, -1, -1))</code> into <code class="inline-code">out_latent (B, H, S_q, 192)</code>; <code class="inline-code">out_v = bmm(out_latent.permute(1,0,2,3).reshape(H, B*S_q, R), wkv_b_v.T)</code>.
+</li>
+<li><strong>Triton:</strong> <code class="inline-code">_forward_triton(...)</code> (§below); on <code class="inline-code">(ImportError, ValueError)</code> fall back to SDPA with a one-time warning (§6).
+</li>
+</ul>
+</li>
+</ol>
+<p><strong>dtype notes.</strong> The softmax in the manual path runs in fp32 (<code class="inline-code">dtype=torch.float32</code>) and is cast back to <code class="inline-code">x.dtype</code>; the SDPA path leaves numerics to <code class="inline-code">scaled_dot_product_attention</code>'s internal fp32 accumulation. <code class="inline-code">q_nope_proj</code> is <code class="inline-code">.contiguous()</code> after the permute/reshape so the manual path's bmm gets a dense layout. Under autocast, the layer runs in the input dtype (BF16 in training); the RoPE table is complex64 and the rotation itself is fp32.</p>
+<p><strong>Callers.</strong> <code class="inline-code">models/transformer.py:TransformerBlock.forward</code> (<code class="inline-code">self.attn(self.attn_norm(x), start_pos, mask, use_cache)</code>); transitively <code class="inline-code">Transformer.forward</code> / <code class="inline-code">Transformer.forward_with_hidden</code> / <code class="inline-code">Transformer.generate</code> and the speculative decoder (<code class="inline-code">inference/speculative.py:SpeculativeDecoder.generate</code>, via the main model). Tests: <code class="inline-code">tests/test_models.py:TestMLA</code>, <code class="inline-code">tests/test_mla_triton.py</code> (chunked-prefill equivalence at the Triton boundary).</p>
+<h3 id="heading" class="heading-anchor"><code class="inline-code">models/mla.py:MultiHeadLatentAttention._forward_triton</code><a href="#heading" class="anchor-link" aria-label="Link to section">#</a></h3>
+<div class="code-wrapper" data-lines="2"><div class="code-header"><span class="code-lang">python</span><span class="code-actions"><button class="copy-btn" onclick="copyCode(this)">Copy</button></span></div><pre><code class="language-python">def _forward_triton(self, q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v,
+                    bsz, seqlen, h, mask, start_pos, use_cache) -&gt; torch.Tensor:</code></pre></div>
+<p>The host wrapper for the fused Triton kernel — it imports <code class="inline-code">triton_mla_attention</code> from <code class="inline-code">models/mla_triton.py</code> (lazily, so the import cost and the <code class="inline-code">ImportError</code> happen here, inside the <code class="inline-code">try</code> in <code class="inline-code">forward</code>), re-arranges tensors to the kernel's layout, and calls it. Never anchor the JIT kernel itself (<code class="inline-code">_mla_flash_fwd_kernel</code>) — it is an implementation detail; the documented public boundary is <code class="inline-code">models/mla_triton.py:triton_mla_attention</code> (see R6).</p>
+<ul class="doc-list">
+<li><strong>Input layout (python-level):</strong> <code class="inline-code">q_nope (B, S_q, H, D_nope)</code>, <code class="inline-code">q_pe (B, S_q, H, D_rope)</code> (already rotated), <code class="inline-code">ctx_kv (B, S_kv, R)</code>, <code class="inline-code">ctx_pe (B, S_kv, D_rope)</code>, <code class="inline-code">wkv_b_k (H, D_nope, R)</code>, <code class="inline-code">wkv_b_v (H, D_v, R)</code>.
+</li>
+<li><strong>Kernel layout:</strong> permutes the queries to <code class="inline-code">(B, H, S_q, D_*)</code> and <code class="inline-code">.contiguous()</code>; passes <code class="inline-code">softmax_scale=self.softmax_scale</code>.
+</li>
+<li><strong>Causality translation:</strong> <code class="inline-code">is_causal = mask is not None</code>; <code class="inline-code">q_start = start_pos if (is_causal and use_cache) else 0</code>. The kernel builds its own causal mask in SRAM keyed on <strong>global</strong> position (<code class="inline-code">s_q_off + q_start &gt;= k_off</code>); <code class="inline-code">q_start</code> is the cache offset of the query block, so a cached mid-sequence prefill cannot attend its own future. A wrong <code class="inline-code">q_start</code> (e.g. 0 during cached decode) silently leaks future keys — see <a href="../concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a> Appendix C.
+</li>
+<li><strong>Output:</strong> kernel returns <code class="inline-code">(B, S_q, H, D_v)</code>; the wrapper flattens to <code class="inline-code">(B, S_q, H*D_v)</code> and returns <code class="inline-code">self.wo(...)</code> — identical epilogue to the other paths.
+</li>
+<li><strong>Caller:</strong> <code class="inline-code">forward</code> (Triton branch only).
+</li>
+</ul>
+<h2 id="9-pitfalls" class="heading-anchor">9. Pitfalls<a href="#9-pitfalls" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ol class="doc-list">
+<li><strong>Forgetting <code class="inline-code">reset_cache()</code> between requests.</strong> <code class="inline-code">Transformer.generate</code> resets internally; a bare <code class="inline-code">forward(use_cache=True)</code> does not — the next forward reads the previous prompt's positions <code class="inline-code">[0, end_pos)</code> and silently attends to stale content.
+</li>
+<li><strong>Batch growth drops the prefix.</strong> <code class="inline-code">_ensure_cache</code> reallocates when <code class="inline-code">bsz &gt; _cache_batch</code>; the new <code class="inline-code">torch.zeros</code> is empty. Prefill batch 1 then decode batch 8 without a reset → the batch-1 prefix is gone.
+</li>
+<li><strong><code class="inline-code">start_pos</code> is global, not per-chunk.</strong> Chunked prefill calls <code class="inline-code">forward(chunk, start_pos=chunk_start, use_cache=True)</code>; the write and the mask both use absolute positions. Off-by-one here is the classic cause of post-first-token gibberish.
+</li>
+<li><strong>Sequence overflow is a hard error by design</strong> (<code class="inline-code">RuntimeError</code>), never a silent truncation — but only if the caller respects the bound; <code class="inline-code">generate</code> breaks at <code class="inline-code">max_seq_len</code>, a manual decode loop must too.
+</li>
+<li><strong><code class="inline-code">attn_impl=&quot;triton&quot;</code> silently degrades</strong> to SDPA after the first failure (one warning). If you need to know which path ran, check <code class="inline-code">self.attn_impl</code> after construction/forward — production logs will not tell you per step.
+</li>
+<li><strong>The cache dtype is captured from the first forward.</strong> A device/dtype change reallocates (and clears) the cache.
+</li>
+<li><strong><code class="inline-code">use_cache=True</code> during training</strong> fills the cache with detached latents — harmless but wasteful; the training loop always passes <code class="inline-code">use_cache=False</code>.
+</li>
+</ol>
+<h2 id="10-check-your-understanding" class="heading-anchor">10. Check your understanding<a href="#10-check-your-understanding" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ol class="doc-list">
+<li><strong>Q:</strong> Why does the SDPA path materialize <code class="inline-code">K_nope</code>/<code class="inline-code">V</code> while the manual path does not? <strong>A:</strong> SDPA must materialize (it takes explicit K/V tensors); the fused bmm <code class="inline-code">ctx_kv_bmm @ cat([wkv_b_k, wkv_b_v]).T</code> reconstructs all heads' K and V in one operation, avoiding the per-head loop and the four-tensor <code class="inline-code">cat</code> of the naive reference. The manual path keeps scores in latent space (<code class="inline-code">q_nope_proj @ ctx_kvᵀ</code>) and is ~4× the FLOPs of MHA — it exists as the references/teaching path and the equivalence anchor.
+</li>
+<li><strong>Q:</strong> What is in the cache, exactly, and why is the write detached? <strong>A:</strong> The <em>normalized</em> latent <code class="inline-code">kv_normed</code> (192 floats) and the <em>rotated</em> rope key <code class="inline-code">k_pe</code> (24 floats), per token per layer. Detach keeps cache entries off the autograd graph so a decode forward never back-propagates through past positions.
+</li>
+<li><strong>Q:</strong> When does <code class="inline-code">q_start</code> differ from <code class="inline-code">start_pos</code> in <code class="inline-code">_forward_triton</code>? <strong>A:</strong> When the call is causal and cached (<code class="inline-code">mask is not None and use_cache</code>), <code class="inline-code">q_start = start_pos</code>; otherwise 0. For a cache-free full-sequence forward the block-local and global positions coincide, so 0 is correct.
+</li>
+<li><strong>Q:</strong> At <code class="inline-code">max_seq_len = 8192, mscale = 1.1, rope_factor = 1.0</code>, what is <code class="inline-code">softmax_scale</code>? <strong>A:</strong> <code class="inline-code">mscale = 1.1</code> (factor is 1.0, so no log correction), and since 8192 &gt; 4096, <code class="inline-code">softmax_scale = 72^{-1/2} \cdot 1.1^2 \approx 0.1426</code> — guarded by <code class="inline-code">tests/test_models.py:TestMLAAdditional.test_softmax_scale_with_mscale</code>.
+</li>
+</ol>
+<hr class='doc-hr'>
+<h2 id="references" class="heading-anchor">References<a href="#references" class="anchor-link" aria-label="Link to section">#</a></h2>
+<ul class="doc-list">
+<li><a href="../concepts/attention-and-precision.html" class="doc-link">MLA &amp; Mixed Precision</a> — the math and worked examples
+</li>
+<li><a href="../references/R1_config_schema.html" class="doc-link">R1 — Config Schema</a> - every YAML key read here
+</li>
+<li><a href="../references/R2_transformer_api.html" class="doc-link">R2 — Transformer API</a> - the caller
+</li>
+<li><a href="../references/R6_triton_api.html" class="doc-link">R6 — Triton API</a> - the kernel this layer dispatches to
+</li>
+</ul>
+                </article>
+
+                
+
+                <div class="doc-footer-nav">
+                    <a href="../../docs/references/R2_transformer_api.html" class="nav-card prev-card"><span class="card-label">← Previous</span><span class="card-title">R2 — Transformer API</span></a>
+                    <a href="../../docs/references/R4_moe_api.html" class="nav-card next-card"><span class="card-label">Next →</span><span class="card-title">R4 — MoE API</span></a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar Table of Contents -->
+        <aside class="toc-sidebar">
+            <div class="toc-inner">
+                <div class="toc-title">On This Page</div>
+                <ul class="toc-list"><li class="toc-h2"><a href="#1-60-second-summary" class="toc-link">1. 60-second summary</a></li><li class="toc-h2"><a href="#2-why-it-exists" class="toc-link">2. Why it exists</a></li><li class="toc-h2"><a href="#3-intuition" class="toc-link">3. Intuition</a></li><li class="toc-h2"><a href="#4-class-and-configuration" class="toc-link">4. Class and configuration</a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h3"><a href="#sub-modules-created" class="toc-link">Sub-modules created</a></li><li class="toc-h2"><a href="#5-the-mscale--softmax_scale-computation" class="toc-link">5. The mscale / softmax_scale computation</a></li><li class="toc-h2"><a href="#6-attention-implementation-modes" class="toc-link">6. Attention implementation modes</a></li><li class="toc-h2"><a href="#7-kv-cache-contract" class="toc-link">7. KV-cache contract</a></li><li class="toc-h2"><a href="#8-method-reference" class="toc-link">8. Method reference</a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h3"><a href="#heading" class="toc-link"></a></li><li class="toc-h2"><a href="#9-pitfalls" class="toc-link">9. Pitfalls</a></li><li class="toc-h2"><a href="#10-check-your-understanding" class="toc-link">10. Check your understanding</a></li><li class="toc-h2"><a href="#references" class="toc-link">References</a></li></ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            if (window.hljs) {
+                hljs.highlightAll();
+            }
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+                    throwOnError: false
+                });
+            }
+        });
+    </script>
+    <script defer src="../../assets/portal.js"></script>
+</body>
+</html>
