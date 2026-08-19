@@ -45,6 +45,10 @@ wandb/
 # Graphify auto-generated output
 graphify-out/
 
+# Local tool artifacts
+.benchmarks/
+.qoder/
+
 # HTML Documentation output is tracked for GitHub Pages deployment
 
 .superpowers/
