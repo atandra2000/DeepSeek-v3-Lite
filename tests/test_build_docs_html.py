@@ -48,18 +48,19 @@ def test_font_link_mono_only(built):
     assert "IBM+Plex+Serif" not in html
 
 
-def test_index_hero_ascii_stage(built):
+def test_index_hero_stage(built):
     html = read("index.html")
     assert 'id="hero-decode"' in html
+    assert 'id="heroStateCanvas"' in html
     assert 'data-title="DEEPSEEK-V3-LITE"' in html
     assert "bottleneck-svg" not in html
     assert "hero-title sr-only" in html
 
 
-def test_index_layer_explorer_container(built):
+def test_index_pass_widget_container(built):
     html = read("index.html")
-    assert 'id="widget-layer-stack"' in html
-    assert "ascii-stack" in html
+    assert 'id="passWidget"' in html
+    assert 'id="passDiagramCanvas"' in html
 
 
 def test_moe_playground_container(built):
@@ -74,7 +75,7 @@ def test_widgets_not_on_other_pages(built):
     html = read("docs/concepts/parallelism.html")
     assert "widget-moe-routing" not in html
     assert "widget-mla-absorb" not in html
-    assert "widget-layer-stack" not in html
+    assert "passWidget" not in html
 
 
 def test_dark_theme_only(built):
@@ -83,3 +84,4 @@ def test_dark_theme_only(built):
     assert "theme-toggle" not in html
     css = (OUT / "assets" / "style.css").read_text(encoding="utf-8")
     assert '[data-theme="light"]' not in css
+

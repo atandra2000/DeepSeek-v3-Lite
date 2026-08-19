@@ -58,6 +58,7 @@ DOC_FILES = [
 # Premium-polish assets: mono-only font link, boot overlay, widget containers.
 FONT_LINK = ('<link href="https://fonts.googleapis.com/css2?'
              'family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400'
+             '&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400'
              '&display=swap" rel="stylesheet">')
 
 BOOT_OVERLAY_HTML = (
@@ -69,9 +70,6 @@ BOOT_OVERLAY_HTML = (
     '</div></div></div>'
 )
 
-# Marks html.booting before first paint; a watchdog ALWAYS clears it (and
-# the overlay) so a portal.js failure can never strand the page — under
-# reduced motion the removal fires immediately instead.
 BOOT_SCRIPT = """<script>
 (function () {
     var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -81,39 +79,69 @@ BOOT_SCRIPT = """<script>
             document.documentElement.classList.remove('booting');
             var ov = document.getElementById('boot-overlay');
             if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
-        }, reduced ? 0 : 1200);
+        }, reduced ? 0 : 350);
     });
 })();
 </script>"""
 
+# Shared <head> for every generated page.
+HEAD_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <!-- Fonts — one voice for the whole portal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    {font_link}
+{extra_head}
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="{rel_prefix}assets/style.css">
+    {boot_script}
+</head>
+"""
+
+DOC_EXTRA_HEAD = """    <!-- Highlight.js for Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- KaTeX for LaTeX Math -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>"""
+
 
 def layer_stack_ascii() -> str:
-    """Static 18-layer stack art; portal.js rebuilds it interactively."""
-    rows = ["\u250c" + "\u2500" * 36 + "\u2510"]
-    for i in range(17, -1, -1):
-        kind = "SwiGLU \u00b7 dense" if i < 2 else "MoE 20+1 \u00b7 top-4"
-        inner = f" {i:02d} \u2502 MLA \u25b8 {kind}".ljust(36)
-        rows.append("\u2502" + inner + "\u2502")
-    rows.append("\u2514" + "\u2500" * 36 + "\u2518")
-    return "\n".join(rows)
+    """Compact 18-layer stack architectural overview with exact monospace alignment."""
+    return """\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510
+\u2502 L02-L17 (x16) \u2502 MLA -> DeepSeekMoE 20+1 (top-4)  \u2502
+\u2502 L00-L01 (x02) \u2502 MLA -> SwiGLU Dense (warmup)     \u2502
+\u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524
+\u2502 TOTAL 18 L    \u2502 dim 768 · 12 heads · μP scaling  \u2502
+\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518"""
 
 
 LAYER_STACK_WIDGET = f"""<div class="ascii-widget" id="widget-layer-stack">
-    <div class="ascii-widget-head">FIG \u00b7 01 / 18-LAYER STACK <span>\u2014 hover or focus a layer</span></div>
+    <div class="ascii-widget-head">FIG \u00b7 01 / 18-LAYER STACK <span>\u2014 click or hover layer group</span></div>
     <div class="ascii-widget-grid">
         <pre class="ascii-stack" aria-label="18-layer stack: 2 dense layers, 16 MoE layers">{layer_stack_ascii()}</pre>
-        <pre class="ascii-panel" aria-live="polite">hover / focus a layer \u25b8 spec readout</pre>
+        <pre class="ascii-panel" aria-live="polite">STAGE       : Layers 02 - 17 (16 MoE blocks)
+ATTENTION   : MLA (kv_lora_rank=192, qk_rope=24)
+FFN ROUTING : DeepSeekMoE (20 routed top-4 + 1 shared)
+INTER_DIM   : 384 / expert (active: 5 x 384 = 1,920)
+ROUTING BIAS: Aux-loss-free gating with dynamic delta_b
+SOURCE      : models/moe.py · configs/pretrain_a100_422m.yaml</pre>
     </div>
 </div>"""
 
 MOE_WIDGET = """<div class="ascii-widget" id="widget-moe-routing">
     <div class="ascii-widget-head">FIG / GATE \u25b8 TOP-4 OF 20 <span>\u2014 press route token</span></div>
     <pre class="moe-grid" aria-label="Expert grid: 20 routed experts, 4 active per token, 1 shared always on">gate(x) \u25b8 top-4 of 20 routed
-░░00 ░░01 ▓▓02 ░░03 ░░04 
-░░05 ░░06 ▓▓07 ░░08 ░░09 
-░░10 ░░11 ░░12 ▓▓13 ░░14 
-░░15 ░░16 ░░17 ▓▓18 ░░19 
-shared  ▓▓sh (always on)</pre>
+\u2591\u259100 \u2591\u259101 \u2593\u259302 \u2591\u259103 \u2591\u259104 
+\u2591\u259105 \u2591\u259106 \u2593\u259307 \u2591\u259108 \u2591\u259109 
+\u2591\u259110 \u2591\u259111 \u2591\u259112 \u2593\u259313 \u2591\u259114 
+\u2591\u259115 \u2591\u259116 \u2591\u259117 \u2593\u259318 \u2591\u259119 
+shared  \u2593\u2593sh (always on)</pre>
 </div>"""
 
 MLA_WIDGET = """<div class="ascii-widget" id="widget-mla-absorb">
@@ -135,15 +163,7 @@ WIDGET_CONTAINERS = {
 
 
 def slugify(text: str) -> str:
-    """Generate clean HTML id for headings.
-
-    Matches the anchor convention the docs were authored against (GitHub-style):
-    lowercase, keep word chars + underscore + hyphen, drop everything else,
-    and turn each space into a single hyphen (no run collapsing). An em-dash
-    surrounded by spaces thus yields ``--`` (e.g. ``Data Flow — Training`` ->
-    ``data-flow--training``), and code identifiers keep their underscores
-    (``## train_step`` -> ``train_step``).
-    """
+    """Generate clean HTML id for headings."""
     text = text.lower().strip()
     text = re.sub(r'[^\w\s-]', '', text)
     text = re.sub(r'\s', '-', text)
@@ -174,13 +194,7 @@ def github_base_url() -> str:
 
 
 def fix_md_links(content: str, src_rel_path: str) -> str:
-    """Rewrite relative markdown links for the HTML build.
-
-    - ``.md`` links (with optional ``#anchor``) -> ``.html`` twin.
-    - non-``.md`` repo-relative links (``configs/…``, ``training/…``) -> GitHub
-      blob URL (resolved against the source file's repo-relative dir), since the
-      file isn't shipped inside ``docs_html/``.
-    """
+    """Rewrite relative markdown links for the HTML build."""
     repo_base = github_base_url()
     src_dir = WORKSPACE_DIR / Path(src_rel_path).parent
 
@@ -233,8 +247,6 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
     display_maths = []
     def store_display_math(m):
         inner = m.group(1).strip()
-        # Escape minimal HTML entities (< and >) so browser doesn't interpret them as tags,
-        # but keep all backslashes and LaTeX symbols untouched!
         safe_math = html.escape(inner, quote=False)
         display_maths.append(f'<div class="math-block">$$\n{safe_math}\n$$</div>')
         return f"\n\n___DISPLAYMATH_{len(display_maths)-1}___\n\n"
@@ -267,10 +279,8 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
     table_headers = []
     table_rows = []
     
-    # Stack of open list contexts; each entry keeps its own <li> open until the
-    # next item or a flush, so nested lists and wrapped items render correctly.
-    list_stack = []  # [{'indent': int, 'tag': str, 'li_open': bool}]
-    h1_seen = False  # the first H1 duplicates the page's doc-title; suppressed
+    list_stack = []
+    h1_seen = False
 
     in_blockquote = False
     blockquote_type = "normal"
@@ -327,24 +337,15 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             table_rows = []
 
     def escape_preserving_entities(text: str) -> str:
-        """Escape `<`, `>` and stray `&`, but leave valid HTML entities intact
-        (``&nbsp;``, ``&rarr;``, ``&#8230;``, ...) so source entities survive."""
         text = re.sub(r'&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#x[0-9a-fA-F]+);)', '&amp;', text)
         return text.replace('<', '&lt;').replace('>', '&gt;')
 
     def render_inline_formatting(text: str) -> str:
-        # Escape html chars for safety (except placeholders), preserving entities
         text = escape_preserving_entities(text)
-        
-        # Bold **text**
         text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
-        # Italic *text*
         text = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', text)
-        # Strikethrough ~~text~~
         text = re.sub(r'~~([^~]+)~~', r'<del>\1</del>', text)
-        # Links [text](url)
         text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2" class="doc-link">\1</a>', text)
-
         return text
 
     i = 0
@@ -352,7 +353,6 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
         line = lines[i]
         stripped = line.strip()
 
-        # Placeholders for display math or code blocks on their own line
         if stripped.startswith("___DISPLAYMATH_"):
             flush_table()
             flush_list()
@@ -369,7 +369,6 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             i += 1
             continue
 
-        # Empty line
         if not stripped:
             flush_table()
             flush_list()
@@ -377,7 +376,6 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             i += 1
             continue
 
-        # Blockquote or Callout
         if stripped.startswith(">"):
             flush_table()
             flush_list()
@@ -399,7 +397,6 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             i += 1
             continue
 
-        # Horizontal Rule
         if re.match(r'^(---|\*\*\*|___)\s*$', stripped):
             flush_table()
             flush_list()
@@ -408,7 +405,6 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             i += 1
             continue
 
-        # Headings (# to ######)
         heading_match = re.match(r'^(#{1,6})\s+(.+)$', stripped)
         if heading_match:
             flush_table()
@@ -417,7 +413,6 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             level = len(heading_match.group(1))
             heading_text_raw = heading_match.group(2).strip()
             
-            # Clean heading text for id/slug
             clean_title = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', heading_text_raw)
             clean_title = re.sub(r'`([^`]+)`', r'\1', clean_title)
             clean_title = re.sub(r'___INLINECODE_\d+___', '', clean_title)
@@ -433,8 +428,6 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
                     'id': heading_id
                 })
 
-            # The first H1 duplicates the page's doc-title; suppress the visible
-            # heading but keep its id so deep links (e.g. #deepseek-v3-lite) resolve.
             if level == 1 and not h1_seen:
                 h1_seen = True
                 html_lines.append(f'<span class="doc-anchor" id="{heading_id}"></span>')
@@ -448,14 +441,13 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             i += 1
             continue
 
-        # Markdown Table Detection
         if "|" in line and i + 1 < len(lines) and re.match(r'^\s*\|?\s*:?---', lines[i + 1].strip()):
             flush_list()
             flush_blockquote()
             in_table = True
             headers_raw = [c.strip() for c in line.strip().strip("|").split("|")]
             table_headers = [render_inline_formatting(h) for h in headers_raw]
-            i += 2  # skip separator line
+            i += 2
             
             while i < len(lines) and "|" in lines[i] and lines[i].strip():
                 cells_raw = [c.strip() for c in lines[i].strip().strip("|").split("|")]
@@ -464,7 +456,6 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             flush_table()
             continue
 
-        # Lists (unordered - or *, ordered 1.) — nested by leading indentation
         ul_match = re.match(r'^[\*\-]\s+(.+)$', stripped)
         ol_match = re.match(r'^\d+\.\s+(.+)$', stripped)
         if ul_match or ol_match:
@@ -474,22 +465,19 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             item_text = (ul_match or ol_match).group(1).strip()
             indent = len(line) - len(line.lstrip(' '))
 
-            # Close lists nested deeper than this item's indent
             while list_stack and indent < list_stack[-1]['indent']:
                 close_li()
                 html_lines.append(f"</{list_stack[-1]['tag']}>")
                 list_stack.pop()
-            # Same indent but a different list type → close the old list
             if list_stack and list_stack[-1]['indent'] == indent and list_stack[-1]['tag'] != tag:
                 close_li()
                 html_lines.append(f"</{list_stack[-1]['tag']}>")
                 list_stack.pop()
-            # Open a new list when none exists at this indent
             if not list_stack or list_stack[-1]['indent'] != indent:
                 list_stack.append({'indent': indent, 'tag': tag, 'li_open': False})
                 html_lines.append(f'<{tag} class="doc-list">')
             else:
-                close_li()  # next item in the same list
+                close_li()
 
             task_match = re.match(r'^\[([ xX])\]\s+(.+)$', item_text)
             if task_match:
@@ -502,13 +490,11 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             i += 1
             continue
 
-        # Continuation of an open list item (indented prose that belongs to it)
         if list_stack and list_stack[-1]['li_open'] and line[:1] in (' ', '\t'):
             html_lines.append("<br> " + render_inline_formatting(stripped))
             i += 1
             continue
 
-        # Standard Paragraph
         flush_table()
         flush_list()
         flush_blockquote()
@@ -524,22 +510,17 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
     # -------------------------------------------------------------
     # STEP 4: Restore Protected Tokens
     # -------------------------------------------------------------
-    # Restore inline math
     for idx, math_html in enumerate(inline_maths):
         full_html = full_html.replace(f"___INLINEMATH_{idx}___", math_html)
 
-    # Restore inline code
     for idx, raw_code in enumerate(inline_codes):
-        # Extract content between `...`
         code_content = raw_code[1:-1]
         code_html = f'<code class="inline-code">{html.escape(code_content)}</code>'
         full_html = full_html.replace(f"___INLINECODE_{idx}___", code_html)
 
-    # Restore display math
     for idx, math_html in enumerate(display_maths):
         full_html = full_html.replace(f"___DISPLAYMATH_{idx}___", math_html)
 
-    # Restore code blocks
     for idx, raw_block in enumerate(code_blocks):
         lines_b = raw_block.splitlines()
         first_line = lines_b[0].strip()
@@ -549,12 +530,22 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
         
         lang_attr = f' class="language-{code_lang}"' if code_lang else ''
         data_lang = code_lang if code_lang else 'code'
-        
+
+        n_lines = len(lines_b) - 2
+        collapsed = n_lines > 14
+        wrapper_cls = 'code-wrapper collapsed' if collapsed else 'code-wrapper'
+        expand_btn = (
+            f'<button class="expand-btn" data-label="expand ▾ · {n_lines} lines" '
+            f'onclick="toggleCode(this)">expand ▾ · {n_lines} lines</button>'
+            if collapsed else ''
+        )
+
         block_html = (
-            f'<div class="code-wrapper">'
+            f'<div class="{wrapper_cls}" data-lines="{n_lines}">'
             f'<div class="code-header">'
             f'<span class="code-lang">{data_lang}</span>'
-            f'<button class="copy-btn" onclick="copyCode(this)">Copy</button>'
+            f'<span class="code-actions">{expand_btn}'
+            f'<button class="copy-btn" onclick="copyCode(this)">Copy</button></span>'
             f'</div>'
             f'<pre><code{lang_attr}>{escaped_content}</code></pre>'
             f'</div>'
@@ -648,35 +639,19 @@ def generate_html_page(rel_path: str, category: str, display_title: str):
         next_href = rel_prefix + next_doc[0].replace(".md", ".html")
         next_html = f'<a href="{next_href}" class="nav-card next-card"><span class="card-label">Next →</span><span class="card-title">{next_doc[2]}</span></a>'
         
-    page_html = f"""<!DOCTYPE html>
-<html lang="en" data-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{display_title} | DeepSeek-v3-Lite Documentation</title>
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    {FONT_LINK}
-    <!-- Highlight.js for Syntax Highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="highlight-theme">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <!-- KaTeX for LaTeX Math -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-    <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="{rel_prefix}assets/style.css">
-    {BOOT_SCRIPT}
-</head>
-<body>
+    page_html = HEAD_TEMPLATE.format(
+        rel_prefix=rel_prefix,
+        title=f"{display_title} | DeepSeek-v3-Lite Documentation",
+        extra_head=DOC_EXTRA_HEAD,
+        font_link=FONT_LINK,
+        boot_script=BOOT_SCRIPT,
+    ) + f"""<body>
     {BOOT_OVERLAY_HTML}
     <!-- Top Header -->
     <header class="site-header">
         <div class="header-left">
             <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
             <a href="{rel_prefix}index.html" class="brand-logo">
-                <span class="logo-glyph"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2 5 L9 5 L12 11 L12 13 L9 19 L2 19 Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity="0.9"/><path d="M12 11 L15 5 L22 5 L22 19 L15 19 L12 13 Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity="0.9"/><circle cx="12" cy="12" r="1.6" fill="var(--spark)"/></svg></span>
                 <span class="brand-name">DeepSeek-v3-Lite</span>
                 <span class="brand-badge">Docs</span>
             </a>
@@ -735,34 +710,6 @@ def generate_html_page(rel_path: str, category: str, display_title: str):
 
     <!-- Scripts -->
     <script>
-        // Copy Code Functionality
-        function copyCode(btn) {{
-            const wrapper = btn.closest('.code-wrapper');
-            const code = wrapper.querySelector('code').innerText;
-            navigator.clipboard.writeText(code).then(() => {{
-                btn.innerText = 'Copied!';
-                btn.classList.add('copied');
-                setTimeout(() => {{
-                    btn.innerText = 'Copy';
-                    btn.classList.remove('copied');
-                }}, 2000);
-            }});
-        }}
-
-        function toggleSidebar() {{
-            document.getElementById('sidebar').classList.toggle('open');
-        }}
-
-        function filterNav() {{
-            const query = document.getElementById('navSearch').value.toLowerCase();
-            const items = document.querySelectorAll('.nav-item');
-            items.forEach(item => {{
-                const text = item.innerText.toLowerCase();
-                item.style.display = text.includes(query) ? 'block' : 'none';
-            }});
-        }}
-
-        // Initialize Highlight.js & KaTeX
         document.addEventListener("DOMContentLoaded", function() {{
             if (window.hljs) {{
                 hljs.highlightAll();
@@ -795,7 +742,6 @@ def generate_index_portal():
     """Generate interactive index.html home portal."""
     sidebar_html = build_sidebar_html("index.html", "./")
     
-    # (category_tag, category_title) -> list of (href, tag, title, desc)
     categories = {
         ("CORE", "Core Architecture"): [
             ("README.html", "README", "Project Overview", "Chinchilla-scale 412M parameter PyTorch implementation of DeepSeek-V3."),
@@ -859,28 +805,19 @@ def generate_index_portal():
         </section>
         """
 
-    index_html = f"""<!DOCTYPE html>
-<html lang="en" data-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DeepSeek-v3-Lite Documentation Portal</title>
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    {FONT_LINK}
-    <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="assets/style.css">
-    {BOOT_SCRIPT}
-</head>
-<body>
+    index_html = HEAD_TEMPLATE.format(
+        title="DeepSeek-v3-Lite Documentation Portal",
+        extra_head="",
+        rel_prefix="./",
+        font_link=FONT_LINK,
+        boot_script=BOOT_SCRIPT,
+    ) + f"""<body class="index-portal">
     {BOOT_OVERLAY_HTML}
     <!-- Top Header -->
     <header class="site-header">
         <div class="header-left">
             <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle Sidebar">☰</button>
             <a href="index.html" class="brand-logo">
-                <span class="logo-glyph"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2 5 L9 5 L12 11 L12 13 L9 19 L2 19 Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity="0.9"/><path d="M12 11 L15 5 L22 5 L22 19 L15 19 L12 13 Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity="0.9"/><circle cx="12" cy="12" r="1.6" fill="var(--spark)"/></svg></span>
                 <span class="brand-name">DeepSeek-v3-Lite</span>
                 <span class="brand-badge">Documentation</span>
             </a>
@@ -902,44 +839,263 @@ def generate_index_portal():
         <main class="main-content">
             <div class="content-container">
                 <div class="hero-banner">
+                    <div class="hero-margin-ticks" aria-hidden="true"></div>
+
                     <div class="hero-coords" aria-hidden="true">
-                        <span class="coord">FIG · 00</span>
+                        <span class="coord">FIG · A0</span>
                         <span class="coord-sep">/</span>
-                        <span class="coord">MLP-DEPTH 18</span>
+                        <span class="coord">PARAM 411.6M</span>
                         <span class="coord-sep">/</span>
-                        <span class="coord">SCALE 411.6M</span>
+                        <span class="coord">MLA 192·24</span>
+                        <span class="coord-sep">/</span>
+                        <span class="coord">MoE 20+1 TOP-4</span>
+                        <span class="coord-sep">/</span>
+                        <span class="coord">DEPTH 18</span>
+                        <span class="coord-sep">/</span>
+                        <span class="coord">MTP 1</span>
                         <span class="coord-sep">/</span>
                         <span class="coord">PREC BF16</span>
                     </div>
-                    <h1 class="hero-title sr-only">DeepSeek-v3-Lite — documentation portal</h1>
-                    <p class="hero-subtitle">A faithful, legible reimplementation of DeepSeek-V3 &mdash; Multi-head Latent Attention, auxiliary-loss-free MoE, multi-token prediction, and &mu;P scaling, at a 412M Chinchilla-scale budget. Read top-to-bottom like a drawing: a name, a shape, then the measurements.</p>
+                    <h1 class="hero-title">DeepSeek<span class="hero-title-em">-v3</span><span class="hero-title-em-accent">-Lite</span><span class="hero-title sr-only"> — documentation portal</span></h1>
+                    <p class="hero-subtitle">412M Chinchilla-scale PyTorch reproduction of DeepSeek-V3 &mdash; Multi-Head Latent Attention (MLA), auxiliary-loss-free DeepSeekMoE (20+1 experts), Multi-Token Prediction (MTP), and &mu;P width scaling.</p>
 
-                    <div class="hero-figure">
-                        <pre id="hero-decode" class="ascii-stage" role="img"
-                             data-title="DEEPSEEK-V3-LITE"
-                             data-sub="411.6M \u00b7 MLA \u00b7 MoE \u00b7 MTP \u00b7 \u03bcP"
-                             aria-label="Animated ASCII wordmark decoding into DEEPSEEK-V3-LITE">  DEEPSEEK-V3-LITE
-
-  411.6M \u00b7 MLA \u00b7 MoE \u00b7 MTP \u00b7 \u03bcP</pre>
-                    </div>
-
-                    <div class="spec-sheet">
-                        <div class="spec-sheet-rule" aria-hidden="true">
-                            <span class="spec-rule-key">DATASHEET</span>
-                            <span class="spec-rule-meta">rev 0.4 &#183; chk bf16 &#183; mlp bf16</span>
+                    <div class="deepseek-telemetry-ribbon" aria-label="Key DeepSeek Architectural Metrics">
+                        <div class="telemetry-card terra">
+                            <div class="tc-badge"><span class="tc-badge-dot"></span> MLA COMPRESSION</div>
+                            <div class="tc-val">7.1&times; <span class="unit">KV CUT</span></div>
+                            <div class="tc-desc">1,536d &rarr; 216d per token (192d latent + 24d decoupled RoPE)</div>
                         </div>
-                        <dl class="spec-grid">
-                            <div class="spec-cell"><dt class="spec-key">01 &middot; params</dt><dd class="spec-val">411.6<span class="unit">M</span></dd></div>
-                            <div class="spec-cell"><dt class="spec-key">02 &middot; layers</dt><dd class="spec-val">18</dd></div>
-                            <div class="spec-cell"><dt class="spec-key">03 &middot; experts</dt><dd class="spec-val">20+1<span class="unit"> &middot; top-4</span></dd></div>
-                            <div class="spec-cell"><dt class="spec-key">04 &middot; precision</dt><dd class="spec-val">BF16</dd></div>
-                            <div class="spec-cell"><dt class="spec-key">05 &middot; attention</dt><dd class="spec-val">MLA</dd></div>
-                            <div class="spec-cell"><dt class="spec-key">06 &middot; routing</dt><dd class="spec-val">aux-loss-free</dd></div>
-                            <div class="spec-cell"><dt class="spec-key">07 &middot; decode</dt><dd class="spec-val">MTP</dd></div>
-                            <div class="spec-cell"><dt class="spec-key">08 &middot; scaling</dt><dd class="spec-val">&mu;P</dd></div>
-                        </dl>
+                        <div class="telemetry-card olive">
+                            <div class="tc-badge"><span class="tc-badge-dot"></span> ACTIVE COMPUTE</div>
+                            <div class="tc-val">23.8% <span class="unit">FLOPs</span></div>
+                            <div class="tc-desc">5 of 21 experts active (4 routed + 1 shared &times; 384d = 1,920d)</div>
+                        </div>
+                        <div class="telemetry-card gold">
+                            <div class="tc-badge"><span class="tc-badge-dot"></span> AUXILIARY LOSS</div>
+                            <div class="tc-val">0.000 <span class="unit">&alpha; = 0</span></div>
+                            <div class="tc-desc">Zero loss penalty &middot; Out-of-band dynamic bias leveling &Delta;b</div>
+                        </div>
+                        <div class="telemetry-card ink">
+                            <div class="tc-badge"><span class="tc-badge-dot"></span> MTP SPEEDUP</div>
+                            <div class="tc-val">~1.8&times; <span class="unit">TOKENS/s</span></div>
+                            <div class="tc-desc">Multi-Token Prediction depth-1 self-speculative draft decoding</div>
+                        </div>
                     </div>
-                    {LAYER_STACK_WIDGET}
+
+                    <div class="hero-figure" id="hero-decode" data-title="DEEPSEEK-V3-LITE" data-sub="411.6M &middot; MLA 192+24 &middot; MoE 20+1 &middot; MTP &middot; &mu;P" role="region" aria-label="Figure A0: Multi-Head Latent Attention Manifold &amp; DeepSeekMoE 20+1 Dynamic Biased Routing Field">
+                        <div class="hero-figure-header">
+                            <div class="fig-badge">
+                                <span class="fig-dot" aria-hidden="true"></span>
+                                <span class="fig-tag">FIG. A0</span>
+                                <span class="fig-sep" aria-hidden="true">/</span>
+                                <span class="fig-title">MLA MANIFOLD &middot; DEEPSEEKMOE 20+1</span>
+                                <span class="fig-dim">12 HEADS &middot; 192d LATENT &middot; 7.1&times; KV CUT</span>
+                            </div>
+                            <div class="fig-controls">
+                                <button class="fig-btn active" data-mode="mla" type="button" title="Multi-Head Latent Attention (192d KV + 24d RoPE)">MLA &middot; LATENT</button>
+                                <button class="fig-btn" data-mode="moe" type="button" title="DeepSeekMoE 20+1 Biased-Sigmoid Routing">MoE &middot; 20+1 ROUTER</button>
+                                <button class="fig-btn" data-mode="mtp" type="button" title="Multi-Token Prediction (Depth-1 Speculative Tree)">MTP &middot; DRAFT</button>
+                                <button class="fig-btn" data-mode="dualpipe" type="button" title="DualPipe 1F1B Bidirectional Overlap">DUALPIPE &middot; FLOW</button>
+                                <button class="fig-btn fig-btn-icon" id="heroSpeedBtn" type="button" title="Simulation Speed" aria-label="Speed: 1x">1&times;</button>
+                                <button class="fig-btn fig-btn-icon" id="heroPauseBtn" type="button" title="Pause / Resume" aria-label="Pause simulation">&#10074;&#10074;</button>
+                            </div>
+                        </div>
+
+                        <div class="fig-canvas-wrap">
+                            <canvas id="heroStateCanvas" class="hero-canvas" aria-hidden="true"></canvas>
+                            <div class="fig-overlay-hud" aria-hidden="true">
+                                <div class="hud-corner top-left">
+                                    <span class="hud-lbl">SIMULATION MODE</span>
+                                    <span class="hud-val" id="hudModeLabel">MLA &middot; LATENT PROJECTION</span>
+                                </div>
+                                <div class="hud-corner top-right">
+                                    <span class="hud-lbl">KV CACHE REDUCTION</span>
+                                    <span class="hud-val" id="hudKVCut">7.1&times; <span class="unit">(1536 &rarr; 216 dims)</span></span>
+                                </div>
+                                <div class="hud-corner bottom-left">
+                                    <span class="hud-lbl">EXPERT DISPATCH</span>
+                                    <span class="hud-val" id="hudMoEStatus">20 ROUTED <span class="num">(TOP-4)</span> + 1 SHARED</span>
+                                </div>
+                                <div class="hud-corner bottom-right">
+                                    <span class="hud-lbl">DUALPIPE OVERLAP</span>
+                                    <span class="hud-val" id="hudOverlap">100% <span class="unit">COMM / COMP OVERLAP</span></span>
+                                </div>
+                                <div class="hud-probe" id="heroProbeHUD" style="opacity: 0;">
+                                    <div class="probe-card">
+                                        <span class="probe-tag" id="probeTag">PROBE &middot; HEAD #04</span>
+                                        <span class="probe-val" id="probeCoords">q'_t = W_q h_t &middot; W_U [192d]</span>
+                                        <span class="probe-sub" id="probeDecay">Decoupled RoPE k_t [24d] &middot; &theta;=10K</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="hero-figure-footer">
+                            <div class="fig-formula" id="heroFormulaBar">
+                                <span class="formula-sym">q'<sub class="f-sub">t,i</sub></span>
+                                <span class="formula-op">=</span>
+                                <span class="formula-term term-a">W<sub class="f-sub">q</sub> h<sub class="f-sub">t</sub> &middot; W<sub class="f-sub">U</sub></span>
+                                <span class="formula-dot">&middot;</span>
+                                <span class="formula-sym">score</span>
+                                <span class="formula-op">=</span>
+                                <span class="formula-term term-b">q'<sub class="f-sub">t,i</sub> c<sub class="f-sub">j</sub><sup class="f-sub">KV&top;</sup> + q<sub class="f-sub">t,i</sub><sup class="f-sub">R</sup> k<sub class="f-sub">j</sub><sup class="f-sub">R&top;</sup></span>
+                            </div>
+                            <div class="fig-legend">
+                                <span class="legend-item"><span class="legend-swatch terra"></span> <span class="legend-label">192d Compressed Latent c<sub class="f-sub">t</sub></span></span>
+                                <span class="legend-item"><span class="legend-swatch olive"></span> <span class="legend-label">24d Decoupled RoPE k<sub class="f-sub">t</sub></span></span>
+                                <span class="legend-item"><span class="legend-swatch core"></span> <span class="legend-label">Top-4 Routed + 1 Shared Expert</span></span>
+                                <span class="legend-hint">CLICK: SHOCKWAVE &middot; HOVER: PROBE HUD</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mechanism-section" aria-label="Interactive DeepSeek Core Mechanisms">
+                        <div class="mechanism-section-head">
+                            <span class="mechanism-section-title">§ DEEPSEEK CORE MECHANISMS &middot; INTERACTIVE BENCHMARK LABS</span>
+                        </div>
+                        <div class="mechanism-grid">
+                            <!-- Card 1: MLA VRAM Calculator -->
+                            <div class="mechanism-card card-mla" id="mchCardMla">
+                                <div class="mechanism-card-head">
+                                    <span class="mch-tag">01 &middot; MLA COMPRESSION</span>
+                                    <span class="mch-title">VRAM Footprint Analyzer</span>
+                                </div>
+                                <div class="mechanism-card-body">
+                                    <p class="mch-explainer">Compare KV cache memory between standard Multi-Head Attention (1,536 dims/token) and DeepSeek-V3 MLA (216 dims/token) across context lengths.</p>
+                                    <div class="mch-control-row">
+                                        <span>Context Length:</span>
+                                        <strong id="mlaContextLabel">32,768 tokens</strong>
+                                    </div>
+                                    <input type="range" id="mlaContextSlider" class="mch-slider" min="4096" max="131072" step="4096" value="32768" aria-label="Context length in tokens">
+                                    <div class="mch-stat-box">
+                                        <div class="msb-row">
+                                            <span>Standard MHA (12 &times; 64):</span>
+                                            <span id="statMhaVram">1.81 GB</span>
+                                        </div>
+                                        <div class="msb-row">
+                                            <span>DeepSeek MLA (192 + 24):</span>
+                                            <span id="statMlaVram">0.25 GB</span>
+                                        </div>
+                                        <div class="msb-row highlight">
+                                            <span>VRAM Saved per Worker:</span>
+                                            <span id="statMlaSaved">1.56 GB (7.1&times; cut)</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="mch-action-btn" id="mlaAbsorbAnimBtn">▸ Observe Matrix Absorption W_U &middot; W_q</button>
+                                </div>
+                            </div>
+
+                            <!-- Card 2: DeepSeekMoE Router Playground -->
+                            <div class="mechanism-card card-moe" id="mchCardMoe">
+                                <div class="mechanism-card-head">
+                                    <span class="mch-tag">02 &middot; DeepSeekMoE</span>
+                                    <span class="mch-title">Aux-Loss-Free Router (20+1)</span>
+                                </div>
+                                <div class="mechanism-card-body">
+                                    <p class="mch-explainer">Simulate 20 fine-grained routed experts (384d each) + 1 shared expert. Top-4 routed per token with dynamic load leveling biases &Delta;b.</p>
+                                    <div class="moe-mini-grid" id="moeMiniGrid">
+                                        <!-- 20 mini cells generated via JS -->
+                                    </div>
+                                    <div class="mch-stat-box">
+                                        <div class="msb-row">
+                                            <span>Active Experts:</span>
+                                            <span id="moeActiveList">#02, #07, #13, #18 + shared</span>
+                                        </div>
+                                        <div class="msb-row">
+                                            <span>Auxiliary Loss Penalty:</span>
+                                            <span>0.0000 (&alpha;=0)</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="mch-action-btn" id="moeRouteBatchBtn">▸ Route Token Batch &amp; Update &Delta;b</button>
+                                </div>
+                            </div>
+
+                            <!-- Card 3: MTP Speculative Tree -->
+                            <div class="mechanism-card card-mtp" id="mchCardMtp">
+                                <div class="mechanism-card-head">
+                                    <span class="mch-tag">03 &middot; MTP DECODER</span>
+                                    <span class="mch-title">Multi-Token Speculative Tree</span>
+                                </div>
+                                <div class="mechanism-card-body">
+                                    <p class="mch-explainer">Dual-token prediction at depth 1. Main model predicts token t while auxiliary module drafts candidate token t+1 with shared embeddings.</p>
+                                    <div class="mtp-tree-box" id="mtpTreeDisplay">
+                                        <div class="mtp-branch">
+                                            <span class="mtp-badge draft">MAIN HEAD</span>
+                                            <span>Token t &rarr; "architectures" (p = 0.99)</span>
+                                        </div>
+                                        <div class="mtp-branch">
+                                            <span class="mtp-badge acc">MTP DRAFT</span>
+                                            <span>Token t+1 &rarr; "converge" (p = 0.88 &ge; 0.80)</span>
+                                        </div>
+                                    </div>
+                                    <div class="mch-stat-box">
+                                        <div class="msb-row">
+                                            <span>Speculative Verification:</span>
+                                            <span id="mtpStatusText">ACCEPTED (2 Tokens / Step)</span>
+                                        </div>
+                                        <div class="msb-row">
+                                            <span>Throughput Acceleration:</span>
+                                            <span id="mtpSpeedText">2.00&times; effective rate</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="mch-action-btn" id="mtpVerifyStepBtn">▸ Step Speculative Verification</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pass-widget" id="passWidget" role="region" aria-label="Figure A1: Full Training Step Pipeline — Forward Activations, Autograd Backward Pass, Gradient Checkpointing Re-computation, and AdamW Step">
+                        <div class="pass-widget-header">
+                            <div class="pass-badge">
+                                <span class="pass-dot" aria-hidden="true"></span>
+                                <span class="pass-tag">FIG. A1</span>
+                                <span class="pass-sep" aria-hidden="true">/</span>
+                                <span class="pass-title">FULL TRAINING STEP PIPELINE</span>
+                                <span class="pass-dim">FORWARD &middot; AUTOGRAD BACKWARD &middot; ADAMW</span>
+                            </div>
+                            <div class="pass-controls">
+                                <button class="pass-btn active" data-phase="cycle" type="button" title="Full Forward / Backward / AdamW Cycle">AUTO CYCLE</button>
+                                <button class="pass-btn" data-phase="forward" type="button" title="Inspect Forward Activation Flow">FORWARD</button>
+                                <button class="pass-btn" data-phase="backward" type="button" title="Inspect Backward Gradient Flow">BACKWARD</button>
+                                <button class="pass-btn pass-btn-icon" id="passPauseBtn" type="button" title="Pause / Resume Pipeline" aria-label="Pause pipeline">&#10074;&#10074;</button>
+                            </div>
+                        </div>
+
+                        <div class="pass-canvas-wrap">
+                            <canvas id="passDiagramCanvas" class="pass-canvas" aria-hidden="true"></canvas>
+                            <div class="pass-overlay-hud" aria-hidden="true">
+                                <div class="pass-hud-chip top-left">
+                                    <span class="ph-lbl">CURRENT PHASE</span>
+                                    <span class="ph-val" id="phCurrentPhase">FORWARD ACTIVATIONS</span>
+                                </div>
+                                <div class="pass-hud-chip top-right">
+                                    <span class="ph-lbl">MEMORY CONTRACT</span>
+                                    <span class="ph-val" id="phStepMetrics">RE-COMPUTE ACTIVATIONS &middot; 7.1&times; KV SAVED</span>
+                                </div>
+                                <div class="pass-stage-tooltip" id="passStageTooltip" style="opacity: 0;">
+                                    <div class="st-card">
+                                        <span class="st-tag" id="stTag">STAGE 02: MULTI-HEAD LATENT ATTN</span>
+                                        <span class="st-op" id="stOp">c_t = W_D &middot; h_t [192d] &middot; q'_t = W_q h_t &middot; W_U</span>
+                                        <span class="st-shape" id="stShape">Latent KV: [B, 4096, 192] bf16 + RoPE [B, 4096, 24]</span>
+                                        <span class="st-desc" id="stDesc">Multi-Head Latent Attention with matrix absorption (7.1× KV reduction)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pass-widget-footer">
+                            <div class="pass-status-ticker">
+                                <span class="ticker-beacon" id="passTickerBeacon">&bull;</span>
+                                <span class="ticker-text" id="passTickerText">FORWARD &middot; Tokens x<sub class="f-sub">t</sub> &rarr; Fused Embed &rarr; 18&times; (MLA &middot; DeepSeekMoE 20+1) &rarr; MTP &rarr; Chunked CE</span>
+                            </div>
+                            <div class="pass-legend">
+                                <span class="legend-item"><span class="legend-swatch terra"></span> <span class="legend-label">Forward Activations</span></span>
+                                <span class="legend-item"><span class="legend-swatch olive"></span> <span class="legend-label">Backward Gradients (&part;&ell;/&part;&theta;)</span></span>
+                                <span class="legend-item"><span class="legend-swatch gold"></span> <span class="legend-label">AdamW Update (&Delta;&theta;)</span></span>
+                                <span class="legend-hint">CLICK STAGE: INSPECT &middot; HOVER: TENSOR SHAPES</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="portal-content">
@@ -950,20 +1106,6 @@ def generate_index_portal():
     </div>
 
     <!-- Scripts -->
-    <script>
-        function toggleSidebar() {{
-            document.getElementById('sidebar').classList.toggle('open');
-        }}
-
-        function filterNav() {{
-            const query = document.getElementById('navSearch').value.toLowerCase();
-            const items = document.querySelectorAll('.nav-item');
-            items.forEach(item => {{
-                const text = item.innerText.toLowerCase();
-                item.style.display = text.includes(query) ? 'block' : 'none';
-            }});
-        }}
-    </script>
     <script defer src="assets/portal.js"></script>
 </body>
 </html>
@@ -974,12 +1116,7 @@ def generate_index_portal():
 
 
 def generate_css():
-    """Create docs_html/assets/style.css with the latent-blueprint design system.
-
-    The full stylesheet lives in `assets/style.css` next to this script — the
-    generator copies it to the docs output. Keeping it in a real file (not a
-    Python string literal) means editor tooling works on it.
-    """
+    """Copy assets/style.css and assets/portal.js to docs_html/assets/."""
     import shutil
     assets_dir = OUTPUT_DIR / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
@@ -987,10 +1124,6 @@ def generate_css():
     shutil.copyfile(src_css, assets_dir / "style.css")
     src_js = WORKSPACE_DIR / "assets" / "portal.js"
     shutil.copyfile(src_js, assets_dir / "portal.js")
-
-# The CSS body that used to live as a Python triple-quoted literal now lives
-# in `assets/style.css` (alongside this generator) and is copied in by
-# `generate_css()` above.
 
 
 def main():
