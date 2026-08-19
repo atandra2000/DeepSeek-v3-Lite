@@ -7,7 +7,7 @@
 
 > **Status:** Architecture (MLA, DeepSeekMoE, MTP, aux-loss-free balancing, μP LR scaling, atomic safetensors checkpointing) is **implemented and CPU smoke-tested**. A full single-GPU pre-training run has **not yet been executed** (`checkpoints/` is empty). **FP8 mixed precision and DualPipe pipeline parallelism are paper-spec only — no FP8/DualPipe code is in this repo**; training runs in **BF16 on a single GPU**.
 
-> Conceptual notes extracted from the source tree live in [`docs/`](docs/README.md); the authoritative MLA deep-dive is [`docs/concepts/attention-and-precision.md`](docs/concepts/attention-and-precision.md). Symbol-anchored API references live in [`docs/references/`](docs/references/R1_config_schema.md) and operational guides in [`docs/guides/`](docs/guides/G1_debugging_playbook.md); every code-symbol citation (path + class/method) is machine-verified by `tests/test_doc_refs.py`.
+> **Documentation site:** [atandra2000.github.io/DeepSeek-v3-Lite](https://atandra2000.github.io/DeepSeek-v3-Lite/) — full HTML portal with concepts, API references, and guides. Markdown sources live in [`docs/`](docs/README.md); every code-symbol citation is machine-verified by `tests/test_doc_refs.py`.
 
 A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, designed for Chinchilla-optimal training on a single **A100 80GB SXM** (projected **~30-45 hours** wall time — unverified estimate).
 
