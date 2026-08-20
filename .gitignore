@@ -49,6 +49,7 @@ graphify-out/
 .benchmarks/
 .qoder/
 
-# HTML Documentation output is tracked for GitHub Pages deployment
+# HTML docs build output (CI rebuilds it from source for GitHub Pages)
+docs_html/
 
 .superpowers/
