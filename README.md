@@ -27,6 +27,28 @@ TF32 forward, `F.scaled_dot_product_attention` (Flash-Attn-2), `torch.compile(mo
 
 ---
 
+## 🗺️ Visual Architecture Atlas
+
+> Explore the full **[Interactive Visual Systems Guide](docs/diagrams/deepseek_visual_guide.html)** featuring verified Archify maps, live KV-cache compression calculators, dynamic bias balancing simulations, and [verification receipts](docs/diagrams/RECEIPTS.md).
+
+<div align="center">
+  <a href="docs/diagrams/deepseek_visual_guide.html">
+    <img src="docs/diagrams/architecture-model.visual-check.1440x900.dark.png" alt="DeepSeek-v3-Lite Architecture Overview" width="100%" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
+  </a>
+  <p><em>Figure 1: DeepSeek-v3-Lite Full Architecture Map — Multi-Head Latent Attention (MLA) with low-rank KV compression ($d_c=192$), decoupled RoPE, and DeepSeekMoE fine-grained routed experts. Click image to open interactive guide.</em></p>
+</div>
+
+### Interactive Architecture & Systems Diagrams
+
+| Diagram | Description | Interactive HTML | Visual Preview |
+|---|---|:---:|:---:|
+| **Model Architecture** | Full 18-layer topology (2 dense + 16 MoE), MLA KV compression, decoupled RoPE, SwiGLU, and MTP depth-1 head | [Open Map ↗](docs/diagrams/architecture-model.html) | [PNG](docs/diagrams/architecture-model.visual-check.1440x900.dark.png) |
+| **Optimizations & Memory** | A100 VRAM layout (35 GB peak), fused Triton MLA kernels, grouped-GEMM MoE dispatch, atomic safetensors, and μP LR scaling | [Open Map ↗](docs/diagrams/architecture-optimizations.html) | [PNG](docs/diagrams/architecture-optimizations.visual-check.1440x900.dark.png) |
+| **Data Pipeline** | 8.4B Chinchilla-optimal token stream, DeepSeek-Coder tokenizer, binary chunk sharding, and memory-mapped `PretrainDataset` | [Open Map ↗](docs/diagrams/dataflow-data-pipeline.html) | [PNG](docs/diagrams/dataflow-data-pipeline.visual-check.1440x900.dark.png) |
+| **Training Workflow** | Pretrain loop, AdamW optimizer with cosine schedule, auxiliary-loss-free dynamic bias load balancer, and MTP auxiliary loss | [Open Map ↗](docs/diagrams/workflow-training-loop.html) | [PNG](docs/diagrams/workflow-training-loop.visual-check.1440x900.dark.png) |
+
+---
+
 ## Architecture
 
 The model follows the DeepSeek-V3 technical report exactly &mdash; every component implemented end-to-end, no stubs.

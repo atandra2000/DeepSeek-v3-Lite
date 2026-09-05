@@ -1,0 +1,359 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "DeepSeek-v3-Lite Model Architecture",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "forward-path",
+        "label": "Forward path",
+        "focus": [
+          "tokens",
+          "embed",
+          "dense",
+          "moe",
+          "head",
+          "logits"
+        ],
+        "note": "Follow a token from embedding through 2 dense and 16 MoE blocks to logits."
+      },
+      {
+        "id": "attention-detail",
+        "label": "MLA detail",
+        "focus": [
+          "dense",
+          "moe",
+          "mla",
+          "kvcache"
+        ],
+        "note": "Every block uses MLA; only the 192-dim latent is cached at decode."
+      },
+      {
+        "id": "mtp-path",
+        "label": "MTP and decoding",
+        "focus": [
+          "head",
+          "mtp",
+          "spec",
+          "logits"
+        ],
+        "note": "The MTP head drafts token t+2; the main head verifies it."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "tokens",
+      "type": "external",
+      "label": "Token Stream",
+      "sublabel": "vocab 100,018",
+      "pos": [
+        40,
+        150
+      ],
+      "size": [
+        150,
+        70
+      ]
+    },
+    {
+      "id": "embed",
+      "type": "backend",
+      "label": "Embedding",
+      "sublabel": "768-dim · tied to LM head",
+      "pos": [
+        240,
+        150
+      ],
+      "size": [
+        150,
+        70
+      ]
+    },
+    {
+      "id": "dense",
+      "type": "backend",
+      "label": "Dense Blocks ×2",
+      "sublabel": "layers 0–1",
+      "pos": [
+        440,
+        150
+      ],
+      "size": [
+        150,
+        70
+      ]
+    },
+    {
+      "id": "moe",
+      "type": "backend",
+      "label": "MoE Blocks ×16",
+      "sublabel": "layers 2–17",
+      "pos": [
+        640,
+        150
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "tag": "emphasis"
+    },
+    {
+      "id": "head",
+      "type": "backend",
+      "label": "RMSNorm + LM Head",
+      "sublabel": "weight-tied",
+      "pos": [
+        840,
+        150
+      ],
+      "size": [
+        160,
+        70
+      ]
+    },
+    {
+      "id": "logits",
+      "type": "external",
+      "label": "Logits",
+      "sublabel": "(B, S, 100,018)",
+      "pos": [
+        1050,
+        150
+      ],
+      "size": [
+        140,
+        70
+      ]
+    },
+    {
+      "id": "mla",
+      "type": "backend",
+      "label": "Multi-head Latent Attention",
+      "sublabel": "kv_lora_rank 192 · RoPE 24-d decoupled",
+      "pos": [
+        410,
+        360
+      ],
+      "size": [
+        230,
+        80
+      ]
+    },
+    {
+      "id": "experts",
+      "type": "backend",
+      "label": "DeepSeekMoE",
+      "sublabel": "1 shared + 20 routed SwiGLU · top-4",
+      "pos": [
+        660,
+        360
+      ],
+      "size": [
+        230,
+        80
+      ]
+    },
+    {
+      "id": "kvcache",
+      "type": "database",
+      "label": "KV Cache",
+      "sublabel": "192-dim latent only",
+      "pos": [
+        130,
+        360
+      ],
+      "size": [
+        200,
+        80
+      ],
+      "tag": "~7× smaller"
+    },
+    {
+      "id": "mtp",
+      "type": "backend",
+      "label": "MTP Module",
+      "sublabel": "depth 1 · loss weight 0.3",
+      "pos": [
+        900,
+        360
+      ],
+      "size": [
+        170,
+        80
+      ]
+    },
+    {
+      "id": "spec",
+      "type": "backend",
+      "label": "Speculative Decoder",
+      "sublabel": "acceptance ≈ 0.8",
+      "pos": [
+        1100,
+        360
+      ],
+      "size": [
+        150,
+        80
+      ],
+      "tag": "~2× throughput"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Transformer trunk — 18 layers, 411.6M params",
+      "wraps": [
+        "embed",
+        "dense",
+        "moe",
+        "head",
+        "mla",
+        "experts"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "MTP + speculative decoding",
+      "wraps": [
+        "mtp",
+        "spec"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "tokens-embed",
+      "from": "tokens",
+      "to": "embed",
+      "label": "token ids"
+    },
+    {
+      "id": "embed-dense",
+      "from": "embed",
+      "to": "dense",
+      "label": "h (B,T,768)",
+      "labelAt": [
+        415,
+        234
+      ]
+    },
+    {
+      "id": "dense-moe",
+      "from": "dense",
+      "to": "moe",
+      "label": "residual stream",
+      "variant": "emphasis",
+      "labelAt": [
+        615,
+        234
+      ]
+    },
+    {
+      "id": "moe-head",
+      "from": "moe",
+      "to": "head",
+      "label": "hidden state",
+      "labelAt": [
+        815,
+        234
+      ]
+    },
+    {
+      "id": "head-logits",
+      "from": "head",
+      "to": "logits",
+      "label": "next-token logits",
+      "labelAt": [
+        1025,
+        234
+      ]
+    },
+    {
+      "id": "dense-mla",
+      "from": "dense",
+      "to": "mla",
+      "label": "attention per block",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "moe-experts",
+      "from": "moe",
+      "to": "experts",
+      "label": "gate → top-4",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "mla-kvcache",
+      "from": "mla",
+      "to": "kvcache",
+      "label": "c_KV cache",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "head-mtp",
+      "from": "head",
+      "to": "mtp",
+      "label": "shared embed + head",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "mtp-spec",
+      "from": "mtp",
+      "to": "spec",
+      "label": "draft t+2",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": 58
+    },
+    {
+      "id": "logits-spec",
+      "from": "logits",
+      "to": "spec",
+      "label": "verify p-ratio",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "MLA",
+      "items": [
+        "K and V live in a 192-dim latent space",
+        "Absorption folds the K up-projection into W_Q at decode",
+        "~7× KV-cache reduction: 216 vs 1536 floats per token per layer"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "DeepSeekMoE",
+      "items": [
+        "Routed experts hold 68.8% of all parameters",
+        "20% of expert FLOPs run per token (top-4 of 20)",
+        "Aux-loss-free: a bias buffer steers routing, no gradient touches it"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "MTP",
+      "items": [
+        "Predicts token t+2 through the shared embedding and head",
+        "Adds 7.08M params (418.7M total with MTP)",
+        "Same module enables single-step speculative decoding"
+      ]
+    }
+  ]
+}

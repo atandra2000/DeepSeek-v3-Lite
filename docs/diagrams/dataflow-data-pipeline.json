@@ -1,0 +1,259 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Data Pipeline — 8.0B-Token Corpus",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main-path",
+        "label": "Download to shards",
+        "focus": [
+          "fineweb",
+          "stack",
+          "math",
+          "raw",
+          "clean",
+          "tok",
+          "shards"
+        ],
+        "note": "Four crash-isolated stages from HuggingFace sources to packed uint32 shards."
+      },
+      {
+        "id": "mixture",
+        "label": "Mixture weights",
+        "focus": [
+          "fineweb",
+          "stack",
+          "math"
+        ],
+        "note": "Per-source budgets are truncated at download and tokenize time, never re-blended."
+      },
+      {
+        "id": "consumption",
+        "label": "Training consumption",
+        "focus": [
+          "shards",
+          "pretrain"
+        ],
+        "note": "PretrainDataset mmaps the shards and windows the flat token stream."
+      }
+    ],
+    "viewBox": [
+      1080,
+      430
+    ]
+  },
+  "stages": [
+    {
+      "label": "Sources (mixture.yaml)"
+    },
+    {
+      "label": "1 · Download"
+    },
+    {
+      "label": "2 · Clean"
+    },
+    {
+      "label": "3 · Tokenize"
+    },
+    {
+      "label": "4 · Pack + Consume"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "fineweb",
+      "type": "external",
+      "label": "FineWeb-Edu + DCLM",
+      "sublabel": "w 0.55 · 4.4B tok",
+      "stage": 0,
+      "row": 0,
+      "tag": "web",
+      "width": 150,
+      "height": 48
+    },
+    {
+      "id": "stack",
+      "type": "external",
+      "label": "The Stack v2",
+      "sublabel": "Python + Jupyter · w 0.20",
+      "stage": 0,
+      "row": 1,
+      "tag": "code",
+      "width": 150,
+      "height": 48
+    },
+    {
+      "id": "math",
+      "type": "external",
+      "label": "OpenMath + ArXiv",
+      "sublabel": "+ Cosmopedia · w 0.25",
+      "stage": 0,
+      "row": 1,
+      "tag": "math + prose",
+      "width": 150,
+      "height": 48,
+      "yOffset": 58
+    },
+    {
+      "id": "raw",
+      "type": "database",
+      "label": "data/raw/<source>/",
+      "sublabel": "streamed from HF",
+      "stage": 1,
+      "row": 1,
+      "width": 150,
+      "height": 48
+    },
+    {
+      "id": "clean",
+      "type": "backend",
+      "label": "Clean",
+      "sublabel": "quality + SHA-256 dedup",
+      "stage": 2,
+      "row": 1,
+      "tag": "per-source",
+      "width": 150,
+      "height": 48
+    },
+    {
+      "id": "tok",
+      "type": "backend",
+      "label": "Tokenize",
+      "sublabel": "deepseek-coder · 100,018",
+      "stage": 3,
+      "row": 1,
+      "tag": "+ EOS per doc",
+      "width": 150,
+      "height": 48
+    },
+    {
+      "id": "shards",
+      "type": "database",
+      "label": "shard_*.bin",
+      "sublabel": "160 × 50M uint32 · 32 GB",
+      "stage": 4,
+      "row": 0,
+      "tag": "round-robin packed",
+      "width": 150,
+      "height": 48
+    },
+    {
+      "id": "pretrain",
+      "type": "backend",
+      "label": "PretrainDataset",
+      "sublabel": "mmap windows of S+1 tokens",
+      "stage": 4,
+      "row": 1,
+      "tag": "(chunk[:-1], chunk[1:])",
+      "width": 150,
+      "height": 48
+    }
+  ],
+  "flows": [
+    {
+      "id": "fineweb-raw",
+      "from": "fineweb",
+      "to": "raw",
+      "label": "4.4B tok",
+      "variant": "emphasis",
+      "labelAt": [
+        172,
+        200
+      ]
+    },
+    {
+      "id": "stack-raw",
+      "from": "stack",
+      "to": "raw",
+      "label": "1.6B tok",
+      "labelAt": [
+        172,
+        362
+      ]
+    },
+    {
+      "id": "math-raw",
+      "from": "math",
+      "to": "raw",
+      "label": "2.0B tok",
+      "labelAt": [
+        172,
+        429
+      ]
+    },
+    {
+      "id": "raw-clean",
+      "from": "raw",
+      "to": "clean",
+      "label": "raw JSONL",
+      "variant": "emphasis",
+      "labelDy": -24
+    },
+    {
+      "id": "clean-tok",
+      "from": "clean",
+      "to": "tok",
+      "label": "clean JSONL",
+      "variant": "emphasis",
+      "labelDy": -24
+    },
+    {
+      "id": "tok-shards",
+      "from": "tok",
+      "to": "shards",
+      "label": "per-source uint32 streams",
+      "variant": "emphasis",
+      "labelAt": [
+        770,
+        172
+      ]
+    },
+    {
+      "id": "shards-pretrain",
+      "from": "shards",
+      "to": "pretrain",
+      "label": "mmap + bisect windows",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDy": 45,
+      "labelAt": [
+        960,
+        216
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Shared pipeline",
+      "items": [
+        "data/prepare_data.py is a shim over LLM/shared_data",
+        "Only the tokenizer differs per project — shards stay comparable",
+        "Mixture.yaml is authoritative: 8.0B tokens, weights sum to 1.0"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Crash isolation",
+      "items": [
+        "Each stage runs as its own subprocess with per-source state files",
+        "Shards are written tmp → fsync → os.replace, never torn",
+        "The manifest is rebuilt from the shard files actually on disk",
+        "manifest.json records SHA-256, provenance, and per-source stats"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Training boundary",
+      "items": [
+        "Disk stays uint32 (32 GB); int64 cast happens once in train_step",
+        "Documents are EOS-separated — no headers, no padding",
+        "Windows never pad: the partial tail is dropped"
+      ]
+    }
+  ]
+}

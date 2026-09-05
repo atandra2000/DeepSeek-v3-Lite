@@ -2,6 +2,10 @@
 
 > Navigation map for the DeepSeek-v3-Lite documentation: `concepts/` (theory + architecture), `references/` (symbol-anchored API docs), `guides/` (how-to / ops), plus the top-level pipeline docs `training.md` and `inference.md`. Every code-symbol citation (path + class/method) is machine-verified by `tests/test_doc_refs.py`; prose hygiene and relative links are checked by `scripts/check_docs.py` — both run in CI.
 
+## Visual Systems Atlas
+
+Explore the [Interactive Visual Systems Guide](diagrams/deepseek_visual_guide.html): four verified Archify showcase maps ([Model Architecture](diagrams/architecture-model.html), [Optimizations & Memory](diagrams/architecture-optimizations.html), [Data Pipeline](diagrams/dataflow-data-pipeline.html), [Training Loop](diagrams/workflow-training-loop.html)), interactive MLA KV-cache compression calculator, MoE dynamic bias balancer simulation, and [verification receipts](diagrams/RECEIPTS.md).
+
 ## Quick Reference
 
 A faithful, from-scratch, raw-PyTorch reproduction of the **DeepSeek-V3 architecture** at Chinchilla-optimal scale — **~412 M total / ~185 M active parameters per token** (411.6M deduped; 418.7M with MTP) — built to be fully inspectable (no HuggingFace Trainer, no Lightning). It implements the four architectural pillars of DeepSeek-V3 at a scale that fits on one A100 80 GB:
