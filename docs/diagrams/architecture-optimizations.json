@@ -1,0 +1,418 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Training Optimization Stack",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "throughput",
+        "label": "Throughput",
+        "focus": [
+          "compile",
+          "sdpa",
+          "tf32",
+          "trainstep"
+        ],
+        "note": "Kernel-level speed: compile, FlashAttention-2, TF32 matmuls."
+      },
+      {
+        "id": "memory",
+        "label": "Memory",
+        "focus": [
+          "bf16",
+          "gradckpt",
+          "gradaccum",
+          "trainstep"
+        ],
+        "note": "How a 422M run fits ~35 GB inside one A100 80GB."
+      },
+      {
+        "id": "stability",
+        "label": "Stability and schedule",
+        "focus": [
+          "mup",
+          "cosine",
+          "nan",
+          "trainstep"
+        ],
+        "note": "μP LR transfer, warmup-cosine decay, and the NaN rollback net."
+      },
+      {
+        "id": "balance",
+        "label": "MoE balance",
+        "focus": [
+          "bias",
+          "mtp",
+          "trainstep"
+        ],
+        "note": "Aux-loss-free routing control and the MTP auxiliary signal."
+      }
+    ],
+    "viewBox": [
+      1240,
+      490
+    ]
+  },
+  "components": [
+    {
+      "id": "trainstep",
+      "type": "backend",
+      "label": "One Optimizer Step",
+      "sublabel": "65,536 tokens · target 30–45% MFU",
+      "pos": [
+        400,
+        150
+      ],
+      "size": [
+        300,
+        200
+      ],
+      "tag": "emphasis"
+    },
+    {
+      "id": "compile",
+      "type": "backend",
+      "label": "torch.compile",
+      "sublabel": "max-autotune · fullgraph=false",
+      "pos": [
+        30,
+        50
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "10–20% faster"
+    },
+    {
+      "id": "sdpa",
+      "type": "backend",
+      "label": "SDPA (FlashAttention-2)",
+      "sublabel": "memory-efficient attention",
+      "pos": [
+        400,
+        50
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "tf32",
+      "type": "backend",
+      "label": "TF32 matmul",
+      "sublabel": "Ampere Tensor Cores",
+      "pos": [
+        880,
+        50
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "~8× FP32 GEMM"
+    },
+    {
+      "id": "bf16",
+      "type": "backend",
+      "label": "BF16 autocast",
+      "sublabel": "FP32 master weights untouched",
+      "pos": [
+        30,
+        152
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "gradckpt",
+      "type": "backend",
+      "label": "Gradient checkpointing",
+      "sublabel": "recompute in backward",
+      "pos": [
+        30,
+        226
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "~3× activations"
+    },
+    {
+      "id": "gradaccum",
+      "type": "backend",
+      "label": "Grad accum ×4",
+      "sublabel": "batch 32 signal, batch 8 memory",
+      "pos": [
+        30,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "mup",
+      "type": "backend",
+      "label": "μP LR scaling",
+      "sublabel": "6e-4 @ 757M → 8.07e-4",
+      "pos": [
+        880,
+        152
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "cosine",
+      "type": "backend",
+      "label": "Warmup-cosine LR",
+      "sublabel": "2K warmup → 5% floor",
+      "pos": [
+        880,
+        226
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "nan",
+      "type": "security",
+      "label": "Guard + rollback",
+      "sublabel": "5 non-finite → restore ckpt",
+      "pos": [
+        880,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "bias",
+      "type": "messagebus",
+      "label": "Aux-loss-free bias",
+      "sublabel": "±10% deadband",
+      "pos": [
+        340,
+        390
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "mtp",
+      "type": "backend",
+      "label": "MTP auxiliary loss",
+      "sublabel": "λ = 0.3 · predicts t+2",
+      "pos": [
+        560,
+        390
+      ],
+      "size": [
+        160,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Throughput",
+      "wraps": [
+        "compile",
+        "sdpa",
+        "tf32"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Memory",
+      "wraps": [
+        "bf16",
+        "gradckpt",
+        "gradaccum"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Stability & schedule",
+      "wraps": [
+        "mup",
+        "cosine",
+        "nan"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Routing & signal",
+      "wraps": [
+        "bias",
+        "mtp"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "compile-ts",
+      "from": "compile",
+      "to": "trainstep",
+      "label": "fused kernels",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        300,
+        121
+      ]
+    },
+    {
+      "id": "sdpa-ts",
+      "from": "sdpa",
+      "to": "trainstep",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "tf32-ts",
+      "from": "tf32",
+      "to": "trainstep",
+      "label": "fast matmuls",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        800,
+        121
+      ]
+    },
+    {
+      "id": "bf16-ts",
+      "from": "bf16",
+      "to": "trainstep",
+      "label": "casts compute",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        242,
+        177
+      ]
+    },
+    {
+      "id": "gradckpt-ts",
+      "from": "gradckpt",
+      "to": "trainstep",
+      "label": "bwd +33%",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        240,
+        250
+      ]
+    },
+    {
+      "id": "gradaccum-ts",
+      "from": "gradaccum",
+      "to": "trainstep",
+      "label": "÷4 loss scale",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        262,
+        321
+      ]
+    },
+    {
+      "id": "mup-ts",
+      "from": "mup",
+      "to": "trainstep",
+      "label": "lr 8.07e-4",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelAt": [
+        832,
+        177
+      ]
+    },
+    {
+      "id": "cosine-ts",
+      "from": "cosine",
+      "to": "trainstep",
+      "label": "128K horizon",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelAt": [
+        830,
+        258
+      ]
+    },
+    {
+      "id": "nan-ts",
+      "from": "nan",
+      "to": "trainstep",
+      "label": "guards the step",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelAt": [
+        832,
+        332
+      ]
+    },
+    {
+      "id": "bias-ts",
+      "from": "bias",
+      "to": "trainstep",
+      "label": "no gradient flows",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "mtp-ts",
+      "from": "mtp",
+      "to": "trainstep",
+      "label": "densifies signal",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Memory arithmetic",
+      "items": [
+        "Weights 0.8 GB + AdamW state 4.9 GB + activations ~10.1 GB",
+        "Transient logits (B·S·V) add ~3.1 GB — largest single activation",
+        "Total lands ~30–35 GB inside the 80 GB budget"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Why FP32 master weights",
+      "items": [
+        "BF16 has only ~3 decimal digits — small updates would round away",
+        "AdamW moments are FP32; fused kernel updates in one pass",
+        "Autocast casts transiently for compute, never mutates parameters"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "LR and stability",
+      "items": [
+        "μP transfers a tuned reference LR across scales via sqrt(N_ref/N)",
+        "YAML lr is dead config while mup_lr: true — edit mup_lr_reference",
+        "Warmup exists because Adam's early moments are miscalibrated"
+      ]
+    }
+  ]
+}
