@@ -5052,15 +5052,15 @@
         <path data-edge-from="mtp" data-edge-to="trainstep" data-edge-label="densifies signal" data-edge-key="10" data-edge-id="mtp-ts" data-composition-points="640,390;640,370;557,370;557,350" d="M 640 390 L 640 378 Q 640 370 632 370 L 565 370 Q 557 370 557 362 L 557 350" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
 
         <!-- Components -->
-        <g id="node-trainstep" data-node-id="trainstep" data-node-label="One Optimizer Step" tabindex="0" role="button" aria-label="Focus One Optimizer Step, 65,536 tokens · target 30–45% MFU, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="65,536 tokens · target 30–45% MFU" data-node-tag="emphasis" data-node-context="Architecture component">
-          <title>One Optimizer Step · 65,536 tokens · target 30–45% MFU · Architecture component · emphasis</title>
+        <g id="node-trainstep" data-node-id="trainstep" data-node-label="One Optimizer Step" tabindex="0" role="button" aria-label="Focus One Optimizer Step, 65,536 tokens · 30–45% MFU is an A100 target, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="65,536 tokens · 30–45% MFU is an A100 target" data-node-tag="emphasis" data-node-context="Architecture component">
+          <title>One Optimizer Step · 65,536 tokens · 30–45% MFU is an A100 target · Architecture component · emphasis</title>
           <rect x="400" y="150" width="300" height="200" rx="6" class="c-mask"/>
           <rect x="400" y="150" width="300" height="200" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(406 156) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="550" y="248" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">One Optimizer Step</text>
-        <text data-detail="context" x="550" y="264" class="t-muted" font-size="9" text-anchor="middle">65,536 tokens · target 30–45% MFU</text>
+        <text data-detail="context" x="550" y="264" class="t-muted" font-size="9" text-anchor="middle">65,536 tokens · 30–45% MFU is an A100 target</text>
         <text data-detail="fine" x="550" y="342" class="t-backend" font-size="7" text-anchor="middle">emphasis</text>
         </g>
 
@@ -5450,9 +5450,9 @@
           <h3>Memory arithmetic</h3>
         </div>
         <ul>
-          <li>&bull; Weights 0.8 GB + AdamW state 4.9 GB + activations ~10.1 GB</li>
-          <li>&bull; Transient logits (B·S·V) add ~3.1 GB — largest single activation</li>
-          <li>&bull; Total lands ~30–35 GB inside the 80 GB budget</li>
+          <li>&bull; FP32 master weights ≈1.6 GB (the earlier 0.8 GB figure was BF16-sized); AdamW moments are FP32</li>
+          <li>&bull; Activations and transient logits are rough estimates, not measured allocations</li>
+          <li>&bull; ~30–35 GB total is arithmetic inside the 80 GB A100 target, not a benchmark</li>
         </ul>
       </div>
 
@@ -5477,6 +5477,7 @@
           <li>&bull; μP transfers a tuned reference LR across scales via sqrt(N_ref/N)</li>
           <li>&bull; YAML lr is dead config while mup_lr: true — edit mup_lr_reference</li>
           <li>&bull; Warmup exists because Adam&#39;s early moments are miscalibrated</li>
+          <li>&bull; MTP-dependent schedule effects are not measured; MTP loss is disabled under the current YAML (see training diagram)</li>
         </ul>
       </div>
     </div>

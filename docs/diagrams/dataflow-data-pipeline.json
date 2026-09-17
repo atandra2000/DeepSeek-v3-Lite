@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "dataflow",
   "meta": {
-    "title": "Data Pipeline — 8.0B-Token Corpus",
+    "title": "Data Pipeline \u2014 8.0B-Token Corpus",
     "quality_profile": "showcase",
     "views": [
       {
@@ -49,16 +49,16 @@
       "label": "Sources (mixture.yaml)"
     },
     {
-      "label": "1 · Download"
+      "label": "1 \u00b7 Download"
     },
     {
-      "label": "2 · Clean"
+      "label": "2 \u00b7 Clean"
     },
     {
-      "label": "3 · Tokenize"
+      "label": "3 \u00b7 Tokenize"
     },
     {
-      "label": "4 · Pack + Consume"
+      "label": "4 \u00b7 Pack + Consume"
     }
   ],
   "nodes": [
@@ -66,7 +66,7 @@
       "id": "fineweb",
       "type": "external",
       "label": "FineWeb-Edu + DCLM",
-      "sublabel": "w 0.55 · 4.4B tok",
+      "sublabel": "w 0.55 \u00b7 declared 4.4B",
       "stage": 0,
       "row": 0,
       "tag": "web",
@@ -77,7 +77,7 @@
       "id": "stack",
       "type": "external",
       "label": "The Stack v2",
-      "sublabel": "Python + Jupyter · w 0.20",
+      "sublabel": "Python + Jupyter \u00b7 w 0.20",
       "stage": 0,
       "row": 1,
       "tag": "code",
@@ -88,7 +88,7 @@
       "id": "math",
       "type": "external",
       "label": "OpenMath + ArXiv",
-      "sublabel": "+ Cosmopedia · w 0.25",
+      "sublabel": "w 0.25 \u00b7 declared 2.0B",
       "stage": 0,
       "row": 1,
       "tag": "math + prose",
@@ -121,7 +121,7 @@
       "id": "tok",
       "type": "backend",
       "label": "Tokenize",
-      "sublabel": "deepseek-coder · 100,018",
+      "sublabel": "deepseek-coder \u00b7 100,018",
       "stage": 3,
       "row": 1,
       "tag": "+ EOS per doc",
@@ -132,10 +132,10 @@
       "id": "shards",
       "type": "database",
       "label": "shard_*.bin",
-      "sublabel": "160 × 50M uint32 · 32 GB",
+      "sublabel": "raw uint32 streams",
       "stage": 4,
       "row": 0,
-      "tag": "round-robin packed",
+      "tag": "inventory unverified",
       "width": 150,
       "height": 48
     },
@@ -143,10 +143,10 @@
       "id": "pretrain",
       "type": "backend",
       "label": "PretrainDataset",
-      "sublabel": "mmap windows of S+1 tokens",
+      "sublabel": "torch.load consumer (mmap)",
       "stage": 4,
       "row": 1,
-      "tag": "(chunk[:-1], chunk[1:])",
+      "tag": "FORMAT GAP",
       "width": 150,
       "height": 48
     }
@@ -203,7 +203,7 @@
       "id": "tok-shards",
       "from": "tok",
       "to": "shards",
-      "label": "per-source uint32 streams",
+      "label": "raw uint32 streams",
       "variant": "emphasis",
       "labelAt": [
         770,
@@ -214,8 +214,8 @@
       "id": "shards-pretrain",
       "from": "shards",
       "to": "pretrain",
-      "label": "mmap + bisect windows",
-      "variant": "emphasis",
+      "label": "format gap",
+      "variant": "dashed",
       "fromSide": "bottom",
       "toSide": "top",
       "route": "straight",
@@ -228,11 +228,20 @@
   ],
   "cards": [
     {
+      "dot": "rose",
+      "title": "Integration gap and provenance",
+      "items": [
+        "The shared pipeline writes raw uint32 token streams; training/pretrain.py:PretrainDataset reads shards with torch.load(weights_only=True). These formats do not interoperate today.",
+        "160 \u00d7 50M-token shards \u224832 GB is budget arithmetic (8B \u00d7 4 bytes); actual shard inventory requires the packing manifest.",
+        "Source revision 2edd9cdbf6b6708f103001c1d50fff2b05b32c85; the 55/20/25 grouping is a grouped view of the shared seven-source recipe."
+      ]
+    },
+    {
       "dot": "cyan",
       "title": "Shared pipeline",
       "items": [
         "data/prepare_data.py is a shim over LLM/shared_data",
-        "Only the tokenizer differs per project — shards stay comparable",
+        "Only the tokenizer differs per project \u2014 shards stay comparable",
         "Mixture.yaml is authoritative: 8.0B tokens, weights sum to 1.0"
       ]
     },
@@ -241,18 +250,9 @@
       "title": "Crash isolation",
       "items": [
         "Each stage runs as its own subprocess with per-source state files",
-        "Shards are written tmp → fsync → os.replace, never torn",
+        "Shards are written tmp \u2192 fsync \u2192 os.replace, never torn",
         "The manifest is rebuilt from the shard files actually on disk",
         "manifest.json records SHA-256, provenance, and per-source stats"
-      ]
-    },
-    {
-      "dot": "amber",
-      "title": "Training boundary",
-      "items": [
-        "Disk stays uint32 (32 GB); int64 cast happens once in train_step",
-        "Documents are EOS-separated — no headers, no padding",
-        "Windows never pad: the partial tail is dropped"
       ]
     }
   ]
