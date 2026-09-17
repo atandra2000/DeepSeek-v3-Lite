@@ -5051,12 +5051,12 @@
         <path data-edge-from="math" data-edge-to="raw" data-edge-label="2.0B tok" data-edge-key="2" data-edge-id="math-raw" data-composition-points="175,324;207.5,324;207.5,266;240,266" d="M 175 324 L 207.5 324 L 207.5 266 L 240 266" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <path data-edge-from="raw" data-edge-to="clean" data-edge-label="raw JSONL" data-edge-key="3" data-edge-id="raw-clean" data-composition-points="390,266;455,266" d="M 390 266 L 455 266" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="clean" data-edge-to="tok" data-edge-label="clean JSONL" data-edge-key="4" data-edge-id="clean-tok" data-composition-points="605,266;670,266" d="M 605 266 L 670 266" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="tok" data-edge-to="shards" data-edge-label="per-source uint32 streams" data-edge-key="5" data-edge-id="tok-shards" data-composition-points="820,266;852.5,266;852.5,152;885,152" d="M 820 266 L 852.5 266 L 852.5 152 L 885 152" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="shards" data-edge-to="pretrain" data-edge-label="mmap + bisect windows" data-edge-key="6" data-edge-id="shards-pretrain" data-composition-points="960,176;960,242" d="M 960 176 L 960 242" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="tok" data-edge-to="shards" data-edge-label="raw uint32 streams" data-edge-key="5" data-edge-id="tok-shards" data-composition-points="820,266;852.5,266;852.5,152;885,152" d="M 820 266 L 852.5 266 L 852.5 152 L 885 152" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="shards" data-edge-to="pretrain" data-edge-label="format gap" data-edge-key="6" data-edge-id="shards-pretrain" data-composition-points="960,176;960,242" d="M 960 176 L 960 242" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Nodes -->
-        <g id="node-fineweb" data-node-id="fineweb" data-node-label="FineWeb-Edu + DCLM" tabindex="0" role="button" aria-label="Focus FineWeb-Edu + DCLM, w 0.55 · 4.4B tok, 01 / Sources (mixture.yaml)" aria-pressed="false" data-node-kind="external" data-node-sublabel="w 0.55 · 4.4B tok" data-node-tag="web" data-node-context="01 / Sources (mixture.yaml)">
-          <title>FineWeb-Edu + DCLM · w 0.55 · 4.4B tok · 01 / Sources (mixture.yaml) · web</title>
+        <g id="node-fineweb" data-node-id="fineweb" data-node-label="FineWeb-Edu + DCLM" tabindex="0" role="button" aria-label="Focus FineWeb-Edu + DCLM, w 0.55 · declared 4.4B, 01 / Sources (mixture.yaml)" aria-pressed="false" data-node-kind="external" data-node-sublabel="w 0.55 · declared 4.4B" data-node-tag="web" data-node-context="01 / Sources (mixture.yaml)">
+          <title>FineWeb-Edu + DCLM · w 0.55 · declared 4.4B · 01 / Sources (mixture.yaml) · web</title>
           <rect x="25" y="128" width="150" height="48" rx="6" class="c-mask"/>
           <rect x="25" y="128" width="150" height="48" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(31 134) scale(0.6875)">
@@ -5064,7 +5064,7 @@
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="100" y="149" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">FineWeb-Edu + DCLM</text>
-          <text data-detail="context" x="100" y="165" class="t-muted" font-size="7" text-anchor="middle">w 0.55 · 4.4B tok</text>
+          <text data-detail="context" x="100" y="165" class="t-muted" font-size="7" text-anchor="middle">w 0.55 · declared 4.4B</text>
         <text data-detail="fine" x="100" y="165" class="t-external" font-size="7" text-anchor="middle">web</text>
         </g>
 
@@ -5081,8 +5081,8 @@
         <text data-detail="fine" x="100" y="279" class="t-external" font-size="7" text-anchor="middle">code</text>
         </g>
 
-        <g id="node-math" data-node-id="math" data-node-label="OpenMath + ArXiv" tabindex="0" role="button" aria-label="Focus OpenMath + ArXiv, + Cosmopedia · w 0.25, 01 / Sources (mixture.yaml)" aria-pressed="false" data-node-kind="external" data-node-sublabel="+ Cosmopedia · w 0.25" data-node-tag="math + prose" data-node-context="01 / Sources (mixture.yaml)">
-          <title>OpenMath + ArXiv · + Cosmopedia · w 0.25 · 01 / Sources (mixture.yaml) · math + prose</title>
+        <g id="node-math" data-node-id="math" data-node-label="OpenMath + ArXiv" tabindex="0" role="button" aria-label="Focus OpenMath + ArXiv, w 0.25 · declared 2.0B, 01 / Sources (mixture.yaml)" aria-pressed="false" data-node-kind="external" data-node-sublabel="w 0.25 · declared 2.0B" data-node-tag="math + prose" data-node-context="01 / Sources (mixture.yaml)">
+          <title>OpenMath + ArXiv · w 0.25 · declared 2.0B · 01 / Sources (mixture.yaml) · math + prose</title>
           <rect x="25" y="300" width="150" height="48" rx="6" class="c-mask"/>
           <rect x="25" y="300" width="150" height="48" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(31 306) scale(0.6875)">
@@ -5090,7 +5090,7 @@
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="100" y="321" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">OpenMath + ArXiv</text>
-          <text data-detail="context" x="100" y="337" class="t-muted" font-size="7" text-anchor="middle">+ Cosmopedia · w 0.25</text>
+          <text data-detail="context" x="100" y="337" class="t-muted" font-size="7" text-anchor="middle">w 0.25 · declared 2.0B</text>
         <text data-detail="fine" x="100" y="337" class="t-external" font-size="7" text-anchor="middle">math + prose</text>
         </g>
 
@@ -5130,8 +5130,8 @@
         <text data-detail="fine" x="745" y="279" class="t-backend" font-size="7" text-anchor="middle">+ EOS per doc</text>
         </g>
 
-        <g id="node-shards" data-node-id="shards" data-node-label="shard_*.bin" tabindex="0" role="button" aria-label="Focus shard_*.bin, 160 × 50M uint32 · 32 GB, 05 / 4 · Pack + Consume" aria-pressed="false" data-node-kind="database" data-node-sublabel="160 × 50M uint32 · 32 GB" data-node-tag="round-robin packed" data-node-context="05 / 4 · Pack + Consume">
-          <title>shard_*.bin · 160 × 50M uint32 · 32 GB · 05 / 4 · Pack + Consume · round-robin packed</title>
+        <g id="node-shards" data-node-id="shards" data-node-label="shard_*.bin" tabindex="0" role="button" aria-label="Focus shard_*.bin, raw uint32 streams, 05 / 4 · Pack + Consume" aria-pressed="false" data-node-kind="database" data-node-sublabel="raw uint32 streams" data-node-tag="inventory unverified" data-node-context="05 / 4 · Pack + Consume">
+          <title>shard_*.bin · raw uint32 streams · 05 / 4 · Pack + Consume · inventory unverified</title>
           <rect x="885" y="128" width="150" height="48" rx="6" class="c-mask"/>
           <rect x="885" y="128" width="150" height="48" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(891 134) scale(0.6875)">
@@ -5139,20 +5139,20 @@
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="960" y="149" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">shard_*.bin</text>
-          <text data-detail="context" x="960" y="165" class="t-muted" font-size="7" text-anchor="middle">160 × 50M uint32 · 32 GB</text>
-        <text data-detail="fine" x="960" y="165" class="t-database" font-size="7" text-anchor="middle">round-robin packed</text>
+          <text data-detail="context" x="960" y="165" class="t-muted" font-size="7" text-anchor="middle">raw uint32 streams</text>
+        <text data-detail="fine" x="960" y="165" class="t-database" font-size="7" text-anchor="middle">inventory unverified</text>
         </g>
 
-        <g id="node-pretrain" data-node-id="pretrain" data-node-label="PretrainDataset" tabindex="0" role="button" aria-label="Focus PretrainDataset, mmap windows of S+1 tokens, 05 / 4 · Pack + Consume" aria-pressed="false" data-node-kind="backend" data-node-sublabel="mmap windows of S+1 tokens" data-node-tag="(chunk[:-1], chunk[1:])" data-node-context="05 / 4 · Pack + Consume">
-          <title>PretrainDataset · mmap windows of S+1 tokens · 05 / 4 · Pack + Consume · (chunk[:-1], chunk[1:])</title>
+        <g id="node-pretrain" data-node-id="pretrain" data-node-label="PretrainDataset" tabindex="0" role="button" aria-label="Focus PretrainDataset, torch.load consumer (mmap), 05 / 4 · Pack + Consume" aria-pressed="false" data-node-kind="backend" data-node-sublabel="torch.load consumer (mmap)" data-node-tag="FORMAT GAP" data-node-context="05 / 4 · Pack + Consume">
+          <title>PretrainDataset · torch.load consumer (mmap) · 05 / 4 · Pack + Consume · FORMAT GAP</title>
           <rect x="885" y="242" width="150" height="48" rx="6" class="c-mask"/>
           <rect x="885" y="242" width="150" height="48" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(891 248) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="960" y="263" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">PretrainDataset</text>
-          <text data-detail="context" x="960" y="279" class="t-muted" font-size="7" text-anchor="middle">mmap windows of S+1 tokens</text>
-        <text data-detail="fine" x="960" y="279" class="t-backend" font-size="7" text-anchor="middle">(chunk[:-1], chunk[1:])</text>
+          <text data-detail="context" x="960" y="279" class="t-muted" font-size="7" text-anchor="middle">torch.load consumer (mmap)</text>
+        <text data-detail="fine" x="960" y="279" class="t-backend" font-size="7" text-anchor="middle">FORMAT GAP</text>
         </g>
 
         <!-- Flow labels -->
@@ -5176,13 +5176,13 @@
           <rect x="604.55" y="221" width="65.9" height="16" rx="4" class="c-mask"/>
           <text x="637.5" y="232" class="t-backend" font-size="8" text-anchor="middle">clean JSONL</text>
         </g>
-        <g data-detail="context" data-edge-from="tok" data-edge-to="shards" data-edge-label="per-source uint32 streams" data-edge-key="5" data-edge-id="tok-shards">
-          <rect x="702.75" y="161" width="134.5" height="16" rx="4" class="c-mask"/>
-          <text x="770" y="172" class="t-backend" font-size="8" text-anchor="middle">per-source uint32 streams</text>
+        <g data-detail="context" data-edge-from="tok" data-edge-to="shards" data-edge-label="raw uint32 streams" data-edge-key="5" data-edge-id="tok-shards">
+          <rect x="719.9" y="161" width="100.2" height="16" rx="4" class="c-mask"/>
+          <text x="770" y="172" class="t-backend" font-size="8" text-anchor="middle">raw uint32 streams</text>
         </g>
-        <g data-detail="context" data-edge-from="shards" data-edge-to="pretrain" data-edge-label="mmap + bisect windows" data-edge-key="6" data-edge-id="shards-pretrain">
-          <rect x="902.55" y="205" width="114.9" height="16" rx="4" class="c-mask"/>
-          <text x="960" y="216" class="t-backend" font-size="8" text-anchor="middle">mmap + bisect windows</text>
+        <g data-detail="context" data-edge-from="shards" data-edge-to="pretrain" data-edge-label="format gap" data-edge-key="6" data-edge-id="shards-pretrain">
+          <rect x="929.5" y="205" width="61" height="16" rx="4" class="c-mask"/>
+          <text x="960" y="216" class="t-messagebus" font-size="8" text-anchor="middle">format gap</text>
         </g>
 
         <!-- Legend -->
@@ -5192,13 +5192,17 @@
             <path d="M 40 391 L 74 391" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
             <text x="83" y="394" class="t-muted" font-size="10" font-weight="500">primary data</text>
           </g>
-          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="data store" data-legend-x="165" data-legend-baseline="394" data-legend-width="93">
-            <rect x="165" y="386" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
-            <text x="187" y="394" class="t-muted" font-size="10" font-weight="500">data store</text>
+          <g data-legend-semantic-kind="dashed" data-legend-x="165" data-legend-baseline="394" data-legend-width="98">
+            <path d="M 165 391 L 199 391" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+            <text x="208" y="394" class="t-muted" font-size="10" font-weight="500">async batch</text>
           </g>
-          <g data-legend-semantic-kind="default" data-legend-x="280" data-legend-baseline="394" data-legend-width="88">
-            <path d="M 280 391 L 314 391" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-            <text x="323" y="394" class="t-muted" font-size="10" font-weight="500">data flow</text>
+          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="data store" data-legend-x="285" data-legend-baseline="394" data-legend-width="93">
+            <rect x="285" y="386" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
+            <text x="307" y="394" class="t-muted" font-size="10" font-weight="500">data store</text>
+          </g>
+          <g data-legend-semantic-kind="default" data-legend-x="400" data-legend-baseline="394" data-legend-width="88">
+            <path d="M 400 391 L 434 391" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+            <text x="443" y="394" class="t-muted" font-size="10" font-weight="500">data flow</text>
           </g>
         </g>
       </svg>
@@ -5389,6 +5393,18 @@
     <div class="cards">
       <div class="card">
         <div class="card-header">
+          <div class="card-dot rose"></div>
+          <h3>Integration gap and provenance</h3>
+        </div>
+        <ul>
+          <li>&bull; The shared pipeline writes raw uint32 token streams; training/pretrain.py:PretrainDataset reads shards with torch.load(weights_only=True). These formats do not interoperate today.</li>
+          <li>&bull; 160 × 50M-token shards ≈32 GB is budget arithmetic (8B × 4 bytes); actual shard inventory requires the packing manifest.</li>
+          <li>&bull; Source revision 2edd9cdbf6b6708f103001c1d50fff2b05b32c85; the 55/20/25 grouping is a grouped view of the shared seven-source recipe.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
           <div class="card-dot cyan"></div>
           <h3>Shared pipeline</h3>
         </div>
@@ -5409,18 +5425,6 @@
           <li>&bull; Shards are written tmp → fsync → os.replace, never torn</li>
           <li>&bull; The manifest is rebuilt from the shard files actually on disk</li>
           <li>&bull; manifest.json records SHA-256, provenance, and per-source stats</li>
-        </ul>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <div class="card-dot amber"></div>
-          <h3>Training boundary</h3>
-        </div>
-        <ul>
-          <li>&bull; Disk stays uint32 (32 GB); int64 cast happens once in train_step</li>
-          <li>&bull; Documents are EOS-separated — no headers, no padding</li>
-          <li>&bull; Windows never pad: the partial tail is dropped</li>
         </ul>
       </div>
     </div>

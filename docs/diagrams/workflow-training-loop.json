@@ -2,7 +2,7 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "Pretraining Loop — training/pretrain.py",
+    "title": "Pretraining Loop \u2014 training/pretrain.py",
     "quality_profile": "showcase",
     "views": [
       {
@@ -53,7 +53,7 @@
     },
     {
       "id": "micro",
-      "label": "Training step (×4 accum)"
+      "label": "Training step (\u00d74 accum)"
     },
     {
       "id": "guard",
@@ -80,7 +80,7 @@
       "label": "pretrain YAML",
       "sublabel": "a100 config",
       "width": 118,
-      "height": 48
+      "height": 44
     },
     {
       "id": "init",
@@ -88,9 +88,9 @@
       "col": 1,
       "type": "backend",
       "label": "Pretrainer",
-      "sublabel": "compile · μP · AdamW",
+      "sublabel": "compile \u00b7 \u03bcP \u00b7 AdamW",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "ckpt",
@@ -98,9 +98,9 @@
       "col": 5,
       "type": "database",
       "label": "Checkpoints",
-      "sublabel": "atomic · every 4K steps",
+      "sublabel": "atomic \u00b7 micro-step clock",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "loader",
@@ -108,9 +108,9 @@
       "col": 1,
       "type": "messagebus",
       "label": "DataLoader",
-      "sublabel": "8 workers · mmap shards",
+      "sublabel": "8 workers \u00b7 mmap shards",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "fwd",
@@ -120,17 +120,17 @@
       "label": "BF16 Forward",
       "sublabel": "MLA + MoE + MTP heads",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "loss",
       "lane": "micro",
       "col": 3,
       "type": "backend",
-      "label": "loss ÷ 4",
-      "sublabel": "main CE + 0.3 · MTP CE",
+      "label": "loss \u00f7 4",
+      "sublabel": "main CE \u00b7 MTP off",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "bwd",
@@ -140,7 +140,7 @@
       "label": "backward()",
       "sublabel": "FP32 .grad accumulation",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "clip",
@@ -148,9 +148,9 @@
       "col": 5,
       "type": "backend",
       "label": "grad clip",
-      "sublabel": "norm ≤ 1.0 · every 4th",
+      "sublabel": "norm \u2264 1.0 \u00b7 every 4th",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "adamw",
@@ -158,9 +158,9 @@
       "col": 5,
       "type": "backend",
       "label": "AdamW step",
-      "sublabel": "FP32 master · scheduler",
+      "sublabel": "FP32 master \u00b7 scheduler",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "bias",
@@ -168,9 +168,9 @@
       "col": 4,
       "type": "messagebus",
       "label": "gate bias",
-      "sublabel": "±10% deadband · each step",
+      "sublabel": "\u00b110% deadband \u00b7 each step",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "nan",
@@ -180,7 +180,7 @@
       "label": "Guard",
       "sublabel": "non-finite loss check",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "rollback",
@@ -188,9 +188,9 @@
       "col": 3,
       "type": "security",
       "label": "Rollback",
-      "sublabel": "restore full state",
+      "sublabel": "restore saved state",
       "width": 116,
-      "height": 48
+      "height": 44
     },
     {
       "id": "abort",
@@ -200,7 +200,7 @@
       "label": "abort()",
       "sublabel": "no checkpoint to restore",
       "width": 116,
-      "height": 48
+      "height": 44
     }
   ],
   "edges": [
@@ -262,7 +262,7 @@
       "id": "nan-rollback",
       "from": "nan",
       "to": "rollback",
-      "label": "streak ≥ 5",
+      "label": "streak \u2265 5",
       "variant": "security",
       "role": "error"
     },
@@ -292,25 +292,24 @@
       "dot": "cyan",
       "title": "Accumulation",
       "items": [
-        "Effective batch: 8 micro × 4 accum = 32 sequences",
-        "65,536 tokens per optimizer step at seq_len 2048"
+        "Effective batch: 8 micro \u00d7 4 accum = 32 sequences; 65,536 tokens per optimizer step (configured)",
+        "Gate bias updates from observed routing counts; checkpoint writes are temp-file + os.replace"
       ]
     },
     {
       "dot": "rose",
       "title": "Divergence safety net",
       "items": [
-        "Skip happens before backward — bad batches never touch parameters",
-        "Rollback restores weights, AdamW moments, scheduler, opt_steps",
-        "Persistent failure with no checkpoint aborts the run"
+        "Skip happens before backward \u2014 bad batches never touch parameters",
+        "Restore covers weights, optimizers, scheduler, opt_steps; sampler state is not saved"
       ]
     },
     {
       "dot": "amber",
-      "title": "Out-of-band control",
+      "title": "Clocks and resume limits",
       "items": [
-        "Gate bias is a buffer, updated from observed routing counts",
-        "Checkpoints write temp file + os.replace — never torn"
+        "global_step counts micro-batches; the scheduler advances per optimizer step (\u00f74)",
+        "MTP loss is silently disabled: main() reads mtp_loss_weight from training:, but the YAML defines it under model:"
       ]
     }
   ]

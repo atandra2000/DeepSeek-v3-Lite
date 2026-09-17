@@ -27,7 +27,7 @@
           "mla",
           "kvcache"
         ],
-        "note": "Every block uses MLA; only the 192-dim latent is cached at decode."
+        "note": "Every block uses MLA; decode caches the 192-dim latent plus 24-dim positional key."
       },
       {
         "id": "mtp-path",
@@ -61,7 +61,7 @@
       "id": "embed",
       "type": "backend",
       "label": "Embedding",
-      "sublabel": "768-dim · tied to LM head",
+      "sublabel": "768-dim \u00b7 tied to LM head",
       "pos": [
         240,
         150
@@ -74,8 +74,8 @@
     {
       "id": "dense",
       "type": "backend",
-      "label": "Dense Blocks ×2",
-      "sublabel": "layers 0–1",
+      "label": "Dense Blocks \u00d72",
+      "sublabel": "layers 0\u20131",
       "pos": [
         440,
         150
@@ -88,8 +88,8 @@
     {
       "id": "moe",
       "type": "backend",
-      "label": "MoE Blocks ×16",
-      "sublabel": "layers 2–17",
+      "label": "MoE Blocks \u00d716",
+      "sublabel": "layers 2\u201317",
       "pos": [
         640,
         150
@@ -132,7 +132,7 @@
       "id": "mla",
       "type": "backend",
       "label": "Multi-head Latent Attention",
-      "sublabel": "kv_lora_rank 192 · RoPE 24-d decoupled",
+      "sublabel": "kv_lora_rank 192 \u00b7 RoPE 24-d decoupled",
       "pos": [
         410,
         360
@@ -146,7 +146,7 @@
       "id": "experts",
       "type": "backend",
       "label": "DeepSeekMoE",
-      "sublabel": "1 shared + 20 routed SwiGLU · top-4",
+      "sublabel": "1 shared + 20 routed SwiGLU \u00b7 top-4",
       "pos": [
         660,
         360
@@ -160,7 +160,7 @@
       "id": "kvcache",
       "type": "database",
       "label": "KV Cache",
-      "sublabel": "192-dim latent only",
+      "sublabel": "216 values/token/layer",
       "pos": [
         130,
         360
@@ -168,14 +168,13 @@
       "size": [
         200,
         80
-      ],
-      "tag": "~7× smaller"
+      ]
     },
     {
       "id": "mtp",
       "type": "backend",
       "label": "MTP Module",
-      "sublabel": "depth 1 · loss weight 0.3",
+      "sublabel": "depth 1 \u00b7 loss weight 0.3",
       "pos": [
         900,
         360
@@ -189,7 +188,7 @@
       "id": "spec",
       "type": "backend",
       "label": "Speculative Decoder",
-      "sublabel": "acceptance ≈ 0.8",
+      "sublabel": "configured threshold 0.8",
       "pos": [
         1100,
         360
@@ -198,13 +197,13 @@
         150,
         80
       ],
-      "tag": "~2× throughput"
+      "tag": "throughput unmeasured"
     }
   ],
   "boundaries": [
     {
       "kind": "region",
-      "label": "Transformer trunk — 18 layers, 411.6M params",
+      "label": "Transformer trunk \u2014 18 layers, 411.6M params",
       "wraps": [
         "embed",
         "dense",
@@ -284,7 +283,7 @@
       "id": "moe-experts",
       "from": "moe",
       "to": "experts",
-      "label": "gate → top-4",
+      "label": "gate \u2192 top-4",
       "variant": "dashed",
       "fromSide": "bottom",
       "toSide": "top"
@@ -332,18 +331,18 @@
       "dot": "cyan",
       "title": "MLA",
       "items": [
-        "K and V live in a 192-dim latent space",
-        "Absorption folds the K up-projection into W_Q at decode",
-        "~7× KV-cache reduction: 216 vs 1536 floats per token per layer"
+        "K and V live in a 192-dim latent space; the positional key adds 24 values per token per layer",
+        "Manual absorption projects q_nope with wkv_b_k in the eager path; the SDPA path materializes K/V instead (models/mla.py:MultiHeadLatentAttention.forward)",
+        "216 vs 1536 floats/token/layer is arithmetic against a dense baseline, not a measured cache benchmark"
       ]
     },
     {
       "dot": "emerald",
       "title": "DeepSeekMoE",
       "items": [
-        "Routed experts hold 68.8% of all parameters",
-        "20% of expert FLOPs run per token (top-4 of 20)",
-        "Aux-loss-free: a bias buffer steers routing, no gradient touches it"
+        "Expert share is computed from the configured parameter layout, not a runtime profile",
+        "Top-4 of 20 routed experts run per token (configured)",
+        "Aux-loss-free: a bias buffer steers routing; no gradient touches it"
       ]
     },
     {
@@ -351,8 +350,8 @@
       "title": "MTP",
       "items": [
         "Predicts token t+2 through the shared embedding and head",
-        "Adds 7.08M params (418.7M total with MTP)",
-        "Same module enables single-step speculative decoding"
+        "Adds ~7.08M params (project parameter log); totals are counts, not measured memory",
+        "Single-step speculative decoding exists, but its verification conditioning needs a separate correctness review"
       ]
     }
   ]

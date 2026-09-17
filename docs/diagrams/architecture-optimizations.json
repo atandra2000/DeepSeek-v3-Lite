@@ -36,7 +36,7 @@
           "nan",
           "trainstep"
         ],
-        "note": "μP LR transfer, warmup-cosine decay, and the NaN rollback net."
+        "note": "\u03bcP LR transfer, warmup-cosine decay, and the NaN rollback net."
       },
       {
         "id": "balance",
@@ -59,7 +59,7 @@
       "id": "trainstep",
       "type": "backend",
       "label": "One Optimizer Step",
-      "sublabel": "65,536 tokens · target 30–45% MFU",
+      "sublabel": "65,536 tokens \u00b7 30\u201345% MFU is an A100 target",
       "pos": [
         400,
         150
@@ -74,7 +74,7 @@
       "id": "compile",
       "type": "backend",
       "label": "torch.compile",
-      "sublabel": "max-autotune · fullgraph=false",
+      "sublabel": "max-autotune \u00b7 fullgraph=false",
       "pos": [
         30,
         50
@@ -83,7 +83,7 @@
         160,
         64
       ],
-      "tag": "10–20% faster"
+      "tag": "10\u201320% faster"
     },
     {
       "id": "sdpa",
@@ -112,7 +112,7 @@
         160,
         64
       ],
-      "tag": "~8× FP32 GEMM"
+      "tag": "~8\u00d7 FP32 GEMM"
     },
     {
       "id": "bf16",
@@ -141,12 +141,12 @@
         160,
         64
       ],
-      "tag": "~3× activations"
+      "tag": "~3\u00d7 activations"
     },
     {
       "id": "gradaccum",
       "type": "backend",
-      "label": "Grad accum ×4",
+      "label": "Grad accum \u00d74",
       "sublabel": "batch 32 signal, batch 8 memory",
       "pos": [
         30,
@@ -160,8 +160,8 @@
     {
       "id": "mup",
       "type": "backend",
-      "label": "μP LR scaling",
-      "sublabel": "6e-4 @ 757M → 8.07e-4",
+      "label": "\u03bcP LR scaling",
+      "sublabel": "6e-4 @ 757M \u2192 8.07e-4",
       "pos": [
         880,
         152
@@ -175,7 +175,7 @@
       "id": "cosine",
       "type": "backend",
       "label": "Warmup-cosine LR",
-      "sublabel": "2K warmup → 5% floor",
+      "sublabel": "2K warmup \u2192 5% floor",
       "pos": [
         880,
         226
@@ -189,7 +189,7 @@
       "id": "nan",
       "type": "security",
       "label": "Guard + rollback",
-      "sublabel": "5 non-finite → restore ckpt",
+      "sublabel": "5 non-finite \u2192 restore ckpt",
       "pos": [
         880,
         300
@@ -203,7 +203,7 @@
       "id": "bias",
       "type": "messagebus",
       "label": "Aux-loss-free bias",
-      "sublabel": "±10% deadband",
+      "sublabel": "\u00b110% deadband",
       "pos": [
         340,
         390
@@ -217,7 +217,7 @@
       "id": "mtp",
       "type": "backend",
       "label": "MTP auxiliary loss",
-      "sublabel": "λ = 0.3 · predicts t+2",
+      "sublabel": "\u03bb = 0.3 \u00b7 predicts t+2",
       "pos": [
         560,
         390
@@ -325,7 +325,7 @@
       "id": "gradaccum-ts",
       "from": "gradaccum",
       "to": "trainstep",
-      "label": "÷4 loss scale",
+      "label": "\u00f74 loss scale",
       "fromSide": "right",
       "toSide": "left",
       "labelAt": [
@@ -391,16 +391,16 @@
       "dot": "cyan",
       "title": "Memory arithmetic",
       "items": [
-        "Weights 0.8 GB + AdamW state 4.9 GB + activations ~10.1 GB",
-        "Transient logits (B·S·V) add ~3.1 GB — largest single activation",
-        "Total lands ~30–35 GB inside the 80 GB budget"
+        "FP32 master weights \u22481.6 GB (the earlier 0.8 GB figure was BF16-sized); AdamW moments are FP32",
+        "Activations and transient logits are rough estimates, not measured allocations",
+        "~30\u201335 GB total is arithmetic inside the 80 GB A100 target, not a benchmark"
       ]
     },
     {
       "dot": "emerald",
       "title": "Why FP32 master weights",
       "items": [
-        "BF16 has only ~3 decimal digits — small updates would round away",
+        "BF16 has only ~3 decimal digits \u2014 small updates would round away",
         "AdamW moments are FP32; fused kernel updates in one pass",
         "Autocast casts transiently for compute, never mutates parameters"
       ]
@@ -409,9 +409,10 @@
       "dot": "amber",
       "title": "LR and stability",
       "items": [
-        "μP transfers a tuned reference LR across scales via sqrt(N_ref/N)",
-        "YAML lr is dead config while mup_lr: true — edit mup_lr_reference",
-        "Warmup exists because Adam's early moments are miscalibrated"
+        "\u03bcP transfers a tuned reference LR across scales via sqrt(N_ref/N)",
+        "YAML lr is dead config while mup_lr: true \u2014 edit mup_lr_reference",
+        "Warmup exists because Adam's early moments are miscalibrated",
+        "MTP-dependent schedule effects are not measured; MTP loss is disabled under the current YAML (see training diagram)"
       ]
     }
   ]
