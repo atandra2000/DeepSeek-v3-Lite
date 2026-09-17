@@ -1,49 +1,57 @@
-# Archify delivery evidence — DeepSeek-v3-Lite
+# Archify delivery evidence: DeepSeek-v3-Lite
 
-The [interactive visual guide](deepseek_visual_guide.html) links four standalone showcase architecture, dataflow, and workflow diagrams.
+The [interactive guide](deepseek_visual_guide.html) links four standalone diagrams.
 
-All four: **9/9 showcase checks, 0 composition errors, 0 warnings; automated browser evidence passed.**
+Content repair pass, 2026-09-17. Source revision `2edd9cdbf6b6708f103001c1d50fff2b05b32c85`, configuration `configs/pretrain_a100_422m.yaml`.
 
-Chrome checked at 1440×900, 1600×1000, 1920×1080 and 2048×1320 in light/dark. All required viewport measurements passed horizontal/vertical containment, minimum projected text size and viewer-control clearance.
+All four: **9/9 showcase checks, 0 composition errors, 0 warnings; automated browser evidence passed** on the corrected artifacts.
 
-## Artifact bindings
+Perceptual review: **skipped (image reader unavailable)**. No screenshot-based polish judgment is claimed; the 12px/11px typography target remains a proposal.
 
-### Model Architecture (MLA + DeepSeekMoE + MTP)
+### Model Architecture
 
-- Diagram type: `architecture`
 - Output: [architecture-model.html](architecture-model.html)
 - Specification: `docs/diagrams/architecture-model.json`
-- Artifact SHA-256: `dbb11c2f8bfe4343cdd6e875065c2df73ea6fdcf040d18dcca7cb84b4f96ef8d` (719,147 bytes)
-- [Browser receipt](architecture-model.visual-check.json) · [Screenshot contact sheet](architecture-model.visual-check.html)
-- `browser_evidence: passed` · `visual_review: passed` · `correction_rounds: 0`
+- Specification SHA-256: `26166b0281749c0712832cf3bb0ab4bd50f1fa42b67c5a301a0f15d0d4d3b7c7` (7,284 bytes)
+- Artifact SHA-256: `2e8002c5212f30e45c8913129437c7640913c53c917cf01c392a0b8dc84c1a76` (719,386 bytes)
+- [Browser receipt](architecture-model.visual-check.json) - status `pass`
+- `browser_evidence: passed` - `visual_review: skipped (image reader unavailable)`
 
-### Architecture Optimizations & Memory
+### Optimization Stack
 
-- Diagram type: `architecture`
 - Output: [architecture-optimizations.html](architecture-optimizations.html)
 - Specification: `docs/diagrams/architecture-optimizations.json`
-- Artifact SHA-256: `c1966dedf68a23a6fa0259d25d3ca80c552d83ecb1868b94cf8c4d2661017957` (720,355 bytes)
-- [Browser receipt](architecture-optimizations.visual-check.json) · [Screenshot contact sheet](architecture-optimizations.visual-check.html)
-- `browser_evidence: passed` · `visual_review: passed` · `correction_rounds: 0`
+- Specification SHA-256: `8ecda9086bd7a508ca1f120bf7dcee138c3a85d01941f0c760affed4227c5fdb` (8,352 bytes)
+- Artifact SHA-256: `42eb980a3fe9e5d9f10b351078aeab3daff3584db92c0125cfc8198d951a6857` (720,619 bytes)
+- [Browser receipt](architecture-optimizations.visual-check.json) - status `pass`
+- `browser_evidence: passed` - `visual_review: skipped (image reader unavailable)`
 
-### Data Pipeline & Token Streaming
+### Data Pipeline
 
-- Diagram type: `dataflow`
 - Output: [dataflow-data-pipeline.html](dataflow-data-pipeline.html)
 - Specification: `docs/diagrams/dataflow-data-pipeline.json`
-- Artifact SHA-256: `51bbb595ab9ed02be215fe062bfc2d0f802e05cdb6715bebba08ea5eeb5f2373` (713,579 bytes)
-- [Browser receipt](dataflow-data-pipeline.visual-check.json) · [Screenshot contact sheet](dataflow-data-pipeline.visual-check.html)
-- `browser_evidence: passed` · `visual_review: passed` · `correction_rounds: 0`
+- Specification SHA-256: `cca0ef5ed581ebed95fde961d97e05ec01673742f1ef808a65a4fad8281abd88` (5,914 bytes)
+- Artifact SHA-256: `c6b84807c5d7678271f5a753a070ab93ac1dbecafdac27e893741fdaa0406682` (714,113 bytes)
+- [Browser receipt](dataflow-data-pipeline.visual-check.json) - status `pass`
+- `browser_evidence: passed` - `visual_review: skipped (image reader unavailable)`
 
-### Training Loop & MTP Supervision
+### Training Loop
 
-- Diagram type: `workflow`
 - Output: [workflow-training-loop.html](workflow-training-loop.html)
 - Specification: `docs/diagrams/workflow-training-loop.json`
-- Artifact SHA-256: `86388f70a78e21ef8012d5c124ea6752e58f2829a957b1dbc51d22a7a28ca05e` (716,844 bytes)
-- [Browser receipt](workflow-training-loop.visual-check.json) · [Screenshot contact sheet](workflow-training-loop.visual-check.html)
-- `browser_evidence: passed` · `visual_review: passed` · `correction_rounds: 0`
+- Specification SHA-256: `33be479ee421f9d5626ec1a9fa259375e6b8b0eb481a91d9694f9fbdd8b15f70` (6,686 bytes)
+- Artifact SHA-256: `1317c4bc4b9acff381b17f223c25ca3d5ec3d46b17a2014c61d93dd65f077f4c` (716,954 bytes)
+- [Browser receipt](workflow-training-loop.visual-check.json) - status `pass`
+- `browser_evidence: passed` - `visual_review: skipped (image reader unavailable)`
+
+## Content corrections in this pass
+
+- KV cache: 192 latent + 24 positional = 216 values/token/layer (models/mla.py:MultiHeadLatentAttention._ensure_cache); the ~7x ratio is arithmetic against its stated baseline.
+- Manual eager absorption vs SDPA K/V materialization distinguished; acceptance 0.8 labeled configured, throughput unmeasured.
+- Dataflow discloses the real format gap: shared pipeline writes raw uint32 streams while training/pretrain.py:PretrainDataset reads torch.load shards.
+- Training loop: MTP loss silently disabled (main() reads mtp_loss_weight from training: while the YAML defines it under model:); micro-step vs optimizer-step clocks; sampler state not checkpointed.
+- Optimizations: FP32 master weights sized ~1.6 GB (earlier 0.8 GB was BF16-sized); A100 targets kept separate from measurements.
 
 ## Verification limits
 
-Parameter count: ~412M total / ~185M active parameters per token (418.7M with depth-1 MTP head). Implemented in raw PyTorch with Multi-Head Latent Attention (MLA), DeepSeekMoE fine-grained routing with aux-loss-free bias updates, and μP learning rate transfer. Single A100 80GB baseline budget estimated at ~30–45 hours for pretraining.
+No model code changed. Parameter counts are counts; memory figures are arithmetic; no MFU, throughput, cache-savings or corpus-inventory number is claimed as measured. Speculative verification conditioning remains a separate investigation.
