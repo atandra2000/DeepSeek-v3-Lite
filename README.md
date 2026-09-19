@@ -1,4 +1,4 @@
-# DeepSeek-v3-Lite — Project Overview
+# DeepSeek-v3-Lite
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.x](https://img.shields.io/badge/PyTorch-2.x-ee4c2c?logo=pytorch)](https://pytorch.org/)
@@ -88,15 +88,6 @@ See the ASCII overview at the end of the Architecture section.
   └──────┬──────┘└───┬─────────┘ │
          │           │           │
          └───────────┴───────────┴
-                     │           │
-                     │           │
-                     │           │
-                     │           │
-                     │           │
-                     │           │
-                     │           │
-                     │           │
-                     │           │
                                  │
                      └───────────┴
                                  │
@@ -247,18 +238,22 @@ tokens = decoder.generate(prompt_ids, max_new_tokens=512)
 ## Quick Start
 
 ```bash
-# 0. Get the data pipeline (this project imports the universal pipeline from
-#    a sibling directory — `data/prepare_data.py` adds it to sys.path):
-#    LLM/                       ← workspace root
-#      ├── shared_data/         ← universal 8.0B-token pipeline (single source of truth)
-#      ├── DeepSeek-v3-Lite/    ← this project
-#      ├── ...
-#    Pull or vendor the LLM/shared_data/ directory; otherwise the data step below
-#    will fail with `ModuleNotFoundError: No module named 'shared_data'`.
-git clone https://github.com/atandra2000/DeepSeek-V3-Lite
-cd DeepSeek-V3-Lite
+git clone https://github.com/atandra2000/DeepSeek-v3-Lite
+cd DeepSeek-v3-Lite
 pip install -r requirements.txt
+
+# CPU correctness suite — runs standalone, no data download
+python -m pytest tests/ -q
 ```
+
+> **Data pipeline note.** The 8.4B-token prep (`data/prepare_data.py`)
+> imports the universal pipeline from the workspace sibling package
+> `LLM/shared_data/`, which is **not vendored in this repo** — a fresh clone
+> can run the full test suite and inference plumbing, but the pre-training
+> data step needs that package (see
+> [Data Pipeline](docs/concepts/data-pipeline.md) for the format, and
+> [docs/concepts/data-pipeline.md](docs/concepts/data-pipeline.md) for the
+> shard layout).
 
 ### Launch Sequence (A100 80GB)
 
