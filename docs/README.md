@@ -1,6 +1,6 @@
 # DeepSeek-v3-Lite — Documentation Index
 
-> Navigation map for the DeepSeek-v3-Lite documentation: `concepts/` (theory + architecture), `references/` (symbol-anchored API docs), `guides/` (how-to / ops), plus the top-level pipeline docs `training.md` and `inference.md`. Every code-symbol citation (path + class/method) is machine-verified by `tests/test_doc_refs.py`; prose hygiene and relative links are checked by `scripts/check_docs.py` — both run in CI.
+> Navigation map for the DeepSeek-v3-Lite documentation: `concepts/` (theory + architecture), `references/` (symbol-anchored API docs), `guides/` (how-to / ops), plus the top-level pipeline docs `training.md` and `inference.md`. Every code-symbol citation (path + class/method) is machine-verified by `tests/test_doc_refs.py`; prose hygiene and relative links are checked by `scripts/check_docs.py` — both run in CI, and `check_docs.py --coverage` additionally requires every public symbol in the 13 coverage modules to be cited at least once. Docs↔code alignment snapshots: [AUDIT.md](AUDIT.md).
 
 ## Visual Systems Atlas
 
@@ -75,7 +75,9 @@ Procedural, checklist-driven operating manuals.
 
 | Doc | Use when… |
 |---|---|
-| [Getting Started](guides/getting-started.md) | New to the repo: install, smoke tests, first run, learning path |
+| [Learning Paths](guides/learning-paths.md) | Don't know where to start: three audience-routed reading orders (beginner / intermediate / expert) with step tables |
+| [Getting Started](guides/getting-started.md) | New to the repo: install, smoke tests, first run, the 14-chapter linear curriculum (§9) |
+| [Glossary](guides/glossary.md) | Notation, MLA/MoE/MTP component terms, training/precision vocabulary, acronyms |
 | [G1 — Debugging Playbook](guides/G1_debugging_playbook.md) | NaN, shape errors, Triton fallback, cache bugs |
 | [G2 — μP & LR Tuning](guides/G2_mup_and_lr_tuning.md) | Adjusting LR / μP reference, running an LR sweep |
 | [G3 — Triton Development](guides/G3_triton_development.md) | Writing or extending a Triton kernel |
@@ -104,6 +106,7 @@ Procedural, checklist-driven operating manuals.
 | moe-mtp.md | 2,483 | Comprehensive |
 | attention-and-precision.md | 1,950 | Comprehensive |
 | kernels-and-ops.md | 1,364 | Comprehensive |
+| 2026-08-18-docs-html-premium.md | 1,089 | Comprehensive |
 | inference.md | 1,007 | Comprehensive |
 | data-pipeline.md | 712 | Comprehensive |
 | R2_transformer_api.md | 381 | Comprehensive |
@@ -123,12 +126,21 @@ Procedural, checklist-driven operating manuals.
 | R3_mla_api.md | 250 | Comprehensive |
 | contributing.md | 241 | Comprehensive |
 | R1_config_schema.md | 219 | Comprehensive |
-| **Total** | **19,179** | |
+| 2026-08-18-docs-html-premium-design.md | 162 | Comprehensive |
+| AUDIT.md | 112 | Comprehensive |
+| glossary.md | 96 | Comprehensive |
+| learning-paths.md | 79 | Comprehensive |
+| RECEIPTS.md | 57 | Comprehensive |
+| 2026-08-12-docs-html-polish.md | 37 | Comprehensive |
+| **Total** | **20,811** | |
+
 
 
 ## References
 
 - [Training Pipeline](training.md) — loop, μP, NaN guard, YAML reference
 - [Inference & Serving](inference.md) — decode, KV cache, speculative decoding
-- `tests/test_doc_refs.py` — machine-verified doc↔code anchor gate
-- `scripts/check_docs.py` — prose hygiene, link/path lint, size table
+- [AUDIT.md](AUDIT.md) — dated docs↔code alignment audit with verification runs
+- [Learning Paths](guides/learning-paths.md) — where to start, per audience
+- `tests/test_doc_refs.py` — machine-verified doc↔code anchor + coverage gate
+- `scripts/check_docs.py` — prose hygiene, link/path lint, size table (`--coverage`, `--update-sizes`, `--stamp-footers`)
