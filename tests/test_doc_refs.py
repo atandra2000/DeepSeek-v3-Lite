@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -144,6 +145,20 @@ def test_doc_anchors_resolve() -> None:
     assert not issues, "doc<->code anchor defects:\n" + "\n".join(
         f"  {doc}:{line}: {msg}" for doc, line, msg in sorted(issues)
     )
+
+
+def test_doc_symbol_coverage() -> None:
+    """Every public symbol in check_docs.COVERAGE_FILES must be cited in docs.
+
+    Delegates to `scripts/check_docs.py --coverage` so the CLI gate and the
+    pytest gate share one implementation.
+    """
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "check_docs.py"), "--coverage"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 if __name__ == "__main__":
