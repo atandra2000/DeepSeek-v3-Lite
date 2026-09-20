@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import subprocess
 import sys
@@ -32,6 +33,26 @@ ALLOW_MISSING_PATHS = {
     "models/__init__.py",
     "tests/test_doc_refs.py",
 }
+
+COVERAGE_FILES = [
+    "models/mla.py",
+    "models/mla_triton.py",
+    "models/moe.py",
+    "models/moe_triton.py",
+    "models/mtp.py",
+    "models/transformer.py",
+    "training/pretrain.py",
+    "data/prepare_data.py",
+    "inference/generate.py",
+    "inference/speculative.py",
+    "utils/checkpoint.py",
+    "utils/logging.py",
+    "utils/memory.py",
+]
+
+# `file.py:Symbol` or `file.py:Class.method` citations (backticked or bare).
+ANCHOR_RE = re.compile(r"`?([A-Za-z0-9_./-]+\.py):([A-Za-z0-9_.]+)")
+
 
 STALE_PATTERNS: list[tuple[str, str]] = [
     (r"\{,\}", "LaTeX thousand separator `{,}`"),
@@ -220,6 +241,48 @@ def stamp_footers(commit: str, verified: str) -> int:
     return changed
 
 
+def public_symbols(rel_path: str) -> list[str]:
+    """Top-level public class/function names in a coverage-module file."""
+    path = ROOT / rel_path
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError:
+        return []
+    return [
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and not node.name.startswith("_")
+    ]
+
+
+def check_coverage() -> list[Issue]:
+    """Every public symbol in COVERAGE_FILES must be cited in the docs.
+
+    A citation of the dotted form `file.py:Class.method` also covers the
+    bare class `Class`.
+    """
+    cited: set[tuple[str, str]] = set()
+    for path in list(iter_doc_files()) + [
+        ROOT / "README.md",
+        ROOT / "AGENTS.md",
+        ROOT / "SKILLS.md",
+    ]:
+        if not path.is_file():
+            continue
+        for match in ANCHOR_RE.finditer(path.read_text(encoding="utf-8")):
+            cited.add((match.group(1), match.group(2).rstrip(".")))
+    issues: list[Issue] = []
+    for rel in COVERAGE_FILES:
+        for sym in public_symbols(rel):
+            covered = any(
+                cited_file == rel and (cited_sym == sym or cited_sym.startswith(sym + "."))
+                for cited_file, cited_sym in cited
+            )
+            if not covered:
+                issues.append(Issue(Path(rel), 0, f"public symbol not cited in docs: {sym}"))
+    return issues
+
+
 def run_checks() -> list[Issue]:
     return collect_issues()
 
@@ -235,6 +298,11 @@ def main() -> int:
         "--stamp-footers",
         action="store_true",
         help="Append/update verification HTML comment footers on all docs",
+    )
+    parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="Require every public symbol in COVERAGE_FILES to be cited in docs",
     )
     args = parser.parse_args()
 
@@ -255,6 +323,21 @@ def main() -> int:
             pass
 
     issues = run_checks()
+    if args.coverage:
+        cov = check_coverage()
+        if cov:
+            print(f"check_docs --coverage: {len(cov)} gap(s)", file=sys.stderr)
+            for issue in cov:
+                print(issue.format(), file=sys.stderr)
+            return 1
+        print(f"check_docs --coverage: OK ({len(COVERAGE_FILES)} files, 0 gaps)")
+        if issues:
+            print(f"check_docs: {len(issues)} issue(s)", file=sys.stderr)
+            for issue in issues:
+                print(issue.format(), file=sys.stderr)
+            return 1
+        print(f"check_docs: OK ({len(iter_doc_files())} files)")
+        return 0
     if issues:
         print(f"check_docs: {len(issues)} issue(s)", file=sys.stderr)
         for issue in issues:
