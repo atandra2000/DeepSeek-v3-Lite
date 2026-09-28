@@ -175,19 +175,7 @@ passing (189 pass + 10 GPU-gated skips) without any CUDA dependency.
    path. The test must run on CPU (using the pure-PyTorch reference)
    without `triton` installed. GPU-only behaviour is gated behind
    `@pytest.mark.gpu` and is auto-skipped on CPU-only machines.
-9. **Concise comments only.** Docstrings and inline comments must
-   justify non-obvious code, not restate it. A docstring is at most
-   three short lines unless the function is a public API. Inline
-   comments appear only when the code itself is opaque. Verifiable
-   targets per file:
-   - **Public function docstring:** ≤ 3 lines, or one short paragraph.
-   - **Module docstring:** ≤ 6 lines.
-   - **Inline comment density:** ≤ 1 comment per ~10 lines of code on
-     average; comments that say what the next line does
-     (`# compute x`, `# loop over rows`) are forbidden.
-   - **Section banners** (`# ---- ... ----`) are reserved for the top
-     level of a file (≤ 3 per file) and inside kernels to delimit
-     named algorithm phases.
+9. **Concise comments only.** Comments justify non-obvious code; they never restate the next line. The canonical, verifiable targets are in `../AGENTS.md` §Cross-project engineering invariants — do not restate them here.
    Violations are reviewable on `wc -l <file>` and `grep -c '^[[:space:]]*#' <file>`.
 
 **Known issues:**

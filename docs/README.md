@@ -53,6 +53,15 @@ Theory and architecture, consolidated from the original spine chapters 01–13.
 | [Data Pipeline](concepts/data-pipeline.md) | Shared 8.0B-token universal pipeline, DeepSeek shim, tokenizer deep dive, mixture, shard format, `PretrainDataset` consumption | implemented |
 | [Operations, Testing & Triton Kernels](concepts/kernels-and-ops.md) | Real pytest suite, atomic checkpoint system, VRAM budget, CI walkthrough, doc↔code gate; fused MLA attention + grouped-GEMM MoE Triton kernels, double-opt-in guard, register-pressure math | implemented (Triton opt-in) |
 
+Focused one-pillar companions (added 2026-09-21) — one short doc per DeepSeek-V3 technique, audience-tagged, self-contained:
+
+| Doc | Audience | Core topics |
+|---|---|---|
+| [MLA: Latent Attention](concepts/mla-latent-attention.md) | intermediate | KV-cache cost model, latent compression (`models/mla.py:MultiHeadLatentAttention`, `models/mla_triton.py:triton_mla_attention`), absorption trick, decoupled RoPE, cache contract; 216 vs 1,536 floats/token [derived] |
+| [Aux-Loss-Free MoE Balance](concepts/aux-loss-free-moe-balance.md) | intermediate | Selection-vs-weighting split, deadband bias update rule (`models/moe.py:AuxLossFreeGate`), why no auxiliary loss, the diagnostic-only balance loss; `models/moe.py` |
+| [Multi-Token Prediction](concepts/multi-token-prediction.md) | beginner | Depth-1 head, shared embedding + LM head, length alignment, loss weighting (`models/mtp.py:MultiTokenPrediction`), speculative decoding via `inference/speculative.py:SpeculativeDecoder` |
+| [μP LR Scaling](concepts/mup-lr-scaling.md) | expert | Width–LR transfer theory, the count-based rule (`training/pretrain.py:TrainingConfig.mup_lr`), derived LR values, honest limits vs full μP |
+
 ## References (`references/`)
 
 Terse, symbol-anchored references — every signature, shape contract, default, and caller. The anchor gate (`tests/test_doc_refs.py`) verifies every code-symbol citation (file path + class/method) resolves.
@@ -129,10 +138,15 @@ Procedural, checklist-driven operating manuals.
 | 2026-08-18-docs-html-premium-design.md | 162 | Comprehensive |
 | AUDIT.md | 112 | Comprehensive |
 | glossary.md | 96 | Comprehensive |
-| learning-paths.md | 79 | Comprehensive |
+| learning-paths.md | 83 | Comprehensive |
+| mla-latent-attention.md | 62 | Comprehensive |
 | RECEIPTS.md | 57 | Comprehensive |
+| aux-loss-free-moe-balance.md | 56 | Comprehensive |
+| mup-lr-scaling.md | 53 | Comprehensive |
+| multi-token-prediction.md | 52 | Comprehensive |
 | 2026-08-12-docs-html-polish.md | 37 | Comprehensive |
-| **Total** | **20,811** | |
+| **Total** | **21,038** | |
+
 
 
 

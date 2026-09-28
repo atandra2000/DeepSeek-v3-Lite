@@ -18,15 +18,17 @@
 | `python3 scripts/check_docs.py --coverage` | OK — 13 coverage files, **0 uncited public symbols** |
 | `python3 -m pytest tests/ -q` | **200 passed, 10 skipped** (GPU-gated), ~20 s on macOS CPU |
 | AST census | 31 public top-level symbols across 13 modules; 156 distinct file↔symbol citations in docs |
+| Re-run 2026-09-21, after the focused-concepts cluster (4 new docs in `concepts/`, nav + learning-paths rows) | `check_docs.py --coverage` OK — 13 coverage files, **0 uncited public symbols**; lint OK (**36 files**); `python3 -m pytest -q` **200 passed, 10 skipped** (GPU-gated), 22 s on macOS CPU |
 
 ---
 
 ## 1. State of the docs — what is already excellent
 
-- **Corpus:** 33 markdown files under `docs/`, ~196 000 words (measured
-  `wc -w` 2026-09-21; per-track table in [README.md](README.md)). The
-  `concepts/` track alone is ~102 000 words across 6 self-contained docs.
-- **Structure:** four-track taxonomy fully present — `concepts/` (6),
+- **Corpus:** 36 markdown files under `docs/`, ~199 800 words (measured
+  `wc -w` 2026-09-21, after the focused-concepts cluster landed; per-track
+  table in [README.md](README.md)). The
+  `concepts/` track alone is ~105 100 words across 10 self-contained docs.
+- **Structure:** four-track taxonomy fully present — `concepts/` (10,
   `references/` (9, R1–R9), `guides/` (9), pipeline docs `training.md` +
   `inference.md`, nav map `README.md`, plus `diagrams/RECEIPTS.md` and the
   `superpowers/` plan archive.

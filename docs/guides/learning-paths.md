@@ -33,7 +33,8 @@ prior MLA or MoE background required.
 | 4 | [attention-and-precision.md](../concepts/attention-and-precision.md) (MLA half) | Multi-Head Latent Attention: low-rank KV compression (`kv_lora_rank` = 192), the matrix-absorption trick, decoupled RoPE, and why the KV cache shrinks. |
 | 5 | [moe-mtp.md](../concepts/moe-mtp.md) (MoE half) | Fine-grained experts + shared expert, and the auxiliary-loss-free bias feedback loop that replaces the balance loss. |
 | 6 | [moe-mtp.md](../concepts/moe-mtp.md) (MTP half) | The depth-1 Multi-Token Prediction head, its loss weighting, and speculative-decoding theory. |
-| 7 | [R2 — Transformer API](../references/R2_transformer_api.md) + [R3 — MLA API](../references/R3_mla_api.md) | The code tour: every block in `models/transformer.py:Transformer` and `models/mla.py:MultiHeadLatentAttention` with shape contracts. |
+| 7 | [multi-token-prediction.md](../concepts/multi-token-prediction.md) | The MTP head standalone: fusion block, shared embedding + LM head, length alignment, and how the same head drafts tokens for speculative decoding. |
+| 8 | [R2 — Transformer API](../references/R2_transformer_api.md) + [R3 — MLA API](../references/R3_mla_api.md) | The code tour: every block in `models/transformer.py:Transformer` and `models/mla.py:MultiHeadLatentAttention` with shape contracts. |
 
 ## Intermediate path — Train it and understand the numerics
 
@@ -46,9 +47,11 @@ pipeline.
 | 1 | [foundations.md](../concepts/foundations.md) (config section) | Every config key's meaning and where it is consumed. |
 | 2 | [R1 — Config Schema](../references/R1_config_schema.md) | The full YAML schema: every key, default, 1650-variant, and its reader symbol. |
 | 3 | [training.md](../training.md) | The applied pretrain loop: AdamW, gradient accumulation, warmup→cosine schedule (`training/pretrain.py:make_warmup_cosine_lambda`), μP scaling, NaN guard, atomic checkpointing. |
-| 4 | [data-pipeline.md](../concepts/data-pipeline.md) | How the 8.0B-token corpus is prepared once in `shared_data/`, tokenized by the shim, packed into mmap shards, and consumed by `PretrainDataset`. |
-| 5 | [R7 — Training API](../references/R7_training_api.md) | `training/pretrain.py:Pretrainer` internals — step budget, accumulation boundary, checkpoint writer. |
-| 6 | [G2 — μP & LR Tuning](G2_mup_and_lr_tuning.md) | How to transfer the reference LR across widths and run an honest LR sweep. |
+| 4 | [aux-loss-free-moe-balance.md](../concepts/aux-loss-free-moe-balance.md) | The bias feedback loop you are training: selection-vs-weighting split, the deadband update rule, and why the logged balance number is diagnostic only. |
+| 5 | [data-pipeline.md](../concepts/data-pipeline.md) | How the 8.0B-token corpus is prepared once in `shared_data/`, tokenized by the shim, packed into mmap shards, and consumed by `PretrainDataset`. |
+| 6 | [R7 — Training API](../references/R7_training_api.md) | `training/pretrain.py:Pretrainer` internals — step budget, accumulation boundary, checkpoint writer. |
+| 7 | [G2 — μP & LR Tuning](G2_mup_and_lr_tuning.md) | How to transfer the reference LR across widths and run an honest LR sweep. |
+| 8 | [mup-lr-scaling.md](../concepts/mup-lr-scaling.md) | The theory behind G2: why width breaks naive tuning, what the count-based rule implements, and its honest limits vs full μP. |
 
 ## Expert path — Operate, optimize, and serve
 
@@ -58,13 +61,14 @@ discipline, and the serving path.
 | Step | Doc | What you will know after |
 |------|-----|--------------------------|
 | 1 | [kernels-and-ops.md](../concepts/kernels-and-ops.md) (ops half) | The real test suite, atomic safetensors checkpoint system, VRAM budget, and CI walkthrough. |
-| 2 | [R6 — Triton API](../references/R6_triton_api.md) | Both kernels (fused MLA attention, grouped-GEMM MoE), the double-opt-in guard (`models/_triton_dispatch.py:enforce_triton_env_var`), and the dim caps. |
-| 3 | [G3 — Triton Development](G3_triton_development.md) | How to write/extend a kernel while keeping the pure-PyTorch reference test green. |
-| 4 | [G1 — Debugging Playbook](G1_debugging_playbook.md) | NaN triage, shape errors, Triton fallback diagnosis, cache bugs. |
-| 5 | [G4 — Benchmarking](G4_benchmarking.md) | How to measure VRAM / throughput / MFU honestly, without claiming unmeasured numbers. |
-| 6 | [G5 — Checkpoint Ops](G5_checkpoint_ops.md) | Save / load / resume / disaster-recovery procedures for the atomic checkpoint set. |
-| 7 | [inference.md](../inference.md) + [R9 — Inference API](../references/R9_inference_api.md) | Autoregressive decode, MLA KV decompression, sampling, speculative decoding, CLI. |
-| 8 | [parallelism.md](../concepts/parallelism.md) | DualPipe / 1F1B / all-to-all theory — paper-spec context, not implemented here. |
+| 2 | [mla-latent-attention.md](../concepts/mla-latent-attention.md) | The latent-space cache contract every attention backend shares: what is cached (216 floats), where the up-projections went, and why RoPE needs its own key. |
+| 3 | [R6 — Triton API](../references/R6_triton_api.md) | Both kernels (fused MLA attention, grouped-GEMM MoE), the double-opt-in guard (`models/_triton_dispatch.py:enforce_triton_env_var`), and the dim caps. |
+| 4 | [G3 — Triton Development](G3_triton_development.md) | How to write/extend a kernel while keeping the pure-PyTorch reference test green. |
+| 5 | [G1 — Debugging Playbook](G1_debugging_playbook.md) | NaN triage, shape errors, Triton fallback diagnosis, cache bugs. |
+| 6 | [G4 — Benchmarking](G4_benchmarking.md) | How to measure VRAM / throughput / MFU honestly, without claiming unmeasured numbers. |
+| 7 | [G5 — Checkpoint Ops](G5_checkpoint_ops.md) | Save / load / resume / disaster-recovery procedures for the atomic checkpoint set. |
+| 8 | [inference.md](../inference.md) + [R9 — Inference API](../references/R9_inference_api.md) | Autoregressive decode, MLA KV decompression, sampling, speculative decoding, CLI. |
+| 9 | [parallelism.md](../concepts/parallelism.md) | DualPipe / 1F1B / all-to-all theory — paper-spec context, not implemented here. |
 
 ---
 
