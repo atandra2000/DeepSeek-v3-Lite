@@ -48,6 +48,7 @@ graphify-out/
 # Local tool artifacts
 .benchmarks/
 .qoder/
+.claude/
 
 # HTML docs build output (CI rebuilds it from source for GitHub Pages)
 docs_html/
