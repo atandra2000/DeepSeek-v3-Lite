@@ -94,6 +94,10 @@ class DeepSeekMoE(nn.Module):
                     print(f"[moe] triton_grouped unavailable ({type(exc).__name__}: {exc}); "
                           f"falling back to 'stacked' for this model.")
                     self._triton_fallback_warned = True
+                # Latch off so later forwards skip the failing launch entirely,
+                # matching the MLA path. Without this the kernel is re-invoked
+                # (and re-raised into this except block) on every forward.
+                self.moe_dispatch = "stacked"
                 y_routed = self._routed_forward_stacked(flat, indices, weights)
         else:
             y_routed = self._routed_forward_stacked(flat, indices, weights)

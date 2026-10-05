@@ -2,7 +2,7 @@
 
 Two layers:
   1. CPU tests: pure-PyTorch reference, import surface, dispatch wiring.
-  2. GPU tests (gated by `pytest.mark.skipif`): numerics, gradcheck, stress.
+  2. GPU tests (gated by `pytest.mark.gpu` + skipif): numerics, gradcheck, stress.
 """
 import sys
 from pathlib import Path
@@ -179,6 +179,31 @@ class TestMoeTritonDispatchWiring:
         y_triton = m_triton(x)
         assert torch.allclose(y_stacked, y_triton, atol=1e-5)
 
+    def test_fallback_latches_so_later_forwards_skip_the_kernel(self):
+        """After the first fallback the dispatch key must read 'stacked', so a
+        second forward takes the PyTorch branch instead of re-raising."""
+        from models.moe import DeepSeekMoE
+        from models import moe_triton
+        if moe_triton.HAS_TRITON:
+            pytest.skip("triton installed; fallback not exercised")
+        cfg = {
+            "dim": 16, "n_routed_experts": 4, "n_shared_experts": 1,
+            "moe_inter_dim": 8, "n_activated_experts": 2,
+            "route_scale": 1.0, "bias_upper_threshold": 0.1,
+            "bias_lower_threshold": 0.1, "moe_dispatch": "triton_grouped",
+        }
+        moe = DeepSeekMoE(cfg)
+        x = torch.randn(8, 16)
+        moe(x)
+        assert moe.moe_dispatch == "stacked"
+        # A second forward must not re-enter the failing Triton branch.
+        calls = []
+        original = moe._routed_forward_triton
+        moe._routed_forward_triton = lambda *a, **k: calls.append(1)
+        moe(x)
+        assert calls == [], "Triton branch re-invoked after latching to 'stacked'"
+        moe._routed_forward_triton = original
+
 
 # -----------------------------------------------------------------------------
 # GPU tests
@@ -189,6 +214,7 @@ gpu_required = pytest.mark.skipif(
 )
 
 
+@pytest.mark.gpu
 @gpu_required
 class TestMoeTritonKernelGPU:
     def test_forward_matches_pytorch_tiny(self):
