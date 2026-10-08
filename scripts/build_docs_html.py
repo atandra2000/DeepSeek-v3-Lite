@@ -23,19 +23,26 @@ DOC_FILES = [
     ("AGENTS.md", "Core", "AGENTS & System Architecture"),
     ("SKILLS.md", "Core", "Skills Reference"),
     ("docs/README.md", "Core", "Documentation Index"),
+    ("docs/AUDIT.md", "Core", "Documentation Audit"),
     ("docs/training.md", "Core", "Training Architecture & Pipeline"),
     ("docs/inference.md", "Core", "Inference & Speculative Decoding"),
     
     # Concepts
     ("docs/concepts/foundations.md", "Concepts", "Foundations & Architecture"),
     ("docs/concepts/attention-and-precision.md", "Concepts", "MLA & Mixed Precision"),
+    ("docs/concepts/mla-latent-attention.md", "Concepts", "MLA — Latent Attention"),
     ("docs/concepts/moe-mtp.md", "Concepts", "DeepSeekMoE & MTP"),
+    ("docs/concepts/aux-loss-free-moe-balance.md", "Concepts", "Aux-Loss-Free MoE Balance"),
+    ("docs/concepts/multi-token-prediction.md", "Concepts", "Multi-Token Prediction"),
+    ("docs/concepts/mup-lr-scaling.md", "Concepts", "μP & LR Scaling"),
     ("docs/concepts/parallelism.md", "Concepts", "DualPipe Parallelism"),
     ("docs/concepts/data-pipeline.md", "Concepts", "Data Pipeline"),
     ("docs/concepts/kernels-and-ops.md", "Concepts", "Operations & Triton Kernels"),
     
     # Guides
     ("docs/guides/getting-started.md", "Guides", "Getting Started"),
+    ("docs/guides/learning-paths.md", "Guides", "Learning Paths"),
+    ("docs/guides/glossary.md", "Guides", "Glossary"),
     ("docs/guides/G1_debugging_playbook.md", "Guides", "G1 — Debugging Playbook"),
     ("docs/guides/G2_mup_and_lr_tuning.md", "Guides", "G2 — μP & LR Tuning"),
     ("docs/guides/G3_triton_development.md", "Guides", "G3 — Triton Development"),
@@ -53,6 +60,10 @@ DOC_FILES = [
     ("docs/references/R7_training_api.md", "References", "R7 — Training API"),
     ("docs/references/R8_utils_api.md", "References", "R8 — Utils API"),
     ("docs/references/R9_inference_api.md", "References", "R9 — Inference API"),
+    
+    # Diagrams (markdown sources; the interactive .html siblings are copied
+    # verbatim by main() and linked from here).
+    ("docs/diagrams/RECEIPTS.md", "Diagrams", "Diagram Receipts"),
 ]
 
 # Premium-polish assets: mono-only font link, boot overlay, widget containers.
@@ -163,11 +174,28 @@ WIDGET_CONTAINERS = {
 
 
 def slugify(text: str) -> str:
-    """Generate clean HTML id for headings."""
-    text = text.lower().strip()
-    text = re.sub(r'[^\w\s-]', '', text)
-    text = re.sub(r'\s', '-', text)
-    return text.strip('-') or "heading"
+    """GitHub-compatible heading id.
+
+    Must match `scripts/check_docs.py:_slug`, which is the linter that validates
+    every `[..](page.md#anchor)` link: each space becomes its own hyphen (runs are
+    never collapsed) and non-word punctuation is dropped. A collapsing slug here
+    silently breaks cross-page anchors that the linter already approves.
+    """
+    text = re.sub(r'!?\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    text = re.sub(r'`([^`]*)`', r'\1', text)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r'[*~]', '', text).lower()
+    return re.sub(r'[^\w\s-]', '', text).strip().replace(' ', '-')
+
+
+def unique_slug(text: str, used: dict[str, int]) -> str:
+    """slugify with GitHub's `-1`, `-2` suffix for repeated headings."""
+    base = slugify(text)
+    if not base:
+        base = "heading"
+    n = used.get(base, 0)
+    used[base] = n + 1
+    return base if n == 0 else f"{base}-{n}"
 
 
 @lru_cache(maxsize=1)
@@ -281,6 +309,8 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
     
     list_stack = []
     h1_seen = False
+    # Heading ids already emitted on this page; drives GitHub's -1/-2 dedup.
+    used_slugs: dict[str, int] = {}
 
     in_blockquote = False
     blockquote_type = "normal"
@@ -414,10 +444,14 @@ def parse_markdown_to_html(md_text: str, src_rel_path: str) -> tuple[str, list[d
             heading_text_raw = heading_match.group(2).strip()
             
             clean_title = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', heading_text_raw)
-            clean_title = re.sub(r'`([^`]+)`', r'\1', clean_title)
-            clean_title = re.sub(r'___INLINECODE_\d+___', '', clean_title)
+            # Inline code/math were replaced by placeholders; GitHub keeps their
+            # text in the slug, so restore it rather than dropping it.
+            def _restore(m, store=inline_codes, pat=r'`([^`]*)`'):
+                raw = store[int(m.group(1))]
+                return re.sub(pat, r'\1', raw)
+            clean_title = re.sub(r'___INLINECODE_(\d+)___', _restore, clean_title)
             clean_title = re.sub(r'___INLINEMATH_\d+___', '', clean_title)
-            heading_id = slugify(clean_title)
+            heading_id = unique_slug(clean_title, used_slugs)
             
             rendered_heading = render_inline_formatting(heading_text_raw)
             
@@ -569,7 +603,8 @@ def build_sidebar_html(current_rel_path: str, rel_prefix: str) -> str:
         "Core": [],
         "Concepts": [],
         "Guides": [],
-        "References": []
+        "References": [],
+        "Diagrams": []
     }
     
     for rel_path, category, display_title in DOC_FILES:
@@ -1126,6 +1161,23 @@ def generate_css():
     shutil.copyfile(src_js, assets_dir / "portal.js")
 
 
+def copy_standalone_html():
+    """Copy hand-authored HTML (interactive diagrams) into docs_html/ verbatim.
+
+    These are authored, not generated, so the markdown->HTML pass must not touch
+    them; but docs/README.md links to them, so they have to exist next to the
+    generated pages or those links 404.
+    """
+    import shutil
+    src_dir = WORKSPACE_DIR / "docs" / "diagrams"
+    if not src_dir.is_dir():
+        return
+    dst_dir = OUTPUT_DIR / "docs" / "diagrams"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    for src in sorted(src_dir.glob("*.html")):
+        shutil.copyfile(src, dst_dir / src.name)
+
+
 def main():
     print("Building DeepSeek-v3-Lite HTML Documentation...")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1135,7 +1187,8 @@ def main():
     for rel_path, category, display_title in DOC_FILES:
         print(f"Generating: {rel_path} -> docs_html/{rel_path.replace('.md', '.html')}")
         generate_html_page(rel_path, category, display_title)
-        
+
+    copy_standalone_html()
     generate_index_portal()
     print("\nDocumentation build complete!")
     print(f"HTML Portal location: {OUTPUT_DIR / 'index.html'}")

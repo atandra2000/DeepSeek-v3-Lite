@@ -125,6 +125,7 @@ class TestMlaTritonImport:
             )
 
 
+@pytest.mark.gpu
 @pytest.mark.skipif(
     not (HAS_TRITON and torch.cuda.is_available()),
     reason="requires triton + CUDA",

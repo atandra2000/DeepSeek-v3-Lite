@@ -9,7 +9,7 @@
 
 ```bash
 cd LLM/DeepSeek-v3-Lite
-python3 -m pytest tests/ -q                 # 199 tests: 189 pass + 10 GPU-gated skips
+python3 -m pytest tests/ -q                 # 217 tests: 207 pass + 10 triton+CUDA skips
 python3 tests/test_doc_refs.py              # doc↔code symbol anchors
 python3 scripts/check_docs.py               # links + stale-pattern lint
 # Tiny end-to-end smoke on small hardware:
@@ -131,8 +131,8 @@ Two new optional config keys: `attn_impl` (default `"sdpa"`, set to
 `"triton_grouped"` to opt in). Master kill-switch env-var:
 `ENABLE_TRITON_KERNELS=0` (default, no Triton) or `=1` (allow per-config
 opt-in). Tests on CPU/Mac run with the env-var unset and the default
-`attn_impl` / `moe_dispatch` values, so the **199** pytest tests keep
-passing (189 pass + 10 GPU-gated skips) without any CUDA dependency.
+`attn_impl` / `moe_dispatch` values, so the **217** pytest tests keep
+passing (207 pass + 10 triton+CUDA skips) without any CUDA dependency.
 
 **Hard rules:**
 1. **Raw PyTorch by default; custom Triton kernels are first-party for
@@ -189,7 +189,7 @@ passing (189 pass + 10 GPU-gated skips) without any CUDA dependency.
   `ENABLE_TRITON_KERNELS=1`.   A100 benchmark validation (≥1.5× MoE speedup,
   ≥25% full-step reduction) is still open. `tests/test_mla_triton.py` covers
   MLA kernel reference + GPU numerics; full-model `test_sdpa_and_triton_agree`
-  is GPU-gated in `tests/test_mla_triton.py`. All **199** tests pass on the
+  is GPU-gated in `tests/test_mla_triton.py`. All **217** tests pass on the
   default `attn_impl="sdpa"`, `moe_dispatch="stacked"` config without Triton.
 - **The Triton MoE kernel cannot run the canonical config** (`moe_inter_dim=384`,
   `dim=768` exceed the 256 register cap; `triton_grouped` raises `ValueError`
