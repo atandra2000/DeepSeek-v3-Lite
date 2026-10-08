@@ -160,8 +160,15 @@ class MultiHeadLatentAttention(nn.Module):
             Q_rope = q_pe.transpose(1, 2)
             K_rope = ctx_pe.unsqueeze(1).expand(-1, h, -1, -1)
             attn_mask = mask.expand(bsz, h, seqlen_q, -1) if mask is not None else None
+            q_full = torch.cat([Q_nope, Q_rope], dim=-1)
+            k_full = torch.cat([K_nope, K_rope], dim=-1)
+            # SDPA rejects a mask whose dtype differs from the query
+            # ("invalid dtype for bias"). Callers build the additive mask in
+            # fp32; the attention here runs in the activation dtype.
+            if attn_mask is not None and attn_mask.dtype != q_full.dtype:
+                attn_mask = attn_mask.to(q_full.dtype)
             attn = F.scaled_dot_product_attention(
-                torch.cat([Q_nope, Q_rope], dim=-1), torch.cat([K_nope, K_rope], dim=-1), V,
+                q_full, k_full, V,
                 attn_mask=attn_mask, scale=self.softmax_scale)
             return self.wo(attn.transpose(1, 2).contiguous().flatten(2))
 

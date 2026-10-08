@@ -54,9 +54,12 @@ def small_cfg() -> Dict:
         "moe_inter_dim":       64,
         "kv_lora_rank":        16,
         "q_lora_rank":         0,
-        "qk_nope_head_dim":    8,
-        "qk_rope_head_dim":    4,
-        "v_head_dim":          8,
+        # Triton's tl.dot rejects any non-batch dim below 16, and
+        # _check_mla_dim_limits documents the same floor. These were 8/4/8,
+        # which made every full-model Triton test a guaranteed compile error.
+        "qk_nope_head_dim":    16,
+        "qk_rope_head_dim":    16,
+        "v_head_dim":          16,
         "max_seq_len":         64,
         "rope_theta":          10000,
         "rope_factor":         1.0,

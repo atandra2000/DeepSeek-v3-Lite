@@ -147,6 +147,13 @@ if HAS_TRITON:
                 + k_off[:, None] * stride_kv_s + r_idx[None, :] * stride_kv_r,
                 mask=k_mask[:, None], other=0.0,
             )
+            # tl.dot accumulates in fp32 even for bf16 inputs, so K_nope and
+            # v_tile come back wider than the tiles they feed. The score and
+            # output dots then see mixed dtypes and refuse to compile
+            # ("First input (bf16) and second input (fp32)"). Widen the
+            # narrow operand at each dot rather than discarding the fp32
+            # accumulator: narrowing here cost enough precision to fail the
+            # reference comparison outright.
             k_nope = tl.dot(kv_tile, tl.trans(w_k))
             v_tile = tl.dot(kv_tile, tl.trans(w_v))
 
@@ -156,7 +163,7 @@ if HAS_TRITON:
                 mask=k_mask[:, None], other=0.0,
             )
 
-            s_block = (tl.dot(q_nope_tile, tl.trans(k_nope))
+            s_block = (tl.dot(q_nope_tile.to(k_nope.dtype), tl.trans(k_nope))
                        + tl.dot(q_pe_tile, tl.trans(k_pe))) * softmax_scale
 
             if is_causal:

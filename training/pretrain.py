@@ -18,6 +18,21 @@ from models.transformer import Transformer, count_parameters
 from models.mtp import MultiTokenPrediction
 from utils.checkpoint import CheckpointManager
 from utils.logging import init_logging, get_logger
+# --- bakeoff exposure accounting (tools/bakeoff) ---
+import sys as _sys
+from pathlib import Path as _Path
+_BAKEOFF = _Path(__file__).resolve().parents[2] / "tools" / "bakeoff"
+if _BAKEOFF.is_dir() and str(_BAKEOFF) not in _sys.path:
+    _sys.path.insert(0, str(_BAKEOFF))
+try:
+    from exposure_hook import load_exposure as _load_exposure
+    from exposure_hook import bind as _bind_exp, tick as _tick_exp
+except Exception:
+    _load_exposure = None
+    _bind_exp = None
+    def _tick_exp(*a, **k):
+        pass
+# --- end bakeoff import ---
 
 
 def make_warmup_cosine_lambda(warmup_steps: int, total_steps: int, min_lr_ratio: float = 0.1):
@@ -69,6 +84,24 @@ class TrainingConfig:
 
 class PretrainDataset(Dataset):
     """Packed pre-training dataset backed by flat token tensors (single-file or sharded)."""
+    @staticmethod
+    def _read_tokens(path: str) -> torch.Tensor:
+        """Read one packed shard as a zero-copy token tensor.
+
+        Two on-disk layouts are in play. ``shared_data.pack_shards`` and
+        ``data/prepare_data.py`` write raw little-endian uint32 token ids.
+        Some test fixtures are still written with ``torch.save``. Detect
+        which one it is: a torch zip archive starts with ``PK``, raw token
+        bytes do not. ``torch.load(..., mmap=True)`` rejects the raw layout
+        outright, so guessing wrong is a hard failure either way.
+        """
+        import numpy as np
+        with open(path, "rb") as fh:
+            magic = fh.read(2)
+        if magic == b"PK":
+            return torch.load(path, weights_only=True, map_location="cpu", mmap=True)
+        return torch.from_numpy(np.memmap(path, dtype=np.uint32, mode="r"))
+
     def __init__(self, data_path: str, max_seq_len: int, vocab_size: int):
         self.max_seq_len = max_seq_len
         self.vocab_size = vocab_size
@@ -79,7 +112,7 @@ class PretrainDataset(Dataset):
             self.shard_paths = [str(p) for p in sorted(Path(data_path).glob("shard_*.bin"))]
             if not self.shard_paths:
                 raise FileNotFoundError(f"No `shard_*.bin` files in {data_path}")
-            self.shards = [torch.load(p, weights_only=True, map_location="cpu", mmap=True) for p in self.shard_paths]
+            self.shards = [self._read_tokens(p) for p in self.shard_paths]
             self.shard_sizes = [s.numel() for s in self.shards]
             self.shard_offsets = []
             running = 0
@@ -88,7 +121,7 @@ class PretrainDataset(Dataset):
                 running += s
             self._total_tokens = sum(self.shard_sizes)
         else:
-            self.data = torch.load(data_path, weights_only=True, map_location="cpu", mmap=True)
+            self.data = self._read_tokens(data_path)
             self._total_tokens = self.data.numel()
         self._n_samples = (self._total_tokens - 1) // self.max_seq_len
 
@@ -258,11 +291,13 @@ class Pretrainer:
     def train_step(self, tokens: torch.Tensor, targets: torch.Tensor, micro_step: int) -> Optional[Dict[str, Optional[float]]]:
         """Run one micro-batch and step the optimizer when accumulation is due."""
         is_opt_step = (micro_step + 1) % self.config.gradient_accumulation_steps == 0
-        # Keep compact uint32 storage in the dataset; PyTorch indexing needs int64.
-        if tokens.dtype != torch.long:
-            tokens = tokens.to(torch.long)
-        if targets.dtype != torch.long:
-            targets = targets.to(torch.long)
+        # Keep compact uint32 storage in the dataset; PyTorch indexing needs
+        # int64, and the embedding weight lives on self.device. Moving here
+        # rather than in every caller is what makes a plain CPU batch legal.
+        if tokens.dtype != torch.long or tokens.device != self.device:
+            tokens = tokens.to(device=self.device, dtype=torch.long)
+        if targets.dtype != torch.long or targets.device != self.device:
+            targets = targets.to(device=self.device, dtype=torch.long)
         with self._amp_context():
             if self.mtp_wrapper is not None:
                 main_logits, mtp_pairs = self.model(tokens)
@@ -291,6 +326,7 @@ class Pretrainer:
             self.scheduler.step()
             self.optimizer.zero_grad(set_to_none=True)
             self._opt_steps += 1
+            _tick_exp()   # bakeoff exposure: one complete optimizer step
             if self._opt_steps % self.config.bias_update_every == 0:
                 self._update_moe_bias()
 
@@ -357,6 +393,19 @@ class Pretrainer:
 
         self._log(f"Training from step {global_step} to {self.config.max_steps}")
         self.raw_model.train()
+        # bakeoff exposure. Seeded from the checkpoint so a resumed run does
+        # not restart the token counter at zero.
+        if _load_exposure is not None:
+            _bind_exp(_load_exposure(__file__,
+                tokens_per_step=self.config.batch_size * self.config.max_seq_len
+                                * self.config.gradient_accumulation_steps,
+                micro_batch=self.config.batch_size, seq_len=self.config.max_seq_len,
+                grad_accum=self.config.gradient_accumulation_steps, tokenizer="deepseek",
+                run_dir=str(self.config.checkpoint_dir) + "/exposure",
+                start_opt_steps=self._opt_steps,
+                start_tokens_seen=self._opt_steps * self.config.batch_size
+                                  * self.config.max_seq_len
+                                  * self.config.gradient_accumulation_steps))
         epoch = 0
         nan_guard_streak = 0
         while global_step < self.config.max_steps:
