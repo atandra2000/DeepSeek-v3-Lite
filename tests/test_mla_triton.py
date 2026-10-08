@@ -132,7 +132,11 @@ class TestMlaTritonImport:
 class TestMlaTritonKernelGPU:
     def test_triton_matches_reference_bf16(self):
         q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v, scale = _tiny_mla_tensors(
-            B=1, H=4, S=16, R=32, D_nope=16, D_rope=8, D_v=24, dtype=torch.bfloat16,
+            # Every dim fed to tl.dot must be >= 16 (see
+            # configs/pretrain_1650_2m.yaml and _check_mla_dim_limits).
+            # D_rope=8 rounded to a BLOCK of 8 and Triton rejected the dot
+            # with "non-batch values ... must be >= 16".
+            B=1, H=4, S=16, R=32, D_nope=16, D_rope=16, D_v=32, dtype=torch.bfloat16,
         )
         device = "cuda"
         tensors = [t.to(device) for t in (q_nope, q_pe, ctx_kv, ctx_pe, wkv_b_k, wkv_b_v)]

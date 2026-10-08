@@ -1,6 +1,6 @@
 # SKILLS.md — DeepSeek-v3-Lite
 
-> Skills for the faithful V3 reproduction. Pair with `.agents/skills/llm-architecture/SKILL.md`.
+> Skills for the faithful V3 reproduction. Shared architecture background is in this repo's `docs/`.
 
 ---
 

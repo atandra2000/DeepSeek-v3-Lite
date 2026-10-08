@@ -701,8 +701,11 @@ class TestNanGuardRollback:
         tokens = torch.randint(0, cfg["vocab_size"] - 1, (1, 4), device=device)
         targets = tokens.clone()
         # Patch the model.forward to return NaN logits.
+        # The stand-in must land where the real forward would: on the
+        # trainer's device. Returning a default CPU tensor makes the loss
+        # see two devices and the test fails for the wrong reason.
         def bad_forward(*args, **kwargs):
-            return torch.full((1, 4, cfg["vocab_size"]), float("nan"))
+            return torch.full((1, 4, cfg["vocab_size"]), float("nan"), device=p.device)
         with patch.object(p.model, "forward", side_effect=bad_forward):
             result = p.train_step(tokens, targets, micro_step=0)
         assert result is None
@@ -723,7 +726,7 @@ class TestNanGuardRollback:
         # Patch _find_latest_checkpoint to return 1, and verify rollback path runs.
         with patch.object(p, "_find_latest_checkpoint", return_value=1) as mock_find, \
              patch.object(p, "load_checkpoint", return_value=1) as mock_load, \
-             patch.object(p.model, "forward", side_effect=lambda *a, **kw: torch.full((1, 4, cfg["vocab_size"]), float("nan"))):
+             patch.object(p.model, "forward", side_effect=lambda *a, **kw: torch.full((1, 4, cfg["vocab_size"]), float("nan"), device=p.device)):
             tokens = torch.randint(0, cfg["vocab_size"] - 1, (1, 4), device=device)
             targets = tokens.clone()
             for _ in range(2):

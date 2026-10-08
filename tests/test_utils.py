@@ -326,9 +326,19 @@ class TestMemoryEstimation:
             assert_fits_in_available_gpu(0.0)
 
     def test_overhead_detection(self):
-        """_detect_overhead_gb returns 2.0 on CPU."""
+        """_detect_overhead_gb returns 2.0 on CPU and a scaled value on GPU.
+
+        The old assertion hardcoded the CPU fallback. That is only true
+        when CUDA is absent, so the test failed on every GPU runner while
+        the function itself was correct.
+        """
         overhead = _detect_overhead_gb()
-        assert overhead == 2.0  # CPU fallback
+        if not torch.cuda.is_available():
+            assert overhead == 2.0  # CPU fallback
+            return
+        total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        assert overhead >= 2.0
+        assert overhead <= max(2.0, total_gb * 0.17) + 1e-9
 
 
 # ----------------------------------------------------------------------
