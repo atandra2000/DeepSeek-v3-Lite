@@ -33,71 +33,74 @@ OUTPUT_DIR = WORKSPACE_DIR / "docs_html"
 # Order matters: it is the reading order for the sidebar, the index page and
 # the previous/next links at the foot of every chapter.
 DOC_FILES = [
-    # Part I — Foundations
-    ("README.md", "Part I: Foundations", "Overview",
+    # Part I — Getting started
+    ("README.md", "Part I: Getting started", "Overview",
      "The project in one page: a ~412M-parameter DeepSeek-V3 reproduction — "
      "MLA, aux-loss-free DeepSeekMoE, MTP — and how to run it."),
-    ("docs/README.md", "Part I: Foundations", "How to read this book",
+    ("docs/README.md", "Part I: Getting started", "How to read this book",
      "What each part covers, where to start, and the map from source file "
      "to chapter."),
-    ("docs/concepts/foundations.md", "Part I: Foundations", "Foundations and topography",
-     "DeepSeek lineage, the 18-layer layout, parameter and memory budgets."),
+    ("docs/guides/getting-started.md", "Part I: Getting started", "Getting started",
+     "Quickstart installation, synthetic pretraining and smoke testing."),
 
-    # Part II — The data
-    ("docs/concepts/data-pipeline.md", "Part II: The data",
+    # Part II — The architecture
+    ("docs/concepts/foundations.md", "Part II: The architecture",
+     "Foundations and topography",
+     "DeepSeek lineage, the 18-layer layout, parameter and memory budgets."),
+    ("docs/concepts/attention-and-precision.md", "Part II: The architecture",
+     "MLA and mixed precision",
+     "Multi-Head Latent Attention, matrix absorption and the FP8 scheme."),
+    ("docs/concepts/moe-mtp.md", "Part II: The architecture",
+     "DeepSeekMoE and MTP",
+     "Auxiliary-loss-free load balancing, 20 routed + 1 shared expert, MTP."),
+    ("docs/concepts/parallelism.md", "Part II: The architecture",
+     "DualPipe parallelism",
+     "Bidirectional pipeline scheduling, overlap and distributed execution."),
+
+    # Part III — The data
+    ("docs/concepts/data-pipeline.md", "Part III: The data",
      "The data pipeline",
      "The shared 8.0B-token pipeline, the DeepSeek shim, tokenizer and "
      "shard format, and how `PretrainDataset` consumes it."),
 
-    # Part III — The training run
-    ("docs/training.md", "Part III: The training run",
+    # Part IV — The training run
+    ("docs/training.md", "Part IV: The training run",
      "The training pipeline",
      "BF16 training loop, loss scaling, checkpointing and NaN safety."),
-    ("docs/concepts/attention-and-precision.md", "Part III: The training run",
-     "MLA and mixed precision",
-     "Multi-Head Latent Attention, matrix absorption and the FP8 scheme."),
-    ("docs/concepts/moe-mtp.md", "Part III: The training run",
-     "DeepSeekMoE and MTP",
-     "Auxiliary-loss-free load balancing, 20 routed + 1 shared expert, MTP."),
-    ("docs/concepts/parallelism.md", "Part III: The training run",
-     "DualPipe parallelism",
-     "Bidirectional pipeline scheduling, overlap and distributed execution."),
-    ("docs/concepts/kernels-and-ops.md", "Part III: The training run",
+    ("docs/concepts/kernels-and-ops.md", "Part IV: The training run",
      "Operations and Triton kernels",
      "Triton grouped GEMM, the fused MLA kernel, CI testing and invariants."),
-
-    # Part IV — Reference
-    ("docs/inference.md", "Part IV: Reference", "Inference and speculative decoding",
+    ("docs/inference.md", "Part IV: The training run", "Inference and speculative decoding",
      "MTP speculative decoder, KV caching and latency optimisations."),
-    ("docs/guides/getting-started.md", "Part IV: Reference", "Getting started",
-     "Quickstart installation, synthetic pretraining and smoke testing."),
-    ("docs/guides/G1_debugging_playbook.md", "Part IV: Reference", "G1 — Debugging playbook",
-     "Troubleshooting NaNs, CUDA OOMs and loss divergence."),
-    ("docs/guides/G2_mup_and_lr_tuning.md", "Part IV: Reference", "G2 — μP and LR tuning",
-     "Maximal Update Parameterization setup and hyperparameter transfer."),
-    ("docs/guides/G3_triton_development.md", "Part IV: Reference", "G3 — Triton development",
-     "Writing, profiling and benchmarking custom Triton GPU kernels."),
-    ("docs/guides/G4_benchmarking.md", "Part IV: Reference", "G4 — Benchmarking",
-     "Repeatable performance measurement and result interpretation."),
-    ("docs/guides/G5_checkpoint_ops.md", "Part IV: Reference", "G5 — Checkpoint ops",
+    ("docs/guides/G5_checkpoint_ops.md", "Part IV: The training run", "G5 — Checkpoint ops",
      "Save, resume, inspect and safely manage training state."),
-    ("docs/references/R1_config_schema.md", "Part IV: Reference", "R1 — Config schema",
+
+    # Part V — Reference
+    ("docs/guides/G1_debugging_playbook.md", "Part V: Reference", "G1 — Debugging playbook",
+     "Troubleshooting NaNs, CUDA OOMs and loss divergence."),
+    ("docs/guides/G2_mup_and_lr_tuning.md", "Part V: Reference", "G2 — μP and LR tuning",
+     "Maximal Update Parameterization setup and hyperparameter transfer."),
+    ("docs/guides/G3_triton_development.md", "Part V: Reference", "G3 — Triton development",
+     "Writing, profiling and benchmarking custom Triton GPU kernels."),
+    ("docs/guides/G4_benchmarking.md", "Part V: Reference", "G4 — Benchmarking",
+     "Repeatable performance measurement and result interpretation."),
+    ("docs/references/R1_config_schema.md", "Part V: Reference", "R1 — Config schema",
      "Complete YAML specification for model and training configs."),
-    ("docs/references/R2_transformer_api.md", "Part IV: Reference", "R2 — Transformer API",
+    ("docs/references/R2_transformer_api.md", "Part V: Reference", "R2 — Transformer API",
      "Model initialisation, forward pass and weight wiring."),
-    ("docs/references/R3_mla_api.md", "Part IV: Reference", "R3 — MLA API",
+    ("docs/references/R3_mla_api.md", "Part V: Reference", "R3 — MLA API",
      "Multi-Head Latent Attention layer implementation and options."),
-    ("docs/references/R4_moe_api.md", "Part IV: Reference", "R4 — MoE API",
+    ("docs/references/R4_moe_api.md", "Part V: Reference", "R4 — MoE API",
      "AuxLossFreeGate and DeepSeekMoE expert routing engine."),
-    ("docs/references/R5_mtp_api.md", "Part IV: Reference", "R5 — MTP API",
+    ("docs/references/R5_mtp_api.md", "Part V: Reference", "R5 — MTP API",
      "Multi-token prediction heads and speculative decoding interfaces."),
-    ("docs/references/R6_triton_api.md", "Part IV: Reference", "R6 — Triton API",
+    ("docs/references/R6_triton_api.md", "Part V: Reference", "R6 — Triton API",
      "Kernel contracts, fused operators and development seams."),
-    ("docs/references/R7_training_api.md", "Part IV: Reference", "R7 — Training API",
+    ("docs/references/R7_training_api.md", "Part V: Reference", "R7 — Training API",
      "Trainer entry points, loss plumbing and checkpoint controls."),
-    ("docs/references/R8_utils_api.md", "Part IV: Reference", "R8 — Utils API",
+    ("docs/references/R8_utils_api.md", "Part V: Reference", "R8 — Utils API",
      "Shared helpers, diagnostics and common utilities."),
-    ("docs/references/R9_inference_api.md", "Part IV: Reference", "R9 — Inference API",
+    ("docs/references/R9_inference_api.md", "Part V: Reference", "R9 — Inference API",
      "Generation, caches and inference-time interfaces."),
 ]
 

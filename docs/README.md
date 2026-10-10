@@ -1,6 +1,6 @@
 # How to read this book
 
-This portal is a book about building a DeepSeek-V3-style transformer from scratch in raw PyTorch. It has 25 chapters in four parts. Read it in order, or jump to the part you need.
+This portal is a book about building a DeepSeek-V3-style transformer from scratch in raw PyTorch. It has 25 chapters in five parts. Read it in order, or jump to the part you need.
 
 Every citation names a symbol (`models/mla.py:MultiHeadLatentAttention`), never a line number, so the references survive edits. `tests/test_doc_refs.py` resolves each one and fails CI when a citation goes stale.
 
@@ -8,16 +8,17 @@ Every citation names a symbol (`models/mla.py:MultiHeadLatentAttention`), never 
 
 | Part | What it covers |
 |------|----------------|
-| **Part I: Foundations** | What the model is: DeepSeek lineage, the 18-layer topology, and the parameter and memory budgets. |
-| **Part II: The data** | How 8.0B tokens become a sharded, memory-mapped stream, and the DeepSeek shim that feeds it. |
-| **Part III: The training run** | MLA, DeepSeekMoE, MTP, the DualPipe paper-spec, and the kernels and ops that keep one step honest. |
-| **Part IV: Reference** | Inference, the operating guides, and the symbol-anchored API references. Open these when you need a signature or a config key, not a narrative. |
+| **Part I: Getting started** | What the project is and how to run it: the overview, the reading map, install and the first smoke test. |
+| **Part II: The architecture** | What the model is made of: the 18-layer topology, MLA, DeepSeekMoE, MTP, and the DualPipe paper-spec. |
+| **Part III: The data** | How 8.0B tokens become a sharded, memory-mapped stream, and the DeepSeek shim that feeds it. |
+| **Part IV: The training run** | The loop and everything around it: training, kernels and ops, inference, checkpointing. |
+| **Part V: Reference** | Operating guides and symbol-anchored API references. Open these when you need a signature or a config key, not a narrative. |
 
 ## Where to start
 
-- **New to the model.** Read Part I in order. [Foundations and topography](concepts/foundations.md) is the longest chapter, and it assumes no prior reading.
-- **You want to run it.** Start with the [Overview](../README.md) for hardware and configuration, then read [Getting started](guides/getting-started.md) and [The training pipeline](training.md).
-- **You want the numerics.** Read [MLA and mixed precision](concepts/attention-and-precision.md) for the absorption trick and the KV-cache arithmetic, or [DeepSeekMoE and MTP](concepts/moe-mtp.md) for the bias-feedback loop and the length-alignment algebra.
+- **New to the model.** [Getting started](guides/getting-started.md) first, then [Foundations and topography](concepts/foundations.md) — the longest chapter, and it assumes no prior reading.
+- **You want to run it.** The [Overview](../README.md) for hardware and configuration, then [The training pipeline](training.md).
+- **You want the numerics.** [MLA and mixed precision](concepts/attention-and-precision.md) for the absorption trick and the KV-cache arithmetic, or [DeepSeekMoE and MTP](concepts/moe-mtp.md) for the bias-feedback loop and the length-alignment algebra.
 - **It broke.** [G1 — Debugging playbook](guides/G1_debugging_playbook.md) first, then [G5 — Checkpoint ops](guides/G5_checkpoint_ops.md) for resume and recovery.
 
 ## Visual tour
