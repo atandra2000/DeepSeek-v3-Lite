@@ -266,44 +266,9 @@ All of these are reasons to treat the headline as a floor with a generous overhe
 
 ---
 
-## 6. CI Pipeline Walkthrough (`.github/workflows/ci.yml`)
+## 6. CI Pipeline (`.github/workflows/ci.yml`)
 
-CI runs on every push/PR to `main` on an `ubuntu-latest` runner. The pipeline is deliberately a *layered* defense: each step catches a different class of failure, and the whole thing is CPU-only (PyTorch is installed with the `cpu` index — no CUDA wheels, no Triton).
-
-```yaml
-name: CI
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-jobs:
-  smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -r requirements.txt
-          pip install pytest pytest-cov
-      - name: Import checks
-        run: python -c "import models.transformer; import models.mla; import models.moe; import models.mtp"
-      - name: Check documentation
-        run: python scripts/check_docs.py
-      - name: Check doc-code symbol anchors
-        run: python -m pytest tests/test_doc_refs.py -q --tb=short
-      - name: Run test suite
-        run: python -m pytest tests/ -q --tb=short
-      - name: Model forward smoke test
-        run: python scripts/smoke_forward.py
-```
-
-Reading the steps as a failure-detection ladder:
+CI runs on every push/PR to `main` on an `ubuntu-latest` runner. The workflow (`.github/workflows/ci.yml`) is deliberately a *layered* defense: each step catches a different class of failure, and the whole thing is CPU-only (PyTorch is installed with the `cpu` index — no CUDA wheels, no Triton). In order:
 
 1. **Install** — CPU-only torch + `requirements.txt`. This step itself is a check: it proves the dependency manifest resolves on a clean machine.
 2. **Import checks** — importing `models.transformer`, `models.mla`, `models.moe`, `models.mtp` catches syntax errors, broken relative imports, and construction-time module-level failures in seconds, before any test runs. Note that these imports must succeed *without* Triton installed — the `if HAS_TRITON:` guards in the kernel modules exist for exactly this reason.

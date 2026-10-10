@@ -1,160 +1,42 @@
-# DeepSeek-v3-Lite — Documentation Index
+# How to read this book
 
-> Navigation map for the DeepSeek-v3-Lite documentation: `concepts/` (theory + architecture), `references/` (symbol-anchored API docs), `guides/` (how-to / ops), plus the top-level pipeline docs `training.md` and `inference.md`. Every code-symbol citation (path + class/method) is machine-verified by `tests/test_doc_refs.py`; prose hygiene and relative links are checked by `scripts/check_docs.py` — both run in CI, and `check_docs.py --coverage` additionally requires every public symbol in the 13 coverage modules to be cited at least once. Docs↔code alignment snapshots: [AUDIT.md](AUDIT.md).
+This portal is a book about building a DeepSeek-V3-style transformer from scratch in raw PyTorch. It has 25 chapters in four parts. Read it in order, or jump to the part you need.
 
-## Visual Systems Atlas
+Every citation names a symbol (`models/mla.py:MultiHeadLatentAttention`), never a line number, so the references survive edits. `tests/test_doc_refs.py` resolves each one and fails CI when a citation goes stale.
 
-Explore the [Interactive Visual Systems Guide](diagrams/deepseek_visual_guide.html): four verified Archify showcase maps ([Model Architecture](diagrams/architecture-model.html), [Optimizations & Memory](diagrams/architecture-optimizations.html), [Data Pipeline](diagrams/dataflow-data-pipeline.html), [Training Loop](diagrams/workflow-training-loop.html)), interactive MLA KV-cache compression calculator, MoE dynamic bias balancer simulation, and [verification receipts](diagrams/RECEIPTS.md).
+## The parts
 
-## Quick Reference
+| Part | What it covers |
+|------|----------------|
+| **Part I: Foundations** | What the model is: DeepSeek lineage, the 18-layer topology, and the parameter and memory budgets. |
+| **Part II: The data** | How 8.0B tokens become a sharded, memory-mapped stream, and the DeepSeek shim that feeds it. |
+| **Part III: The training run** | MLA, DeepSeekMoE, MTP, the DualPipe paper-spec, and the kernels and ops that keep one step honest. |
+| **Part IV: Reference** | Inference, the operating guides, and the symbol-anchored API references. Open these when you need a signature or a config key, not a narrative. |
 
-A faithful, from-scratch, raw-PyTorch reproduction of the **DeepSeek-V3 architecture** at Chinchilla-optimal scale — **~412 M total / ~185 M active parameters per token** (411.6M deduped; 418.7M with MTP) — built to be fully inspectable (no HuggingFace Trainer, no Lightning). It implements the four architectural pillars of DeepSeek-V3 at a scale that fits on one A100 80 GB:
+## Where to start
 
-1. **Multi-Head Latent Attention (MLA)** — low-rank KV compression with decoupled RoPE and the matrix-absorption trick.
-2. **DeepSeekMoE with auxiliary-loss-free load balancing** — fine-grained routed experts + a shared expert, balanced by a control-theory bias update rather than an auxiliary loss.
-3. **Multi-Token Prediction (MTP)** — a depth-1 auxiliary prediction head that densifies the training signal and enables speculative decoding at inference.
-4. **μP learning-rate scaling** — maximal-update parameterization so the LR transfers across model widths.
+- **New to the model.** Read Part I in order. [Foundations and topography](concepts/foundations.md) is the longest chapter, and it assumes no prior reading.
+- **You want to run it.** Start with the [Overview](../README.md) for hardware and configuration, then read [Getting started](guides/getting-started.md) and [The training pipeline](training.md).
+- **You want the numerics.** Read [MLA and mixed precision](concepts/attention-and-precision.md) for the absorption trick and the KV-cache arithmetic, or [DeepSeekMoE and MTP](concepts/moe-mtp.md) for the bias-feedback loop and the length-alignment algebra.
+- **It broke.** [G1 — Debugging playbook](guides/G1_debugging_playbook.md) first, then [G5 — Checkpoint ops](guides/G5_checkpoint_ops.md) for resume and recovery.
 
-FP8 mixed precision and DualPipe bidirectional pipeline parallelism are DeepSeek-V3 *paper* techniques documented for completeness in [MLA & Mixed Precision](concepts/attention-and-precision.md) and [DualPipe Parallelism](concepts/parallelism.md); they are **not implemented** here because the target is single-GPU BF16 training.
+## Visual tour
 
-| Parameter / Feature | Canonical Value |
-|---|---|
-| **Total / Active params** | **~422 M nominal / 411.6 M deduped (weight-tied) · ~185 M active per token** |
-| **Compute target** | 8.4 B tokens (Chinchilla-optimal for 422 M) · 512 000 steps |
-| **Topology** | 18 layers = **2 dense + 16 MoE** · `d_model = 768` |
-| **Attention heads** | 12 query heads · `d_head_nope = 48` · `d_head_rope = 24` · `d_v = 64` |
-| **MLA compression** | KV LoRA rank `d_c = 192` · decoupled RoPE `d_R = 24` · `q_lora_rank = 0` (full-rank Q projection) |
-| **MoE layout** | 20 routed experts · **4 activated per token** · 1 shared expert · `moe_inter_dim = 384` |
-| **Dense FFN** | SwiGLU · `inter_dim = 1536` (layers 0–1) |
-| **MTP** | depth 1 · loss weight 0.3 · shared embedding + output head with main model |
-| **Precision** | **BF16** autocast · FP32 AdamW master weights · TF32 matmul on CUDA |
-| **Attention impl** | `sdpa` (default) · optional fused `triton` kernel, opt-in via `ENABLE_TRITON_KERNELS=1` |
-| **MoE dispatch** | `stacked` (default) · optional fused `triton_grouped` grouped-GEMM, opt-in |
-| **Optimizer / schedule** | AdamW (β = 0.9 / 0.95, wd = 0.1) · 2000-step linear warmup → cosine decay to 5% · grad clip 1.0 |
-| **μP LR** | reference LR 6.0e-4 @ 757 M params → scaled `lr_ref · (n_ref / n) ^ 0.5` |
-| **Context** | `max_seq_len = 2048` · `rope_theta = 10000` · `rope_factor = 1.0` (YaRN off at train; decode-time scaling only) |
-| **Tokenizer** | `deepseek-ai/deepseek-coder-v2-lite` · vocab 100 018 (EOS 100 017, PAD 100 016) |
-| **Weight tying** | `true` — LM head shares the embedding table |
-| **Checkpointing** | atomic safetensors (`model_step_N.safetensors` + `optim_step_N.pt` + `meta_step_N.json`) · gradient checkpointing on |
-| **Hardware target** | 1 × A100 80 GB SXM (single-GPU, no distributed) |
+The [Interactive Visual Systems Guide](diagrams/deepseek_visual_guide.html) is four verified Archify maps: model architecture, optimizations and memory, data pipeline, and training loop. Each map carries tensor shapes, memory arithmetic, and source links. The [verification receipts](diagrams/RECEIPTS.md) record what was verified for each map.
 
-> A second toy config `configs/pretrain_1650_2m.yaml` (dim=64, 4 layers, 4 experts, 1 active, GPT-2 50 257 vocab) exists for local smoke tests on a laptop GPU — it preserves every MLA/MoE/MTP invariant at miniature scale.
+## Which source file is documented where
 
-## Concepts (`concepts/`)
+| Module | Chapter | Key symbols |
+|--------|---------|-------------|
+| `models/transformer.py` | [Foundations and topography](concepts/foundations.md) (topology and budgets), [R2 — Transformer API](references/R2_transformer_api.md) (full walkthrough) | `models/transformer.py:Transformer`, `models/transformer.py:Transformer.generate` |
+| `models/mla.py` | [MLA and mixed precision](concepts/attention-and-precision.md) (absorption theory), [R3 — MLA API](references/R3_mla_api.md) (every option) | `models/mla.py:MultiHeadLatentAttention`, `models/mla_triton.py:triton_mla_attention` |
+| `models/moe.py` | [DeepSeekMoE and MTP](concepts/moe-mtp.md) (bias-feedback theory), [R4 — MoE API](references/R4_moe_api.md) (gate and dispatch) | `models/moe.py:AuxLossFreeGate`, `models/moe.py:DeepSeekMoE`, `models/moe_triton.py:triton_grouped_moe_dispatch` |
+| `models/mtp.py` | [DeepSeekMoE and MTP](concepts/moe-mtp.md) (MTP loss math), [R5 — MTP API](references/R5_mtp_api.md) (heads and alignment) | `models/mtp.py:MultiTokenPrediction`, `inference/speculative.py:SpeculativeDecoder` |
+| `training/pretrain.py` | [The training pipeline](training.md) (full walkthrough), [R7 — Training API](references/R7_training_api.md) (config and trainer) | `training/pretrain.py:TrainingConfig`, `training/pretrain.py:Pretrainer.train_step` |
+| `inference/generate.py`, `inference/speculative.py` | [Inference and speculative decoding](inference.md) (decode paths), [R9 — Inference API](references/R9_inference_api.md) | `inference/generate.py:generate_interactive`, `inference/speculative.py:SpeculativeDecoder` |
+| `data/prepare_data.py` | [The data pipeline](concepts/data-pipeline.md) (shim and stages) | `data/prepare_data.py:main` |
+| `utils/checkpoint.py` | [G5 — Checkpoint ops](guides/G5_checkpoint_ops.md) (atomic layout), [R8 — Utils API](references/R8_utils_api.md) (contract) | `utils/checkpoint.py:CheckpointManager` |
+| `models/mla_triton.py`, `models/moe_triton.py` | [Operations and Triton kernels](concepts/kernels-and-ops.md) (kernel math), [G3 — Triton development](guides/G3_triton_development.md) (the recipe), [R6 — Triton API](references/R6_triton_api.md) (contracts) | `models/mla_triton.py:triton_mla_attention`, `models/moe_triton.py:triton_grouped_moe_dispatch` |
+| `tests/*` | [Operations and Triton kernels](concepts/kernels-and-ops.md) (the suite and the CI ladder) | `tests/test_doc_refs.py:test_doc_anchors_resolve` |
 
-Theory and architecture, consolidated from the original spine chapters 01–13.
-
-| Doc | Covers | Status |
-|---|---|---|
-| [Foundations & Architecture](concepts/foundations.md) | DeepSeek lineage (V1 → V2 → V3), causal LM objective, RMSNorm, SwiGLU, attention, RoPE, KV caching, Chinchilla, μP, mixed precision; full 18-layer topology, parameter budget, memory budget, file map, config→code routing; portfolio comparison vs GPT-OSS-Lite, LLaMA-3-Lite, Mamba-3-Lite | implemented |
-| [MLA & Mixed Precision](concepts/attention-and-precision.md) | MLA: low-rank KV compression, absorption trick, decoupled RoPE, KV-cache lifecycle, Triton path; FP8 E4M3/E5M2 scheme, tile/block scaling | implemented / FP8 paper-spec |
-| [DeepSeekMoE & MTP](concepts/moe-mtp.md) | Fine-grained experts, shared expert, aux-loss-free bias feedback loop; MTP depth-1 loss, length-alignment algebra, shared head, speculative-decoding theory | implemented |
-| [DualPipe Parallelism](concepts/parallelism.md) | Pipeline bubbles, GPipe, 1F1B, interleaved schedules, all-to-all, bidirectional overlap | paper-spec, not implemented |
-| [Data Pipeline](concepts/data-pipeline.md) | Shared 8.0B-token universal pipeline, DeepSeek shim, tokenizer deep dive, mixture, shard format, `PretrainDataset` consumption | implemented |
-| [Operations, Testing & Triton Kernels](concepts/kernels-and-ops.md) | Real pytest suite, atomic checkpoint system, VRAM budget, CI walkthrough, doc↔code gate; fused MLA attention + grouped-GEMM MoE Triton kernels, double-opt-in guard, register-pressure math | implemented (Triton opt-in) |
-
-Focused one-pillar companions (added 2026-09-21) — one short doc per DeepSeek-V3 technique, audience-tagged, self-contained:
-
-| Doc | Audience | Core topics |
-|---|---|---|
-| [MLA: Latent Attention](concepts/mla-latent-attention.md) | intermediate | KV-cache cost model, latent compression (`models/mla.py:MultiHeadLatentAttention`, `models/mla_triton.py:triton_mla_attention`), absorption trick, decoupled RoPE, cache contract; 216 vs 1,536 floats/token [derived] |
-| [Aux-Loss-Free MoE Balance](concepts/aux-loss-free-moe-balance.md) | intermediate | Selection-vs-weighting split, deadband bias update rule (`models/moe.py:AuxLossFreeGate`), why no auxiliary loss, the diagnostic-only balance loss; `models/moe.py` |
-| [Multi-Token Prediction](concepts/multi-token-prediction.md) | beginner | Depth-1 head, shared embedding + LM head, length alignment, loss weighting (`models/mtp.py:MultiTokenPrediction`), speculative decoding via `inference/speculative.py:SpeculativeDecoder` |
-| [μP LR Scaling](concepts/mup-lr-scaling.md) | expert | Width–LR transfer theory, the count-based rule (`training/pretrain.py:TrainingConfig.mup_lr`), derived LR values, honest limits vs full μP |
-
-## References (`references/`)
-
-Terse, symbol-anchored references — every signature, shape contract, default, and caller. The anchor gate (`tests/test_doc_refs.py`) verifies every code-symbol citation (file path + class/method) resolves.
-
-| Doc | Covers |
-|---|---|
-| [R1 — Config Schema](references/R1_config_schema.md) | Every YAML key, default, and its reader |
-| [R2 — Transformer API](references/R2_transformer_api.md) | `models/transformer.py` — Transformer, blocks, generate |
-| [R3 — MLA API](references/R3_mla_api.md) | `models/mla.py` — attention paths, cache contract |
-| [R4 — MoE API](references/R4_moe_api.md) | `models/moe.py` — gate, experts, dispatch |
-| [R5 — MTP API](references/R5_mtp_api.md) | `models/mtp.py` — blocks, loss math, alignment |
-| [R6 — Triton API](references/R6_triton_api.md) | Both kernels, dispatch gate, dim caps |
-| [R7 — Training API](references/R7_training_api.md) | `training/pretrain.py` — config, dataset, trainer |
-| [R8 — Utils API](references/R8_utils_api.md) | Checkpoints, logging, memory estimator |
-| [R9 — Inference API](references/R9_inference_api.md) | Generation, speculative decoding |
-
-## Guides (`guides/`)
-
-Procedural, checklist-driven operating manuals.
-
-| Doc | Use when… |
-|---|---|
-| [Learning Paths](guides/learning-paths.md) | Don't know where to start: three audience-routed reading orders (beginner / intermediate / expert) with step tables |
-| [Getting Started](guides/getting-started.md) | New to the repo: install, smoke tests, first run, the 14-chapter linear curriculum (§9) |
-| [Glossary](guides/glossary.md) | Notation, MLA/MoE/MTP component terms, training/precision vocabulary, acronyms |
-| [G1 — Debugging Playbook](guides/G1_debugging_playbook.md) | NaN, shape errors, Triton fallback, cache bugs |
-| [G2 — μP & LR Tuning](guides/G2_mup_and_lr_tuning.md) | Adjusting LR / μP reference, running an LR sweep |
-| [G3 — Triton Development](guides/G3_triton_development.md) | Writing or extending a Triton kernel |
-| [G4 — Benchmarking](guides/G4_benchmarking.md) | Measuring VRAM / throughput / MFU honestly |
-| [G5 — Checkpoint Ops](guides/G5_checkpoint_ops.md) | Save / load / resume / disaster recovery |
-| [Contributing](guides/contributing.md) | Doc contract, gates, test & code conventions |
-
-## Pipeline Docs
-
-| Doc | Covers |
-|---|---|
-| [Training Pipeline](training.md) | Pretrain loop, AdamW, gradient accumulation, LR scheduler, μP scaling, `PretrainDataset`, NaN guard, checkpointing, YAML reference; data pipeline (shim, tokenizer, mixture, shards) |
-| [Inference & Serving](inference.md) | Autoregressive decode, KV cache prefill/decode, sampling theory, speculative decoding, CLI |
-
-## Configs
-
-- `configs/pretrain_a100_422m.yaml` — canonical 422M A100 recipe (full key-by-key reference in [R1](references/R1_config_schema.md) and [Training Pipeline](training.md) §Part B).
-- `configs/pretrain_1650_2m.yaml` — ~2M-param GTX 1650 4GB smoke-test config; same MLA/MoE/MTP invariants at miniature scale, GPT-2 vocab.
-
-## Doc size reference
-
-| Doc | ~Lines | Status |
-|---|---|---|
-| foundations.md | 3,656 | Comprehensive |
-| training.md | 2,815 | Comprehensive |
-| moe-mtp.md | 2,483 | Comprehensive |
-| attention-and-precision.md | 1,950 | Comprehensive |
-| kernels-and-ops.md | 1,364 | Comprehensive |
-| 2026-08-18-docs-html-premium.md | 1,089 | Comprehensive |
-| inference.md | 1,007 | Comprehensive |
-| data-pipeline.md | 712 | Comprehensive |
-| R2_transformer_api.md | 381 | Comprehensive |
-| getting-started.md | 380 | Comprehensive |
-| R4_moe_api.md | 373 | Comprehensive |
-| R6_triton_api.md | 373 | Comprehensive |
-| G1_debugging_playbook.md | 361 | Comprehensive |
-| parallelism.md | 336 | Comprehensive |
-| R5_mtp_api.md | 327 | Comprehensive |
-| R8_utils_api.md | 324 | Comprehensive |
-| R7_training_api.md | 285 | Comprehensive |
-| G5_checkpoint_ops.md | 279 | Comprehensive |
-| G3_triton_development.md | 272 | Comprehensive |
-| R9_inference_api.md | 269 | Comprehensive |
-| G2_mup_and_lr_tuning.md | 266 | Comprehensive |
-| G4_benchmarking.md | 256 | Comprehensive |
-| R3_mla_api.md | 250 | Comprehensive |
-| contributing.md | 241 | Comprehensive |
-| R1_config_schema.md | 219 | Comprehensive |
-| 2026-08-18-docs-html-premium-design.md | 162 | Comprehensive |
-| AUDIT.md | 112 | Comprehensive |
-| glossary.md | 96 | Comprehensive |
-| learning-paths.md | 83 | Comprehensive |
-| mla-latent-attention.md | 62 | Comprehensive |
-| RECEIPTS.md | 57 | Comprehensive |
-| aux-loss-free-moe-balance.md | 56 | Comprehensive |
-| mup-lr-scaling.md | 53 | Comprehensive |
-| multi-token-prediction.md | 52 | Comprehensive |
-| 2026-08-12-docs-html-polish.md | 37 | Comprehensive |
-| **Total** | **21,038** | |
-
-
-
-
-## References
-
-- [Training Pipeline](training.md) — loop, μP, NaN guard, YAML reference
-- [Inference & Serving](inference.md) — decode, KV cache, speculative decoding
-- [AUDIT.md](AUDIT.md) — dated docs↔code alignment audit with verification runs
-- [Learning Paths](guides/learning-paths.md) — where to start, per audience
-- `tests/test_doc_refs.py` — machine-verified doc↔code anchor + coverage gate
-- `scripts/check_docs.py` — prose hygiene, link/path lint, size table (`--coverage`, `--update-sizes`, `--stamp-footers`)
+The repository README is Chapter 1 of this book, not a separate page.

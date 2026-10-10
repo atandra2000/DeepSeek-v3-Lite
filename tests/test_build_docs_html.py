@@ -1,8 +1,9 @@
 """Build-output contract tests for the docs_html portal.
 
-Runs the real generator once (module scope) and asserts the premium-polish
-wiring: portal.js asset, boot overlay, ASCII hero, mono-only fonts, widget
-containers. Markdown sources are never modified by the build.
+Runs the real generator once (module scope) and asserts the printed-reader
+wiring: portal.js asset, boot overlay, ASCII hero, Literata + IBM Plex Mono
+font link, widget containers, and the book contract (generated pages come
+from DOC_FILES only). Markdown sources are never modified by the build.
 """
 
 import re
@@ -43,19 +44,21 @@ def test_nested_page_rel_prefix(built):
     assert 'src="../../assets/portal.js"' in html
 
 
-def test_font_link_mono_only(built):
+def test_font_link_prose_plus_mono(built):
+    """Prose reads in Literata; IBM Plex Mono is kept for code and data."""
     html = read("README.html")
+    assert "Literata" in html
     assert "IBM+Plex+Mono" in html
-    assert "IBM+Plex+Serif" not in html
 
 
 def test_index_hero_stage(built):
     html = read("index.html")
     assert 'id="hero-decode"' in html
     assert 'id="heroStateCanvas"' in html
-    assert 'data-title="DEEPSEEK-V3-LITE"' in html
+    assert '<span class="sr-only" data-title="DEEPSEEK-V3-LITE">' in html
     assert "bottleneck-svg" not in html
-    assert "hero-title sr-only" in html
+    assert "hero-margin-ticks" not in html
+    assert "hero-coords" not in html
 
 
 def test_index_pass_widget_container(built):
@@ -79,7 +82,7 @@ def test_widgets_not_on_other_pages(built):
     assert "passWidget" not in html
 
 
-def test_dark_theme_only(built):
+def test_single_theme_only(built):
     html = read("README.html")
     assert "toggleTheme" not in html
     assert "theme-toggle" not in html
@@ -144,23 +147,25 @@ def test_slugs_match_github_convention(built):
     assert "appendix-e--why-wkv_b-has-shape-h-d_nope--d_v-r" in ids_mla
 
 
-def test_all_markdown_docs_are_generated(built):
-    """Every docs/**/*.md is reachable in the portal.
+def test_generated_pages_match_doc_files(built):
+    """The generated pages are exactly the book's chapters.
 
-    Guards the dead-link class where a new doc is written and linked from
-    docs/README.md but never added to DOC_FILES, so the nav and the link 404.
+    Guards both drift directions: a doc added to DOC_FILES but never
+    generated, and a page generated that the sidebar/index do not know.
     """
-    root = ROOT
-    sources = {
-        p.relative_to(root).as_posix()
-        for p in (root / "docs").rglob("*.md")
-        if "superpowers" not in p.parts
+    src = (ROOT / "scripts" / "build_docs_html.py").read_text(encoding="utf-8")
+    block = re.search(r"DOC_FILES\s*=\s*\[(.*?)\n\]", src, re.S).group(1)
+    chapters = {
+        m.group(1).replace(".md", ".html")
+        for m in re.finditer(r'\("([^"]+\.md)"', block)
     }
     generated = {
-        p.relative_to(OUT).with_suffix(".md").as_posix() for p in _generated_pages()
+        p.relative_to(OUT).as_posix()
+        for p in _generated_pages()
     }
-    missing = sorted(sources - generated)
-    assert not missing, f"markdown never generated into the portal: {missing}"
+    assert generated == chapters, (
+        f"drift: generated-not-in-book={sorted(generated - chapters)}, "
+        f"book-not-generated={sorted(chapters - generated)}")
 
 
 def test_standalone_diagrams_copied(built):

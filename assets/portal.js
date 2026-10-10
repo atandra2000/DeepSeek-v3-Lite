@@ -60,23 +60,23 @@
         var flashEffect = 0;
 
         var PALETTE = {
-            paperBg: '#0e0c0a',
-            paperStation: '#161310',
-            paperStationHover: '#1c1813',
-            rule: '#2c261c',
-            ruleStrong: '#3a3226',
-            terracotta: '#e07a3f',
-            terracottaGlow: 'rgba(224, 122, 63, 0.75)',
-            terracottaTint: 'rgba(224, 122, 63, 0.16)',
-            olive: '#9a9440',
-            oliveGlow: 'rgba(154, 148, 64, 0.75)',
-            oliveTint: 'rgba(154, 148, 64, 0.16)',
-            gold: '#c9a35c',
-            goldGlow: 'rgba(201, 163, 92, 0.85)',
-            goldTint: 'rgba(201, 163, 92, 0.20)',
-            ink: '#d8ccb4',
-            inkSoft: '#b3a68c',
-            inkFaint: '#7a7160'
+            paperBg: '#FFFFFF',
+            paperStation: '#F4F5F5',
+            paperStationHover: '#EDEFEF',
+            rule: '#E1E5E6',
+            ruleStrong: '#D2D7D9',
+            terracotta: '#1F4A73',
+            terracottaGlow: 'rgba(31, 74, 115, 0.75)',
+            terracottaTint: 'rgba(31, 74, 115, 0.16)',
+            olive: '#5C6B5F',
+            oliveGlow: 'rgba(92, 107, 95, 0.75)',
+            oliveTint: 'rgba(92, 107, 95, 0.16)',
+            gold: '#8A6A2E',
+            goldGlow: 'rgba(138, 106, 46, 0.85)',
+            goldTint: 'rgba(138, 106, 46, 0.20)',
+            ink: '#16191D',
+            inkSoft: '#4B5359',
+            inkFaint: '#78818A'
         };
 
         var shockwaves = [];
@@ -225,7 +225,7 @@
 
         function drawDialAndGrid(t) {
             ctx.save();
-            ctx.strokeStyle = 'rgba(58, 50, 38, 0.35)';
+            ctx.strokeStyle = 'rgba(120, 129, 138, 0.35)';
             ctx.lineWidth = 1;
 
             // Cardinal Crosshairs
@@ -252,16 +252,16 @@
                 ctx.beginPath();
                 ctx.moveTo(x0, y0);
                 ctx.lineTo(x1, y1);
-                ctx.strokeStyle = isMajor ? PALETTE.gold : (isMedium ? PALETTE.ruleStrong : 'rgba(58, 50, 38, 0.45)');
+                ctx.strokeStyle = isMajor ? PALETTE.gold : (isMedium ? PALETTE.ruleStrong : 'rgba(120, 129, 138, 0.45)');
                 ctx.lineWidth = isMajor ? 1.5 : 1;
                 ctx.stroke();
             }
 
             // Concentric boundary circles
             var rings = [
-                { r: radius * 0.38, style: 'rgba(224, 122, 63, 0.35)', dash: [4, 4], label: '192d LATENT KV' },
-                { r: radius * 0.65, style: 'rgba(154, 148, 64, 0.35)', dash: [2, 6], label: '24d DECOUPLED RoPE' },
-                { r: radius * 0.88, style: 'rgba(201, 163, 92, 0.28)', dash: [], label: '12-HEAD QUERY ORBIT' }
+                { r: radius * 0.38, style: 'rgba(31, 74, 115, 0.35)', dash: [4, 4], label: '192d LATENT KV' },
+                { r: radius * 0.65, style: 'rgba(92, 107, 95, 0.35)', dash: [2, 6], label: '24d DECOUPLED RoPE' },
+                { r: radius * 0.88, style: 'rgba(138, 106, 46, 0.28)', dash: [], label: '12-HEAD QUERY ORBIT' }
             ];
 
             rings.forEach(function (ring) {
@@ -275,7 +275,7 @@
             ctx.setLineDash([]);
 
             // Axis labels
-            ctx.font = 'bold 8px "JetBrains Mono", monospace';
+            ctx.font = 'bold 8px "IBM Plex Mono", monospace';
             ctx.fillStyle = PALETTE.inkFaint;
             ctx.textAlign = 'center';
             ctx.fillText('+Q_c', cx + radius + 24, cy + 3);
@@ -295,8 +295,8 @@
             // 1. Central 192d Latent KV Manifold Core
             var pulse = Math.sin(t * 2.4) * 0.08 + 1.0 + (flashEffect * 0.2);
             var coreGrad = ctx.createRadialGradient(cx, cy, 2, cx, cy, latentR * pulse);
-            coreGrad.addColorStop(0, 'rgba(224, 122, 63, 0.45)');
-            coreGrad.addColorStop(0.5, 'rgba(201, 163, 92, 0.22)');
+            coreGrad.addColorStop(0, 'rgba(31, 74, 115, 0.45)');
+            coreGrad.addColorStop(0.5, 'rgba(138, 106, 46, 0.22)');
             coreGrad.addColorStop(1, 'rgba(14, 12, 10, 0)');
             ctx.beginPath();
             ctx.arc(cx, cy, latentR * pulse, 0, Math.PI * 2);
@@ -311,11 +311,11 @@
             ctx.stroke();
 
             ctx.fillStyle = PALETTE.terracotta;
-            ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
+            ctx.font = 'bold 8.5px "IBM Plex Mono", monospace';
             ctx.textAlign = 'center';
             ctx.fillText('192d LATENT KV CORE', cx, cy - 8);
             ctx.fillStyle = PALETTE.inkSoft;
-            ctx.font = '7.5px "JetBrains Mono", monospace';
+            ctx.font = '7.5px "IBM Plex Mono", monospace';
             ctx.fillText('7.1× KV REDUCTION (216d)', cx, cy + 6);
             ctx.fillText('W_D · h_t', cx, cy + 18);
 
@@ -332,7 +332,7 @@
                 ctx.beginPath();
                 ctx.moveTo(hx, hy);
                 ctx.lineTo(cx, cy);
-                ctx.strokeStyle = 'rgba(224, 122, 63, ' + Math.min(1, beamAlpha).toFixed(2) + ')';
+                ctx.strokeStyle = 'rgba(31, 74, 115, ' + Math.min(1, beamAlpha).toFixed(2) + ')';
                 ctx.lineWidth = (h % 2 === 0) ? 1.5 : 1.0;
                 ctx.stroke();
 
@@ -357,7 +357,7 @@
                 ctx.beginPath();
                 ctx.moveTo(hx, hy);
                 ctx.lineTo(rx, ry);
-                ctx.strokeStyle = 'rgba(154, 148, 64, 0.4)';
+                ctx.strokeStyle = 'rgba(92, 107, 95, 0.4)';
                 ctx.lineWidth = 1;
                 ctx.setLineDash([2, 4]);
                 ctx.stroke();
@@ -368,13 +368,13 @@
                 ctx.arc(hx, hy, 4.5, 0, Math.PI * 2);
                 ctx.fillStyle = PALETTE.terracotta;
                 ctx.fill();
-                ctx.strokeStyle = '#fff';
+                ctx.strokeStyle = '#FFFFFF';
                 ctx.lineWidth = 1;
                 ctx.stroke();
 
                 // Head Label
                 ctx.fillStyle = PALETTE.ink;
-                ctx.font = 'bold 8px "JetBrains Mono", monospace';
+                ctx.font = 'bold 8px "IBM Plex Mono", monospace';
                 ctx.textAlign = 'center';
                 ctx.fillText('H' + (h + 1), hx + Math.cos(angle) * 12, hy + Math.sin(angle) * 12 + 3);
 
@@ -425,7 +425,7 @@
             // Central Shared Expert
             var sharedR = radius * 0.24;
             var sharedGrad = ctx.createRadialGradient(cx, cy, 2, cx, cy, sharedR);
-            sharedGrad.addColorStop(0, 'rgba(201, 163, 92, 0.45)');
+            sharedGrad.addColorStop(0, 'rgba(138, 106, 46, 0.45)');
             sharedGrad.addColorStop(1, 'rgba(14, 12, 10, 0)');
             ctx.beginPath();
             ctx.arc(cx, cy, sharedR, 0, Math.PI * 2);
@@ -439,11 +439,11 @@
             ctx.stroke();
 
             ctx.fillStyle = PALETTE.gold;
-            ctx.font = 'bold 9px "JetBrains Mono", monospace';
+            ctx.font = 'bold 9px "IBM Plex Mono", monospace';
             ctx.textAlign = 'center';
             ctx.fillText('SHARED EXP', cx, cy - 4);
             ctx.fillStyle = PALETTE.inkSoft;
-            ctx.font = '7.5px "JetBrains Mono", monospace';
+            ctx.font = '7.5px "IBM Plex Mono", monospace';
             ctx.fillText('ALWAYS ON', cx, cy + 8);
 
             // Draw 20 expert stations
@@ -460,7 +460,7 @@
                     ctx.beginPath();
                     ctx.moveTo(cx, cy);
                     ctx.lineTo(ex, ey);
-                    ctx.strokeStyle = 'rgba(224, 122, 63, ' + Math.min(1, beamAlpha).toFixed(2) + ')';
+                    ctx.strokeStyle = 'rgba(31, 74, 115, ' + Math.min(1, beamAlpha).toFixed(2) + ')';
                     ctx.lineWidth = 2.0;
                     ctx.stroke();
 
@@ -485,13 +485,13 @@
                 var biasVal = (Math.sin(e * 1.3 + t * 0.8) * 0.4 + 0.5);
                 ctx.beginPath();
                 ctx.arc(ex, ey, 8.5, angle - Math.PI * 0.4, angle - Math.PI * 0.4 + biasVal * Math.PI * 0.8);
-                ctx.strokeStyle = isActive ? PALETTE.gold : 'rgba(154, 148, 64, 0.5)';
+                ctx.strokeStyle = isActive ? PALETTE.gold : 'rgba(92, 107, 95, 0.5)';
                 ctx.lineWidth = 1.5;
                 ctx.stroke();
 
                 // Label
-                ctx.fillStyle = isActive ? '#ffffff' : PALETTE.inkFaint;
-                ctx.font = (isActive ? 'bold 8.5px' : '7.5px') + ' "JetBrains Mono", monospace';
+                ctx.fillStyle = isActive ? '#FFFFFFfff' : PALETTE.inkFaint;
+                ctx.font = (isActive ? 'bold 8.5px' : '7.5px') + ' "IBM Plex Mono", monospace';
                 ctx.textAlign = 'center';
                 var labelR = expertR + (isActive ? 16 : 14);
                 ctx.fillText((e < 10 ? '0' : '') + e, cx + Math.cos(angle) * labelR, cy + Math.sin(angle) * labelR + 3);
@@ -525,42 +525,42 @@
             ctx.beginPath();
             ctx.moveTo(mainX, mainY);
             ctx.lineTo(mtpX, mtpY);
-            ctx.strokeStyle = 'rgba(154, 148, 64, ' + Math.min(1, synAlpha).toFixed(2) + ')';
+            ctx.strokeStyle = 'rgba(92, 107, 95, ' + Math.min(1, synAlpha).toFixed(2) + ')';
             ctx.lineWidth = 3.0;
             ctx.stroke();
 
             // Main Model Node
             ctx.beginPath();
             ctx.arc(mainX, mainY, 28, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(224, 122, 63, 0.25)';
+            ctx.fillStyle = 'rgba(31, 74, 115, 0.25)';
             ctx.fill();
             ctx.strokeStyle = PALETTE.terracotta;
             ctx.lineWidth = 2;
             ctx.stroke();
 
             ctx.fillStyle = PALETTE.terracotta;
-            ctx.font = 'bold 9px "JetBrains Mono", monospace';
+            ctx.font = 'bold 9px "IBM Plex Mono", monospace';
             ctx.textAlign = 'center';
             ctx.fillText('MAIN MODEL', mainX, mainY - 6);
             ctx.fillStyle = PALETTE.inkSoft;
-            ctx.font = '7.5px "JetBrains Mono", monospace';
+            ctx.font = '7.5px "IBM Plex Mono", monospace';
             ctx.fillText('Draft tok_t', mainX, mainY + 8);
 
             // MTP Speculative Node
             ctx.beginPath();
             ctx.arc(mtpX, mtpY, 28, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(154, 148, 64, 0.25)';
+            ctx.fillStyle = 'rgba(92, 107, 95, 0.25)';
             ctx.fill();
             ctx.strokeStyle = PALETTE.olive;
             ctx.lineWidth = 2;
             ctx.stroke();
 
             ctx.fillStyle = PALETTE.olive;
-            ctx.font = 'bold 9px "JetBrains Mono", monospace';
+            ctx.font = 'bold 9px "IBM Plex Mono", monospace';
             ctx.textAlign = 'center';
             ctx.fillText('MTP HEAD (D1)', mtpX, mtpY - 6);
             ctx.fillStyle = PALETTE.inkSoft;
-            ctx.font = '7.5px "JetBrains Mono", monospace';
+            ctx.font = '7.5px "IBM Plex Mono", monospace';
             ctx.fillText('Draft tok_{t+1}', mtpX, mtpY + 8);
 
             // Orbiting Speculative Verification Nodes
@@ -578,7 +578,7 @@
                 ctx.beginPath();
                 ctx.moveTo(mtpX, mtpY);
                 ctx.lineTo(tx, ty);
-                ctx.strokeStyle = 'rgba(154, 148, 64, 0.3)';
+                ctx.strokeStyle = 'rgba(92, 107, 95, 0.3)';
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
@@ -595,22 +595,22 @@
             // Racetrack Path
             ctx.beginPath();
             ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(58, 50, 38, 0.4)';
+            ctx.strokeStyle = 'rgba(120, 129, 138, 0.4)';
             ctx.lineWidth = 2;
             ctx.stroke();
 
             // Center overlap badge
-            ctx.fillStyle = 'rgba(22, 19, 16, 0.9)';
+            ctx.fillStyle = 'rgba(244, 246, 246, 0.9)';
             ctx.fillRect(cx - 75, cy - 24, 150, 48);
             ctx.strokeStyle = PALETTE.gold;
             ctx.strokeRect(cx - 75, cy - 24, 150, 48);
 
             ctx.fillStyle = PALETTE.gold;
-            ctx.font = 'bold 9px "JetBrains Mono", monospace';
+            ctx.font = 'bold 9px "IBM Plex Mono", monospace';
             ctx.textAlign = 'center';
             ctx.fillText('100% OVERLAP CORE', cx, cy - 6);
             ctx.fillStyle = PALETTE.olive;
-            ctx.font = '7.5px "JetBrains Mono", monospace';
+            ctx.font = '7.5px "IBM Plex Mono", monospace';
             ctx.fillText('1F1B FWD ⇄ BWD STREAM', cx, cy + 8);
 
             // Draw PP Stage nodes
@@ -628,7 +628,7 @@
                 ctx.stroke();
 
                 ctx.fillStyle = PALETTE.ink;
-                ctx.font = 'bold 8px "JetBrains Mono", monospace';
+                ctx.font = 'bold 8px "IBM Plex Mono", monospace';
                 ctx.textAlign = 'center';
                 ctx.fillText('PP' + s, sx + Math.cos(angle) * 14, sy + Math.sin(angle) * 14 + 3);
             }
@@ -954,23 +954,23 @@
         var simTime = 0;
 
         var PALETTE = {
-            paperBg: '#0e0c0a',
-            paperStation: '#161310',
-            paperStationHover: '#1c1813',
-            rule: '#2c261c',
-            ruleStrong: '#3a3226',
-            terracotta: '#e07a3f',
-            terracottaGlow: 'rgba(224, 122, 63, 0.75)',
-            terracottaTint: 'rgba(224, 122, 63, 0.16)',
-            olive: '#9a9440',
-            oliveGlow: 'rgba(154, 148, 64, 0.75)',
-            oliveTint: 'rgba(154, 148, 64, 0.16)',
-            gold: '#c9a35c',
-            goldGlow: 'rgba(201, 163, 92, 0.85)',
-            goldTint: 'rgba(201, 163, 92, 0.20)',
-            ink: '#d8ccb4',
-            inkSoft: '#b3a68c',
-            inkFaint: '#7a7160'
+            paperBg: '#FFFFFF',
+            paperStation: '#F4F5F5',
+            paperStationHover: '#EDEFEF',
+            rule: '#E1E5E6',
+            ruleStrong: '#D2D7D9',
+            terracotta: '#1F4A73',
+            terracottaGlow: 'rgba(31, 74, 115, 0.75)',
+            terracottaTint: 'rgba(31, 74, 115, 0.16)',
+            olive: '#5C6B5F',
+            oliveGlow: 'rgba(92, 107, 95, 0.75)',
+            oliveTint: 'rgba(92, 107, 95, 0.16)',
+            gold: '#8A6A2E',
+            goldGlow: 'rgba(138, 106, 46, 0.85)',
+            goldTint: 'rgba(138, 106, 46, 0.20)',
+            ink: '#16191D',
+            inkSoft: '#4B5359',
+            inkFaint: '#78818A'
         };
 
         var STAGES = [
@@ -1211,7 +1211,7 @@
 
             ctx.save();
             // Subtle technical grid
-            ctx.strokeStyle = 'rgba(58, 50, 38, 0.22)';
+            ctx.strokeStyle = 'rgba(120, 129, 138, 0.22)';
             ctx.lineWidth = 1;
             ctx.setLineDash([2, 8]);
             for (var x = 20; x < width; x += 40) {
@@ -1227,7 +1227,7 @@
             ctx.beginPath();
             ctx.moveTo(14, fwdY);
             ctx.lineTo(width - 14, fwdY);
-            ctx.strokeStyle = 'rgba(224, 122, 63, 0.28)';
+            ctx.strokeStyle = 'rgba(31, 74, 115, 0.28)';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([4, 6]);
             ctx.stroke();
@@ -1237,19 +1237,19 @@
             ctx.beginPath();
             ctx.moveTo(14, bwdY);
             ctx.lineTo(width - 14, bwdY);
-            ctx.strokeStyle = 'rgba(154, 148, 64, 0.28)';
+            ctx.strokeStyle = 'rgba(92, 107, 95, 0.28)';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([4, 6]);
             ctx.stroke();
             ctx.setLineDash([]);
 
             ctx.fillStyle = PALETTE.terracotta;
-            ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
+            ctx.font = 'bold 8.5px "IBM Plex Mono", monospace';
             ctx.textAlign = 'left';
             ctx.fillText('FORWARD CONDUIT (ACTIVATIONS) →', 20, fwdY - 6);
 
             ctx.fillStyle = PALETTE.olive;
-            ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
+            ctx.font = 'bold 8.5px "IBM Plex Mono", monospace';
             ctx.textAlign = 'right';
             ctx.fillText('← BACKWARD CONDUIT (GRADIENTS)', width - 20, bwdY + 14);
             ctx.restore();
@@ -1278,7 +1278,7 @@
                     ctx.beginPath();
                     ctx.moveTo(px, py);
                     ctx.lineTo(px - 14 * p.speed, py);
-                    ctx.strokeStyle = 'rgba(224, 122, 63, 0.35)';
+                    ctx.strokeStyle = 'rgba(31, 74, 115, 0.35)';
                     ctx.lineWidth = p.size * 0.7;
                     ctx.stroke();
                 });
@@ -1302,7 +1302,7 @@
                     ctx.beginPath();
                     ctx.moveTo(px, py);
                     ctx.lineTo(px + 14 * p.speed, py);
-                    ctx.strokeStyle = 'rgba(154, 148, 64, 0.35)';
+                    ctx.strokeStyle = 'rgba(92, 107, 95, 0.35)';
                     ctx.lineWidth = p.size * 0.7;
                     ctx.stroke();
                 });
@@ -1322,7 +1322,7 @@
 
                 ctx.beginPath();
                 ctx.arc(ap.x, ap.y, 2.0 * ap.life, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(201, 163, 92, ' + ap.life.toFixed(2) + ')';
+                ctx.fillStyle = 'rgba(138, 106, 46, ' + ap.life.toFixed(2) + ')';
                 ctx.fill();
             }
 
@@ -1370,13 +1370,13 @@
 
                 if (st.glowAdam > 0.1) {
                     borderColor = PALETTE.gold;
-                    cardBg = 'rgba(201, 163, 92, ' + (0.15 * st.glowAdam).toFixed(2) + ')';
+                    cardBg = 'rgba(138, 106, 46, ' + (0.15 * st.glowAdam).toFixed(2) + ')';
                 } else if (st.glowForward > 0.1) {
                     borderColor = PALETTE.terracotta;
-                    cardBg = 'rgba(224, 122, 63, ' + (0.14 * st.glowForward).toFixed(2) + ')';
+                    cardBg = 'rgba(31, 74, 115, ' + (0.14 * st.glowForward).toFixed(2) + ')';
                 } else if (st.glowBackward > 0.1) {
                     borderColor = PALETTE.olive;
-                    cardBg = 'rgba(154, 148, 64, ' + (0.14 * st.glowBackward).toFixed(2) + ')';
+                    cardBg = 'rgba(92, 107, 95, ' + (0.14 * st.glowBackward).toFixed(2) + ')';
                 }
 
                 // Station Background & Border
@@ -1421,27 +1421,27 @@
                 var displayTitle = isCompact ? (st.stage.id === 1 ? 'Embed' : st.stage.id === 2 ? 'MLA' : st.stage.id === 3 ? 'Dense' : st.stage.id === 4 ? 'MoE' : st.stage.id === 5 ? 'Triton' : 'MTP') : st.stage.title;
 
                 // Stage Number Badge
-                ctx.font = isCompact ? 'bold 7.5px "JetBrains Mono", monospace' : 'bold 8.5px "JetBrains Mono", monospace';
+                ctx.font = isCompact ? 'bold 7.5px "IBM Plex Mono", monospace' : 'bold 8.5px "IBM Plex Mono", monospace';
                 ctx.fillStyle = (st.glowForward > 0.2 ? PALETTE.terracotta : (st.glowBackward > 0.2 ? PALETTE.olive : PALETTE.inkSoft));
                 ctx.textAlign = 'left';
                 ctx.fillText(displayBadge, st.x + (isCompact ? 13 : 14), st.y + 13);
 
                 // Stage Title
-                ctx.font = isCompact ? 'bold 9px "JetBrains Mono", monospace' : 'bold 10px "JetBrains Mono", monospace';
-                ctx.fillStyle = isHover ? '#ffffff' : PALETTE.ink;
+                ctx.font = isCompact ? 'bold 9px "IBM Plex Mono", monospace' : 'bold 10px "IBM Plex Mono", monospace';
+                ctx.fillStyle = isHover ? '#FFFFFFfff' : PALETTE.ink;
                 ctx.textAlign = 'center';
                 ctx.fillText(displayTitle, st.cx, st.y + st.h * 0.40);
 
                 // Subtitle
                 if (st.h > 80) {
-                    ctx.font = isCompact ? '7.5px "JetBrains Mono", monospace' : '8.5px "JetBrains Mono", monospace';
+                    ctx.font = isCompact ? '7.5px "IBM Plex Mono", monospace' : '8.5px "IBM Plex Mono", monospace';
                     ctx.fillStyle = PALETTE.gold;
                     ctx.fillText(st.stage.sub, st.cx, st.y + st.h * 0.60);
                 }
 
                 // Chip Tag
                 if (st.h > 100 && !isCompact) {
-                    ctx.font = '8px "JetBrains Mono", monospace';
+                    ctx.font = '8px "IBM Plex Mono", monospace';
                     ctx.fillStyle = PALETTE.inkSoft;
                     ctx.fillText(st.stage.chip, st.cx, st.y + st.h * 0.78);
                 }
@@ -1449,11 +1449,11 @@
                 // Re-compute / Checkpoint Tag during Backward
                 if (st.glowBackward > 0.3 && (idx >= 1 && idx <= 4)) {
                     ctx.fillStyle = PALETTE.olive;
-                    ctx.font = 'bold 7.5px "JetBrains Mono", monospace';
+                    ctx.font = 'bold 7.5px "IBM Plex Mono", monospace';
                     ctx.fillText('RE-COMPUTE', st.cx, st.y + st.h - 6);
                 } else if (st.glowAdam > 0.3) {
                     ctx.fillStyle = PALETTE.gold;
-                    ctx.font = 'bold 7.5px "JetBrains Mono", monospace';
+                    ctx.font = 'bold 7.5px "IBM Plex Mono", monospace';
                     ctx.fillText('θ UPDATE', st.cx, st.y + st.h - 6);
                 }
 
@@ -1468,8 +1468,8 @@
                     ctx.beginPath();
                     ctx.moveTo(gapStartX, midY);
                     ctx.lineTo(gapEndX, midY);
-                    ctx.strokeStyle = (st.glowForward > 0.2 || nextSt.glowForward > 0.2) ? 'rgba(224, 122, 63, 0.7)' :
-                                      (st.glowBackward > 0.2 || nextSt.glowBackward > 0.2) ? 'rgba(154, 148, 64, 0.7)' :
+                    ctx.strokeStyle = (st.glowForward > 0.2 || nextSt.glowForward > 0.2) ? 'rgba(31, 74, 115, 0.7)' :
+                                      (st.glowBackward > 0.2 || nextSt.glowBackward > 0.2) ? 'rgba(92, 107, 95, 0.7)' :
                                       PALETTE.ruleStrong;
                     ctx.lineWidth = (st.glowForward > 0.2 || nextSt.glowForward > 0.2 || st.glowBackward > 0.2 || nextSt.glowBackward > 0.2) ? 1.5 : 1.0;
                     ctx.stroke();

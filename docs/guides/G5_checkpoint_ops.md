@@ -4,7 +4,7 @@
 
 > **Status:** the checkpoint machinery is implemented and covered by the CPU test suite (199 nodes: 189 pass + 10 GPU-gated skips, see [11 Operations and Testing](../concepts/kernels-and-ops.md)), but **no GPU training run has ever executed** — `checkpoints/` is empty, so every file-size figure below is a derived estimate, not a measurement.
 
-**Depends on:** [Training Pipeline](../training.md) · [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) · **Read next:** [G1 Debugging Playbook](../guides/G1_debugging_playbook.md) (NaN rollback), [Contributing](../guides/contributing.md) (doc/test expectations)
+**Depends on:** [Training Pipeline](../training.md) · [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) · **Read next:** [G1 Debugging Playbook](../guides/G1_debugging_playbook.md) (NaN rollback)
 
 ---
 
@@ -276,4 +276,4 @@ The restore chain works **only because the inference model is built from the sam
 - [Operations, Testing & Triton Kernels](../concepts/kernels-and-ops.md) — atomic checkpoint system, VRAM budget
 - [R8 — Utils API](../references/R8_utils_api.md) - `CheckpointManager` save/load/resume/atomicity contract
 - [G1 — Debugging Playbook](../guides/G1_debugging_playbook.md) - NaN rollback
-- [Contributing](../guides/contributing.md) — doc/test expectations
+- [How to read this book](../README.md) — where this guide sits in the reading order.

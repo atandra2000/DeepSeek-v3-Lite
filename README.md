@@ -14,7 +14,7 @@ A faithful, from-scratch reimplementation of the DeepSeek-V3 architecture, desig
 | Config | Parameters | Tokens | GPU | Wall time | Peak VRAM | Status |
 |---|---|---|---|---|---|---|
 | `configs/pretrain_a100_422m.yaml` | ~412M | 8.4B | A100 80GB SXM | ~30-45 h (est.) | ~35 GB | Code complete |
-| `configs/pretrain_1650_2m.yaml` | ~2M | 50K vocab (GPT-2) | GTX 1650 4GB | minutes | <1 GB | Smoke-test config — see [docs/README.md](docs/README.md#configs) |
+| `configs/pretrain_1650_2m.yaml` | ~2M | 50K vocab (GPT-2) | GTX 1650 4GB | minutes | <1 GB | Smoke-test config |
 
 Two configurations ship in `configs/`:
 
@@ -272,7 +272,7 @@ bash scripts/launch_a100.sh                   # ~30–45 h on A100 80GB (estimat
 
 | Doc | Covers |
 |---|---|
-| [docs/README.md](docs/README.md) | Navigation map + quick reference |
+| [How to read this book](docs/README.md) | What each part covers, where to start, and the map from source file to chapter |
 | [Getting Started](docs/guides/getting-started.md) | Installation, smoke tests, first run |
 | [Foundations & Architecture](docs/concepts/foundations.md) | DeepSeek lineage, primitives, full topology, parameter budget, portfolio comparison |
 | [MLA & Mixed Precision](docs/concepts/attention-and-precision.md) | Low-rank KV compression, absorption, decoupled RoPE; FP8 (paper-spec) |
@@ -284,7 +284,6 @@ bash scripts/launch_a100.sh                   # ~30–45 h on A100 80GB (estimat
 | [Inference & Serving](docs/inference.md) | Sampling, KV cache, speculative decoding |
 | [References R1–R9](docs/references/R1_config_schema.md) | Symbol-anchored API reference for config, model, training, utils, inference |
 | [Guides G1–G5](docs/guides/G1_debugging_playbook.md) | Debugging, μP/LR tuning, Triton development, benchmarking, checkpoint ops |
-| [Contributing](docs/guides/contributing.md) | Doc contract, gates, test & code conventions |
 
 ---
 
